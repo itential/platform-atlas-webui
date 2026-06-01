@@ -13,10 +13,21 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
+# from platform_atlas.capture.log_parser import DEFAULT_KEYWORDS  # used by log-watch (deferred)
 from platform_atlas.core._version import __version__ as ATLAS_VERSION
 from platform_atlas.continuous import os_scheduler, storage
 from platform_atlas.continuous.engine import run_once
-from platform_atlas.continuous.models import ContinuousSettings, VALID_ALERT_POLICIES
+from platform_atlas.continuous.models import (
+    ContinuousSettings,
+    # TODO: Log file watching — deferred to a later version of Atlas.
+    # LogWatchEntry,
+    # LOG_WATCH_ANY,
+    # LOG_WATCH_COUNT,
+    # LOG_WATCH_WINDOW,
+    # LOG_WATCH_SOURCES,
+    VALID_ALERT_POLICIES,
+    # VALID_LOG_WATCH_THRESHOLDS,
+)
 from platform_atlas.continuous.policy import describe_policy
 from platform_atlas.continuous.runtime import can_enable, read_settings, write_settings
 
@@ -28,6 +39,22 @@ from platform_atlas_webui.services import rulesets as ruleset_svc
 
 router = APIRouter(prefix="/continuous", tags=["continuous"])
 _templates = get_templates()
+
+# TODO: Log file watching — deferred to a later version of Atlas.
+# Uncomment the block below (and matching sections in landing.html, engine.py,
+# handlers/continuous.py, cli.py) to re-enable log-watch routes.
+#
+# _LW_KEYWORD_GROUPS: list[tuple[str, list[str]]] = [
+#     ("Connection / Infrastructure", ["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "EPIPE", "unreachable", "offline", "unavailable"]),
+#     ("Severity",                    ["fail", "fatal", "exception", "traceback", "panic", "critical", "segfault", "sigabrt", "crashed"]),
+#     ("Auth / Permissions",          ["denied", "forbidden", "unauthorized"]),
+#     ("General",                     ["timeout", "invalid", "unexpected", "unknown", "could not", "missing"]),
+#     ("Services",                    ["Channel closed", "ERROR RETURN", "maxmemory", "NOREPLICAS", "QueueDeclare", "ConnBlockedError"]),
+#     ("MongoDB",                     ["MongoError", "MongoServerError", "topology was destroyed"]),
+# ]
+# _LW_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,32}$")
+# _MIN_THRESHOLD_COUNT = 2
+# _MIN_WINDOW_MINUTES  = 5
 
 
 # Mirrors the format produced by ``storage.make_run_id``:
@@ -97,6 +124,7 @@ async def landing(request: Request) -> HTMLResponse:
     environments = await run_in_threadpool(env_svc.list_environments)
 
     return _templates.TemplateResponse(
+        request,
         "continuous/landing.html",
         template_context(
             request,
@@ -113,6 +141,13 @@ async def landing(request: Request) -> HTMLResponse:
             rulesets=rulesets,
             profiles=profiles,
             environments=environments,
+            # TODO: Log file watching — deferred to a later version of Atlas.
+            # Restore these when uncommenting the log-watch template section.
+            # lw_keyword_groups=_LW_KEYWORD_GROUPS,
+            # lw_sources=LOG_WATCH_SOURCES,
+            # lw_threshold_modes=VALID_LOG_WATCH_THRESHOLDS,
+            # lw_min_count=_MIN_THRESHOLD_COUNT,
+            # lw_min_window=_MIN_WINDOW_MINUTES,
         ),
     )
 
@@ -125,6 +160,7 @@ async def view_run(request: Request, run_id: str) -> HTMLResponse:
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     return _templates.TemplateResponse(
+        request,
         "continuous/run_detail.html",
         template_context(
             request,
@@ -231,13 +267,15 @@ def _replace_settings_on_disk(env: str, **changes) -> ContinuousSettings:
     """Persist a partial settings update — mirrors the CLI helper of the same name."""
     current = read_settings(env)
     fields = {
-        "enabled":          current.enabled,
-        "interval_seconds": current.interval_seconds,
-        "retain_runs":      current.retain_runs,
-        "ruleset_id":       current.ruleset_id,
-        "profile_id":       current.profile_id,
-        "alert_policy":     current.alert_policy,
-        "watchlist":        current.watchlist,
+        "enabled":           current.enabled,
+        "interval_seconds":  current.interval_seconds,
+        "retain_runs":       current.retain_runs,
+        "ruleset_id":        current.ruleset_id,
+        "profile_id":        current.profile_id,
+        "alert_policy":      current.alert_policy,
+        "watchlist":         current.watchlist,
+        "log_watch_enabled": current.log_watch_enabled,
+        "log_watches":       current.log_watches,
     }
     fields.update(changes)
     new = ContinuousSettings(**fields)
@@ -341,3 +379,109 @@ async def run_now():
         async with _in_flight_lock:
             _in_flight_runs.discard(env)
     return RedirectResponse(url="/continuous", status_code=303)
+
+
+# TODO: Log file watching — deferred to a later version of Atlas.
+# The routes below are preserved but not active. To re-enable:
+#   1. Uncomment this entire section
+#   2. Uncomment the _LW_* constants and log-watch model imports above
+#   3. Restore the lw_* keys in the landing() template_context call
+#   4. Uncomment the log-watch section in landing.html
+
+# def _validate_lw_id(watch_id: str) -> str:
+#     if not _LW_ID_RE.match(watch_id or ""):
+#         raise HTTPException(status_code=400, detail="Invalid watch ID format.")
+#     return watch_id
+#
+#
+# @router.post("/log-watch/enable")
+# async def lw_enable():
+#     env = _active_env()
+#     if not env:
+#         raise HTTPException(status_code=400, detail="No active environment.")
+#     await run_in_threadpool(_replace_settings_on_disk, env, log_watch_enabled=True)
+#     return RedirectResponse(url="/continuous", status_code=303)
+#
+#
+# @router.post("/log-watch/disable")
+# async def lw_disable():
+#     env = _active_env()
+#     if not env:
+#         raise HTTPException(status_code=400, detail="No active environment.")
+#     await run_in_threadpool(_replace_settings_on_disk, env, log_watch_enabled=False)
+#     return RedirectResponse(url="/continuous", status_code=303)
+#
+#
+# @router.post("/log-watch/add")
+# async def lw_add(
+#     name: str = Form(""),
+#     pattern: str = Form(""),
+#     log_source: str = Form("any"),
+#     severity: str = Form("warning"),
+#     threshold_mode: str = Form(LOG_WATCH_ANY),
+#     threshold_count: int = Form(1),
+#     threshold_window_minutes: int = Form(60),
+# ):
+#     import hashlib as _hl
+#     import time as _t
+#     env = _active_env()
+#     if not env:
+#         raise HTTPException(status_code=400, detail="No active environment.")
+#     name = name.strip()
+#     pattern = pattern.strip()
+#     if not name:
+#         raise HTTPException(status_code=400, detail="Watch name is required.")
+#     if not pattern or pattern not in DEFAULT_KEYWORDS:
+#         raise HTTPException(status_code=400, detail="Pattern must be one of the approved log keywords.")
+#     if log_source not in LOG_WATCH_SOURCES:
+#         raise HTTPException(status_code=400, detail=f"Invalid log source: {log_source!r}.")
+#     if severity not in ("critical", "warning", "info"):
+#         raise HTTPException(status_code=400, detail=f"Invalid severity: {severity!r}.")
+#     if threshold_mode not in VALID_LOG_WATCH_THRESHOLDS:
+#         raise HTTPException(status_code=400, detail=f"Invalid threshold mode: {threshold_mode!r}.")
+#     if threshold_mode in (LOG_WATCH_COUNT, LOG_WATCH_WINDOW) and threshold_count < _MIN_THRESHOLD_COUNT:
+#         raise HTTPException(status_code=400,
+#             detail=f"Threshold count must be at least {_MIN_THRESHOLD_COUNT} for {threshold_mode!r} mode.")
+#     if threshold_mode == LOG_WATCH_WINDOW and threshold_window_minutes < _MIN_WINDOW_MINUTES:
+#         raise HTTPException(status_code=400, detail=f"Window must be at least {_MIN_WINDOW_MINUTES} minutes.")
+#     current = await run_in_threadpool(read_settings, env)
+#     for w in current.log_watches:
+#         if w.name.lower() == name.lower():
+#             raise HTTPException(status_code=400, detail=f"A watch named '{name}' already exists.")
+#     watch_id = _hl.md5(f"{pattern}:{_t.time()}".encode()).hexdigest()[:8]
+#     new_entry = LogWatchEntry(
+#         id=watch_id, name=name, pattern=pattern, log_source=log_source,
+#         severity=severity, threshold_mode=threshold_mode, threshold_count=threshold_count,
+#         threshold_window_minutes=threshold_window_minutes, enabled=True,
+#     )
+#     new_watches = tuple(list(current.log_watches) + [new_entry])
+#     await run_in_threadpool(_replace_settings_on_disk, env, log_watches=new_watches)
+#     return RedirectResponse(url="/continuous", status_code=303)
+#
+#
+# @router.post("/log-watch/{watch_id}/toggle")
+# async def lw_toggle(watch_id: str):
+#     _validate_lw_id(watch_id)
+#     env = _active_env()
+#     if not env:
+#         raise HTTPException(status_code=400, detail="No active environment.")
+#     current = await run_in_threadpool(read_settings, env)
+#     new_watches = tuple(
+#         LogWatchEntry.from_dict({**w.to_dict(), "enabled": not w.enabled})
+#         if w.id == watch_id else w
+#         for w in current.log_watches
+#     )
+#     await run_in_threadpool(_replace_settings_on_disk, env, log_watches=new_watches)
+#     return RedirectResponse(url="/continuous", status_code=303)
+#
+#
+# @router.post("/log-watch/{watch_id}/remove")
+# async def lw_remove(watch_id: str):
+#     _validate_lw_id(watch_id)
+#     env = _active_env()
+#     if not env:
+#         raise HTTPException(status_code=400, detail="No active environment.")
+#     current = await run_in_threadpool(read_settings, env)
+#     new_watches = tuple(w for w in current.log_watches if w.id != watch_id)
+#     await run_in_threadpool(_replace_settings_on_disk, env, log_watches=new_watches)
+#     return RedirectResponse(url="/continuous", status_code=303)

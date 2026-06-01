@@ -230,6 +230,7 @@ async def view_credentials(
     )
 
     response = _templates.TemplateResponse(
+        request,
         "config/credentials.html",
         template_context(
             request,

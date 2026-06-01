@@ -73,6 +73,40 @@
   </div>
 {% endif %}
 
+{# Incomplete capture checkpoint banner — shown when a previous capture was interrupted
+   and left a partial checkpoint file. The user can resume from where it left off or
+   start over to collect fresh data. Only shown when capture hasn't completed yet. #}
+{% if session.has_checkpoint and not session.capture_completed and not _locked %}
+  <div class="mb-4 flex items-start gap-3 px-4 py-3.5 rounded-lg"
+       style="background:oklch(82% .13 75 / .08); border:1px solid oklch(82% .13 75 / .35);">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" class="mt-0.5 shrink-0 text-warn">
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+    <div class="flex-1 min-w-0">
+      <div class="text-[13px] font-semibold text-text mb-0.5">Incomplete capture found</div>
+      <div class="text-[12px] text-text-2">
+        {{ session.checkpoint_module_count }} module{{ 's' if session.checkpoint_module_count != 1 else '' }} collected before the last capture was interrupted.
+        Resume to continue from where it left off, or start over to collect fresh data.
+      </div>
+    </div>
+    <div class="flex gap-2 shrink-0">
+      <form action="/sessions/{{ session.name }}/run/capture" method="post" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="resume_checkpoint" value="1">
+        <button class="btn sm primary" type="submit">Resume</button>
+      </form>
+      <form action="/sessions/{{ session.name }}/run/capture" method="post" class="inline"
+            data-confirm-action data-confirm-message="Clear the checkpoint and start a fresh capture?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="resume_checkpoint" value="0">
+        <button class="btn sm" type="submit">Start over</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
+
 <div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 items-start">
 
   {# ── Pipeline steps ── #}

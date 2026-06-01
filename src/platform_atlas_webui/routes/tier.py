@@ -39,6 +39,7 @@ async def tier_overview(request: Request) -> HTMLResponse:
         pass
 
     response = _templates.TemplateResponse(
+        request,
         "tier/overview.html",
         template_context(
             request,
@@ -264,6 +265,7 @@ async def extended_setup(request: Request) -> HTMLResponse:
         c["present"] for c in cred_status["credentials"] if c["required"]
     )
     return _templates.TemplateResponse(
+        request,
         "tier/extended_setup.html",
         template_context(
             request,

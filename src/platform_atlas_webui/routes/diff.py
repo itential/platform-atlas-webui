@@ -30,6 +30,7 @@ async def diff_landing(request: Request) -> HTMLResponse:
     all_sessions = await run_in_threadpool(session_svc.list_sessions)
     sessions = [s for s in all_sessions if s["validation_completed"]]
     return _templates.TemplateResponse(
+        request,
         "diff/landing.html",
         template_context(
             request,

@@ -1,0 +1,665 @@
+{% extends "base.html" %}
+{% block title %}Support Bundle — Platform Atlas{% endblock %}
+{% block crumb %}Support Bundle{% endblock %}
+{% block content %}
+
+<style nonce="{{ csp_nonce }}">
+/* ── Phase stepper ─────────────────────────────────────────────── */
+.sb-stepper {
+  display: flex;
+  align-items: flex-start;
+  margin: 0 auto 32px;
+  max-width: 540px;
+  padding: 4px 0;
+}
+.phase-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  min-width: 72px;
+}
+.phase-dot {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
+  position: relative;
+}
+.phase-dot[data-status="pending"] {
+  background: var(--surface-3);
+  border: 2px solid var(--line-2);
+  color: var(--text-4);
+}
+.phase-dot[data-status="active"] {
+  background: var(--accent-soft);
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  animation: sbPhasePulse 2s ease-in-out infinite;
+}
+.phase-dot[data-status="done"] {
+  background: var(--ok-soft);
+  border: 2px solid var(--ok);
+  color: var(--ok);
+}
+.phase-dot[data-status="error"] {
+  background: var(--bad-soft);
+  border: 2px solid var(--bad);
+  color: var(--bad);
+}
+.phase-label {
+  font-size: 11px;
+  color: var(--text-4);
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  transition: color 0.25s;
+}
+.phase-node.is-active .phase-label { color: var(--accent); }
+.phase-node.is-done   .phase-label { color: var(--ok); }
+.phase-node.is-error  .phase-label { color: var(--bad); }
+.phase-connector {
+  flex: 1;
+  height: 2px;
+  background: var(--line-2);
+  margin-top: 19px; /* aligns with center of 40px dot */
+  min-width: 16px;
+  transition: background 0.4s;
+}
+.phase-connector.done { background: var(--ok); }
+@keyframes sbPhasePulse {
+  0%, 100% { box-shadow: 0 0 0 0   var(--accent-soft); opacity: 1; }
+  50%       { box-shadow: 0 0 0 7px var(--accent-soft); opacity: 0.85; }
+}
+
+/* ── Live status message ───────────────────────────────────────── */
+.sb-status-msg {
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--text-2);
+  min-height: 20px;
+  line-height: 1.5;
+  padding: 0 8px;
+  transition: opacity 0.15s;
+}
+
+/* ── Raw log ───────────────────────────────────────────────────── */
+.sb-log-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-3);
+  user-select: none;
+  list-style: none;
+  padding: 6px 0;
+}
+.sb-log-toggle::-webkit-details-marker { display: none; }
+.sb-log-toggle .sb-toggle-arrow {
+  font-size: 8px;
+  transition: transform 0.2s;
+  display: inline-block;
+  color: var(--text-4);
+}
+.sb-raw-log-wrap[open] .sb-toggle-arrow { transform: rotate(90deg); }
+.sb-raw-log {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  line-height: 1.6;
+  margin-top: 4px;
+  scroll-behavior: smooth;
+}
+.rl { display: block; }
+.rl-success { color: var(--ok); }
+.rl-error   { color: var(--bad); }
+.rl-warning { color: var(--warn); }
+.rl-phase   { color: var(--accent); font-weight: 600; margin-top: 2px; }
+.rl-info    { color: var(--text-3); }
+.rl-debug   { color: var(--text-4); font-size: 10.5px; }
+.rl-status  { color: var(--text-4); }
+
+/* ── Success / error hero ──────────────────────────────────────── */
+.sb-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 28px 28px 24px;
+}
+.sb-icon-ring {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.sb-icon-ring.ok {
+  background: var(--ok-soft);
+  border: 2px solid var(--ok);
+  color: var(--ok);
+  animation: sbRingIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.sb-icon-ring.bad {
+  background: var(--bad-soft);
+  border: 2px solid var(--bad);
+  color: var(--bad);
+}
+@keyframes sbRingIn {
+  from { transform: scale(0.55); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.sb-file-card {
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  padding: 14px 18px;
+  text-align: left;
+  width: 100%;
+  max-width: 500px;
+  margin-top: 12px;
+}
+</style>
+
+{# ── Page header (always shown) ─────────────────────────────── #}
+<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
+  <div>
+    <div class="eyebrow"><span class="dot"></span> Diagnostics</div>
+    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">Support Bundle</h1>
+    <p class="text-[14px] text-text-2 max-w-[64ch]">
+      Collect Platform health endpoints, logs, system info, and a redacted Atlas config snapshot
+      into a single ZIP — attach it to your Itential support ticket.
+    </p>
+  </div>
+</header>
+
+{% if job %}
+
+  {# ════════════════════════════════════════════════════════════ #}
+  {#   RUNNING VIEW                                               #}
+  {# ════════════════════════════════════════════════════════════ #}
+  {% if job.status in ('running', 'queued') %}
+
+  {% set _tier   = job.metadata.get('tier', tier) %}
+  {% set _ticket = job.metadata.get('ticket', '') %}
+  {% set _is_ext = _tier != 'standard' %}
+
+  <div class="max-w-[660px] mx-auto">
+    <div class="card">
+      <div class="card-head">
+        <h3>Collecting bundle…</h3>
+        <span class="sub">
+          {{ _tier | capitalize }} tier
+          · {{ active_env or '—' }}
+          {% if _ticket %}· {{ _ticket }}{% endif %}
+        </span>
+      </div>
+      <div class="card-body" style="padding-top: 36px; padding-bottom: 28px;">
+
+        {# Phase stepper #}
+        <div class="sb-stepper"
+             id="sb-stepper"
+             data-job-id="{{ job.id }}"
+             data-is-extended="{{ 'true' if _is_ext else 'false' }}">
+
+          <div class="phase-node is-active" id="phase-health">
+            <div class="phase-dot" data-status="active">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <span class="phase-label">Platform<br>Health</span>
+          </div>
+
+          {% if _is_ext %}
+          <div class="phase-connector" data-after="phase-health" id="conn-health"></div>
+          <div class="phase-node" id="phase-logs">
+            <div class="phase-dot" data-status="pending">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            </div>
+            <span class="phase-label">SSH Logs &<br>System Info</span>
+          </div>
+          <div class="phase-connector" data-after="phase-logs" id="conn-logs"></div>
+          {% else %}
+          <div class="phase-connector" data-after="phase-health" id="conn-health"></div>
+          {% endif %}
+
+          <div class="phase-node" id="phase-config">
+            <div class="phase-dot" data-status="pending">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+            </div>
+            <span class="phase-label">Config<br>Snapshot</span>
+          </div>
+
+          <div class="phase-connector" data-after="phase-config" id="conn-config"></div>
+
+          <div class="phase-node" id="phase-zip">
+            <div class="phase-dot" data-status="pending">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            </div>
+            <span class="phase-label">Assembling<br>ZIP</span>
+          </div>
+
+        </div>{# /sb-stepper #}
+
+        {# Live status #}
+        <div class="sb-status-msg" id="sb-current-status">Connecting…</div>
+
+        {# Raw log — collapsed by default #}
+        <details class="sb-raw-log-wrap mt-8 px-1" id="sb-log-wrap">
+          <summary class="sb-log-toggle">
+            <span class="sb-toggle-arrow">▶</span>
+            <span id="sb-log-label">Show technical output</span>
+          </summary>
+          <div class="sb-raw-log" id="sb-raw-log"></div>
+        </details>
+
+      </div>{# /card-body #}
+    </div>{# /card #}
+  </div>
+
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    var stepper = document.getElementById('sb-stepper');
+    if (!stepper) return;
+
+    var jobId  = stepper.dataset.jobId;
+    var isExt  = stepper.dataset.isExtended === 'true';
+
+    var phases = isExt
+      ? ['phase-health', 'phase-logs', 'phase-config', 'phase-zip']
+      : ['phase-health', 'phase-config', 'phase-zip'];
+
+    var curIdx = 0; // phase-health is already active
+
+    // Text fragments in jlogger messages that trigger phase transitions.
+    // Each entry advances the stepper to that phase when matched.
+    var triggers = [
+      { id: 'phase-logs',   frags: ['collecting ssh', 'ssh logs and system info'] },
+      { id: 'phase-config', frags: ['bundling atlas config', 'atlas config (redacted)'] },
+      { id: 'phase-zip',    frags: ['assembling zip'] },
+    ];
+
+    var checkSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    var xSvg     = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+    function phaseNode(id)  { return document.getElementById(id); }
+    function phaseDot(id)   { var n = phaseNode(id); return n ? n.querySelector('.phase-dot') : null; }
+    function connector(id)  { return document.querySelector('.phase-connector[data-after="' + id + '"]'); }
+
+    function setPhase(id, status) {
+      var node = phaseNode(id);
+      var dot  = phaseDot(id);
+      if (!node || !dot) return;
+      dot.dataset.status = status;
+      node.classList.toggle('is-active', status === 'active');
+      node.classList.toggle('is-done',   status === 'done');
+      node.classList.toggle('is-error',  status === 'error');
+      if (status === 'done')  dot.innerHTML = checkSvg;
+      if (status === 'error') dot.innerHTML = xSvg;
+    }
+
+    function markConnectorDone(afterPhaseId) {
+      var c = connector(afterPhaseId);
+      if (c) c.classList.add('done');
+    }
+
+    function advanceTo(phaseId) {
+      var idx = phases.indexOf(phaseId);
+      // Skip if phase not in our list (e.g. phase-logs for Standard) or already past
+      if (idx < 0 || idx <= curIdx) return;
+      for (var i = curIdx; i < idx; i++) {
+        setPhase(phases[i], 'done');
+        markConnectorDone(phases[i]);
+      }
+      curIdx = idx;
+      setPhase(phaseId, 'active');
+    }
+
+    var statusEl = document.getElementById('sb-current-status');
+    var rawLog   = document.getElementById('sb-raw-log');
+    var logLabel = document.getElementById('sb-log-label');
+    var logCount = 0;
+
+    var prefixes = {
+      phase:   '◈ ',
+      success: '✓ ',
+      warning: '⚠ ',
+      error:   '✕ ',
+      info:    '  ',
+      debug:   '· ',
+      status:  '  ',
+    };
+
+    function appendLog(kind, msg) {
+      if (!rawLog) return;
+      var el = document.createElement('span');
+      el.className = 'rl rl-' + kind;
+      el.textContent = (prefixes[kind] || '  ') + msg;
+      rawLog.appendChild(el);
+      // Auto-scroll only if the raw log panel is open
+      if (rawLog.parentElement && rawLog.parentElement.open) {
+        rawLog.scrollTop = rawLog.scrollHeight;
+      }
+      logCount++;
+      if (logLabel) logLabel.textContent = 'Technical output (' + logCount + ' lines)';
+    }
+
+    var es = new EventSource('/jobs/' + jobId + '/stream');
+    var errorCount = 0;
+
+    function cleanup() {
+      if (es) { try { es.close(); } catch (_) {} es = null; }
+    }
+    document.addEventListener('htmx:beforeSwap', cleanup, { once: true });
+    window.addEventListener('pagehide', cleanup, { once: true });
+
+    function handleEvent(ev) {
+      errorCount = 0;
+      var data; try { data = JSON.parse(ev.data); } catch (_) { return; }
+      var kind = data.kind || ev.type || 'info';
+      var msg  = data.message || '';
+      var lower = msg.toLowerCase();
+
+      // Phase detection
+      for (var t = 0; t < triggers.length; t++) {
+        var trig = triggers[t];
+        for (var f = 0; f < trig.frags.length; f++) {
+          if (lower.indexOf(trig.frags[f]) >= 0) {
+            advanceTo(trig.id);
+            break;
+          }
+        }
+      }
+
+      // Update status bar (skip debug noise)
+      if (kind !== 'debug' && statusEl) statusEl.textContent = msg;
+
+      // Append to raw log
+      appendLog(kind, msg);
+    }
+
+    // Server sends typed events — onmessage only fires for "event: message"
+    // which is never used here. Bind each kind individually.
+    ['info', 'success', 'warning', 'error', 'phase', 'debug'].forEach(function (k) {
+      es.addEventListener(k, handleEvent);
+    });
+
+    es.addEventListener('status', function (ev) {
+      var data; try { data = JSON.parse(ev.data); } catch (_) { return; }
+      var ok = ((data.data || {}).status || data.status || '') === 'succeeded';
+
+      appendLog('status', data.message || (ok ? 'Job succeeded' : 'Job failed'));
+
+      // Mark any remaining phases
+      for (var i = curIdx; i < phases.length; i++) {
+        setPhase(phases[i], ok ? 'done' : (i === curIdx ? 'error' : 'done'));
+        if (ok) markConnectorDone(phases[i]);
+      }
+      if (statusEl) statusEl.textContent = ok ? 'Bundle assembled — loading result…' : 'Collection failed.';
+      cleanup();
+      setTimeout(function () { window.location.reload(); }, 900);
+    });
+
+    // Let EventSource auto-reconnect on transient errors; only log after 3 failures.
+    es.onerror = function () {
+      errorCount++;
+      if (errorCount >= 3) {
+        appendLog('warning', 'Stream connection lost — retrying…');
+      }
+    };
+  }());
+  </script>
+
+
+  {# ════════════════════════════════════════════════════════════ #}
+  {#   SUCCESS VIEW                                               #}
+  {# ════════════════════════════════════════════════════════════ #}
+  {% elif job.status == 'succeeded' and job.result and job.result.ok %}
+
+  <div class="max-w-[640px] mx-auto">
+    <div class="card" style="border-color: oklch(80% .14 155 / .45);">
+      <div class="card-body sb-hero">
+
+        {# Success ring + checkmark #}
+        <div class="sb-icon-ring ok">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+
+        <h2 class="m-0 mb-1 text-[24px] font-semibold tracking-[-0.025em]" style="color: var(--ok);">
+          Bundle ready
+        </h2>
+        <p class="text-[13px] text-text-2 m-0 max-w-[44ch] leading-relaxed">
+          Your support bundle is assembled and ready to download.
+        </p>
+
+        {# File info card #}
+        <div class="sb-file-card">
+          <div class="flex items-start justify-between gap-4 mb-3">
+            <div class="min-w-0">
+              <div class="text-[10px] font-semibold text-text-4 uppercase tracking-[0.08em] mb-1">Filename</div>
+              <div class="text-[13px] font-mono text-text leading-snug break-all">{{ job.result.bundle_name }}</div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="text-[10px] font-semibold text-text-4 uppercase tracking-[0.08em] mb-1">Size</div>
+              <div class="text-[13px] font-mono text-text">{{ job.result.size_kb }}&nbsp;KB</div>
+            </div>
+          </div>
+
+          <div class="border-t border-line pt-3">
+            <div class="text-[10px] font-semibold text-text-4 uppercase tracking-[0.08em] mb-2">Contents</div>
+            <div class="flex flex-col gap-1.5">
+              {% for item in (job.result.collected or []) %}
+              <div class="flex items-center gap-2">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--ok);flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+                <span class="text-[12.5px] text-text-2">{{ item }}</span>
+              </div>
+              {% endfor %}
+              {% for err in (job.result.errors or []) %}
+              <div class="flex items-center gap-2">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--warn);flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span class="text-[12px]" style="color:var(--warn);">{{ err }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# Download button + links #}
+        <div class="flex flex-col items-center gap-2 mt-4 w-full max-w-[500px]">
+          <a class="btn primary w-full"
+             style="justify-content:center;font-size:14px;padding:10px 20px;border-radius:8px;gap:8px;"
+             href="/support-bundle/download/{{ job.id }}"
+             download="{{ job.result.bundle_name }}"
+             hx-boost="false">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download {{ job.result.bundle_name }}
+          </a>
+          <p class="text-[11.5px] text-text-4 m-0 text-center leading-relaxed">
+            Single-use — the file is removed from the server after download.
+            Save it before navigating away.
+          </p>
+          <div class="flex items-center gap-3 text-[12.5px]">
+            <a href="/support-bundle" class="text-accent hover:underline">Collect another</a>
+            <span class="text-text-4">·</span>
+            <a href="/jobs/{{ job.id }}" class="text-text-3 hover:text-accent hover:underline">View full output</a>
+          </div>
+        </div>
+
+      </div>{# /card-body #}
+    </div>{# /card #}
+  </div>
+
+
+  {# ════════════════════════════════════════════════════════════ #}
+  {#   ERROR VIEW                                                 #}
+  {# ════════════════════════════════════════════════════════════ #}
+  {% else %}
+
+  <div class="max-w-[520px] mx-auto">
+    <div class="card" style="border-color: oklch(72% .16 25 / .45);">
+      <div class="card-body sb-hero">
+
+        <div class="sb-icon-ring bad">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+
+        <h2 class="m-0 mb-2 text-[24px] font-semibold tracking-[-0.02em]" style="color: var(--bad);">
+          Collection failed
+        </h2>
+
+        {% if job.error %}
+        <p class="text-[13px] text-text-2 m-0 mb-6 max-w-[38ch] leading-relaxed">{{ job.error }}</p>
+        {% elif job.result and not job.result.ok and job.result.error %}
+        <p class="text-[13px] text-text-2 m-0 mb-6 max-w-[38ch] leading-relaxed">{{ job.result.error }}</p>
+        {% else %}
+        <p class="text-[13px] text-text-2 m-0 mb-6">An error occurred while building the support bundle.</p>
+        {% endif %}
+
+        <div class="flex items-center gap-3">
+          <a class="btn primary" href="/support-bundle">Try again</a>
+          <a class="btn" href="/jobs/{{ job.id }}">View full output</a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  {% endif %}
+
+
+{# ════════════════════════════════════════════════════════════════ #}
+{#   FORM VIEW (no job param)                                       #}
+{# ════════════════════════════════════════════════════════════════ #}
+{% else %}
+
+<div class="grid grid-cols-1 lg:grid-cols-[1fr_296px] gap-4 items-start">
+
+  <section class="card">
+    <div class="card-head">
+      <h3>Collect bundle</h3>
+      <span class="sub">{{ tier | capitalize }} tier · {{ active_env or '—' }}</span>
+    </div>
+    <div class="card-body">
+      <form action="/support-bundle/run" method="post" class="flex flex-col gap-5">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <div>
+          <label for="sb-ticket"
+                 class="block text-[11px] font-semibold text-text-3 uppercase tracking-[0.07em] mb-1.5">
+            Support ticket number
+          </label>
+          <input type="text" id="sb-ticket" name="ticket"
+                 required maxlength="9" pattern="ISD-\d{4,5}"
+                 title="Enter ISD- followed by 4 or 5 digits (e.g. ISD-1234)"
+                 value="ISD-" placeholder="ISD-1234"
+                 autocomplete="off" spellcheck="false"
+                 class="w-full text-[13px] font-mono px-3 py-2 bg-surface-2 border border-line rounded-md focus:border-accent focus:outline-none">
+          <p class="text-[11px] text-text-4 mt-1 m-0">
+            Appears in the ZIP filename and manifest —
+            e.g. <code class="font-mono">atlas-support-bundle-ISD-1234-…zip</code>
+          </p>
+        </div>
+
+        <div>
+          <label for="sb-desc"
+                 class="block text-[11px] font-semibold text-text-3 uppercase tracking-[0.07em] mb-1.5">
+            Description
+            <span class="text-text-4 font-normal normal-case tracking-normal">(optional)</span>
+          </label>
+          <textarea id="sb-desc" name="description" rows="3" maxlength="512"
+                    placeholder="Brief description of the issue…"
+                    class="w-full text-[13px] px-3 py-2 bg-surface-2 border border-line rounded-md focus:border-accent focus:outline-none resize-y"></textarea>
+        </div>
+
+        <div>
+          <label for="sb-days"
+                 class="block text-[11px] font-semibold text-text-3 uppercase tracking-[0.07em] mb-1.5">
+            Log window
+          </label>
+          <div class="flex items-center gap-2">
+            <input type="number" id="sb-days" name="log_days" value="7" min="1" max="30"
+                   class="w-24 text-[13px] font-mono px-3 py-2 bg-surface-2 border border-line rounded-md focus:border-accent focus:outline-none">
+            <span class="text-[13px] text-text-3">days</span>
+          </div>
+          {% if tier == 'standard' %}
+          <p class="text-[11px] text-text-4 mt-1 m-0 italic">
+            SSH logs require Extended tier — this setting is unused in Standard mode.
+          </p>
+          {% else %}
+          <p class="text-[11px] text-text-4 mt-1 m-0">
+            Look back this many days when fetching platform, webserver, and MongoDB logs via SSH.
+          </p>
+          {% endif %}
+        </div>
+
+        <div class="pt-1">
+          <button class="btn primary" type="submit" data-loading-label="Collecting…">Collect bundle</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <aside class="card">
+    <div class="card-head"><h3>What's collected</h3></div>
+    <div class="card-body flex flex-col gap-4 text-[13px]">
+
+      <div>
+        <div class="font-semibold text-text mb-1 text-[12.5px]">Platform health endpoints</div>
+        <div class="text-[11.5px] text-text-3 leading-relaxed">
+          <code class="font-mono">/health/status</code> ·
+          <code class="font-mono">/health/server</code> ·
+          <code class="font-mono">/health/adapters</code> ·
+          <code class="font-mono">/health/applications</code> ·
+          <code class="font-mono">/server/config</code>
+        </div>
+      </div>
+
+      <div>
+        <div class="font-semibold text-text mb-1 text-[12.5px]">Atlas config (redacted)</div>
+        <div class="text-[11.5px] text-text-3">Active config snapshot — credentials replaced with <code class="font-mono">***</code></div>
+      </div>
+
+      {% if tier != 'standard' %}
+      <div>
+        <div class="flex items-center gap-1.5 mb-1">
+          <span class="font-semibold text-text text-[12.5px]">SSH logs</span>
+          <span class="chip text-[10px]">Extended</span>
+        </div>
+        <div class="text-[11.5px] text-text-3">Platform, webserver, and MongoDB log analysis from the primary IAP node</div>
+      </div>
+      <div>
+        <div class="flex items-center gap-1.5 mb-1">
+          <span class="font-semibold text-text text-[12.5px]">System info</span>
+          <span class="chip text-[10px]">Extended</span>
+        </div>
+        <div class="text-[11.5px] text-text-3">OS version, memory, disk, CPU, and uptime</div>
+      </div>
+      {% else %}
+      <div class="text-[11.5px] text-text-4 italic border-t border-line pt-3">
+        Switch to Extended tier to include SSH logs and system info in the bundle.
+      </div>
+      {% endif %}
+
+      <div class="border-t border-line pt-3 text-[11px] text-text-4 leading-relaxed">
+        All passwords, tokens, and secrets are redacted before bundling.
+        The ZIP is written to a temp file and removed after download.
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+{% endif %}
+
+{% endblock %}

@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from platform_atlas.core._version import __version__ as ATLAS_VERSION
 from platform_atlas.core.context import ctx
 from platform_atlas.core.handlers.config import (
+    DoctorRow,
     collect_doctor_rows,
     probe_gateway4_url,
     probe_platform_url,
@@ -26,6 +27,7 @@ _templates = get_templates()
 async def view_config(request: Request) -> HTMLResponse:
     cfg = config_svc.read_config()
     return _templates.TemplateResponse(
+        request,
         "config/view.html",
         template_context(
             request,
@@ -35,8 +37,10 @@ async def view_config(request: Request) -> HTMLResponse:
     )
 
 
-def _row_to_dict(row: tuple[str, str, str, str]) -> dict[str, str]:
-    """Tuple → dict shape expected by the Jinja partial."""
+def _row_to_dict(row: "DoctorRow | tuple[str, str, str, str]") -> dict[str, str]:
+    """DoctorRow or legacy tuple → dict shape expected by the Jinja partial."""
+    if isinstance(row, DoctorRow):
+        return {"label": row.label, "status": row.status, "detail": row.detail, "suggestion": row.suggest}
     label, status, detail, suggestion = row
     return {"label": label, "status": status, "detail": detail, "suggestion": suggestion}
 
@@ -56,8 +60,8 @@ async def view_doctor(request: Request) -> HTMLResponse:
     )
 
     counts = {"ok": 0, "warn": 0, "fail": 0}
-    for _, status, _, _ in rows:
-        counts[status] = counts.get(status, 0) + 1
+    for row in rows:
+        counts[row.status] = counts.get(row.status, 0) + 1
 
     # Decide which URL probes are even applicable for the current config.
     # An unset Gateway4 URI is intentional (it's optional), so we don't add
@@ -80,6 +84,7 @@ async def view_doctor(request: Request) -> HTMLResponse:
         overall = "ok"
 
     return _templates.TemplateResponse(
+        request,
         "config/doctor.html",
         template_context(
             request,
@@ -117,6 +122,7 @@ async def view_doctor_probe(request: Request, kind: str) -> HTMLResponse:
             "",
         )
         return _templates.TemplateResponse(
+            request,
             "config/_doctor_row.html",
             template_context(request, row=_row_to_dict(row)),
         )
@@ -129,6 +135,7 @@ async def view_doctor_probe(request: Request, kind: str) -> HTMLResponse:
         result = ("Gateway4 URL", "ok", "not configured (optional)", "")
 
     return _templates.TemplateResponse(
+        request,
         "config/_doctor_row.html",
         template_context(request, row=_row_to_dict(result), oob_decrement=True),
     )

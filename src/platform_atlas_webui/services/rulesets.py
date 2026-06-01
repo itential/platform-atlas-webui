@@ -115,15 +115,26 @@ def get_active_ruleset_summary() -> dict[str, Any]:
     except Exception:
         ruleset = None
 
+    # Build suppressed rule map {rule_number: reason} from the active config.
+    try:
+        suppressed_map: dict[str, str] = {
+            r["rule_number"]: r.get("reason", "")
+            for r in (ctx().config.skip_rules or [])
+            if isinstance(r, dict)
+        }
+    except Exception:
+        suppressed_map = {}
+
     rules: list[dict[str, Any]] = []
     if ruleset is not None:
         for r in ruleset.rules:
             d = r if isinstance(r, dict) else {}
             validation = d.get("validation") if isinstance(r, dict) else getattr(r, "validation", None)
             messages = d.get("messages") if isinstance(r, dict) else getattr(r, "messages", None) or {}
+            rule_number = d.get("rule_number", "")
             rules.append({
-                "id":             d.get("id") or d.get("rule_number", ""),
-                "rule_number":    d.get("rule_number", ""),
+                "id":             d.get("id") or rule_number,
+                "rule_number":    rule_number,
                 "name":           d.get("name", ""),
                 "description":    d.get("description", ""),
                 "category":       d.get("category", ""),
@@ -135,6 +146,11 @@ def get_active_ruleset_summary() -> dict[str, Any]:
                 # the base ruleset itself). Drives the muted "Disabled in
                 # profile" pill in the active-ruleset table.
                 "disabled_by_profile": bool(d.get("disabled_by_profile", False)),
+                # True when the rule is in the active environment's skip_rules.
+                # These rules still run through validation but produce SKIP
+                # results labelled "Suppressed by user" in reports.
+                "suppressed_by_user": rule_number in suppressed_map,
+                "suppression_reason": suppressed_map.get(rule_number, ""),
                 "path":           d.get("path", ""),
                 "alt_path":       d.get("alt_path", ""),
                 "validation":     validation or {},
@@ -149,11 +165,14 @@ def get_active_ruleset_summary() -> dict[str, Any]:
     sev_counts: dict[str, int] = {}
     cat_counts: dict[str, int] = {}
     enabled_count = 0
+    suppressed_count = 0
     for r in rules:
         sev_counts[r["severity"] or "unspecified"] = sev_counts.get(r["severity"] or "unspecified", 0) + 1
         cat_counts[r["category"] or "uncategorized"] = cat_counts.get(r["category"] or "uncategorized", 0) + 1
         if r["enabled"]:
             enabled_count += 1
+        if r["suppressed_by_user"]:
+            suppressed_count += 1
 
     meta = _get_active_ruleset_meta(rs_id)
 

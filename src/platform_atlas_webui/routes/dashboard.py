@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 
 from platform_atlas.core._version import __version__ as ATLAS_VERSION
+from platform_atlas.core.paths import ATLAS_RULESET_UPDATE_STATE
 
 from platform_atlas_webui.dependencies import get_templates, template_context
 from platform_atlas_webui.services import (
@@ -18,6 +21,17 @@ from platform_atlas_webui.services.jobs import get_registry
 
 router = APIRouter()
 _templates = get_templates()
+
+
+def _ruleset_update_notice() -> list[dict]:
+    """Return pending ruleset updates from the state file, or [] if none."""
+    try:
+        if not ATLAS_RULESET_UPDATE_STATE.is_file():
+            return []
+        with open(ATLAS_RULESET_UPDATE_STATE, encoding="utf-8") as f:
+            return json.load(f).get("updates", [])
+    except Exception:
+        return []
 
 
 def _gather_dashboard_data() -> dict:
@@ -39,6 +53,7 @@ def _gather_dashboard_data() -> dict:
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request) -> HTMLResponse:
     data = await run_in_threadpool(_gather_dashboard_data)
+    ruleset_updates = _ruleset_update_notice()
     sessions = data["sessions"]
     environments = data["environments"]
     ruleset_summary = data["ruleset_summary"]
@@ -70,6 +85,7 @@ async def dashboard(request: Request) -> HTMLResponse:
     }
 
     return _templates.TemplateResponse(
+        request,
         "dashboard.html",
         template_context(
             request,
@@ -81,5 +97,6 @@ async def dashboard(request: Request) -> HTMLResponse:
             ruleset=ruleset_summary,
             recent_jobs=recent_jobs,
             calendar=calendar,
+            ruleset_updates=ruleset_updates,
         ),
     )

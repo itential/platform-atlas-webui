@@ -28,6 +28,7 @@ from platform_atlas_webui.routes import (
     notifications as _notifications,
     fleet as _fleet,
     search as _search,
+    support_bundle as _support_bundle,
 )
 
 
@@ -57,3 +58,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(_notifications.router)
     app.include_router(_fleet.router)
     app.include_router(_search.router)
+    app.include_router(_support_bundle.router)

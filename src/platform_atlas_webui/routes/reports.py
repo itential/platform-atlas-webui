@@ -49,6 +49,7 @@ async def list_reports(request: Request) -> HTMLResponse:
         })
 
     return _templates.TemplateResponse(
+        request,
         "reports/list.html",
         template_context(request, reports=reports),
     )
@@ -151,6 +152,7 @@ async def view_session_report(name: str, request: Request) -> HTMLResponse:
             detail=f"Session '{name}' has no generated report yet — run validate + report first.",
         )
     return _templates.TemplateResponse(
+        request,
         "reports/view.html",
         template_context(
             request,
@@ -242,4 +244,10 @@ async def view_session_viewmodel(name: str, refresh: bool = False) -> JSONRespon
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    return JSONResponse(viewmodel)
+    # The viewmodel is persisted to disk at report-generation time and only
+    # changes on explicit ?refresh=1. A 2-minute browser cache eliminates
+    # redundant 500 KB+ downloads on HTMX back/forward and tab switches.
+    # ?refresh=1 gets no-store so the browser always re-fetches that URL
+    # (the base URL's cache will be updated on the next normal load).
+    cache_header = "no-store" if refresh else "private, max-age=120"
+    return JSONResponse(viewmodel, headers={"Cache-Control": cache_header})

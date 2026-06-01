@@ -95,7 +95,7 @@
   // ── Kill button timer ──────────────────────────────────────────
   if (killBar && startedAt) {
     var elapsed = Date.now() / 1000 - startedAt;
-    var delay = Math.max(0, 60 - elapsed) * 1000;
+    var delay = Math.max(0, 300 - elapsed) * 1000;
     killTimer = setTimeout(function () {
       killTimer = null;
       // isConnected guard handles the race where the timer fires after
@@ -379,238 +379,425 @@
     }
   }
 
-  // ── Pipeline progress bar (Run full pipeline only) ───────────
-  // Per-stage state tracking: each stop independently goes pending → active
-  // → pass | fail. The fill bar is anchored to the highest "advanced past"
-  // stage and refuses to move past a failure point so the user has visual
-  // proof that Capture/Validate/Report each actually completed.
+  // ── Pipeline v2 (pp2) ─────────────────────────────────────────
+  // Support-bundle-style phase stepper + contextual activity panels.
+  // Three phases: Capture → Validate → Report.  Each phase gets a
+  // stage-appropriate activity card (module list, agg pipelines,
+  // validate categories, report checklist).  Terminal state renders
+  // a hero success/error screen instead of the old inline mini-report.
   var isPipeline = streamEl.dataset.jobKind === 'pipeline';
-  var ppEl = isPipeline ? document.getElementById('pipeline-progress') : null;
-  var ppStatus = isPipeline ? document.getElementById('pp-status') : null;
-  var ppFill = isPipeline ? document.getElementById('pp-fill') : null;
-  var ppStops = isPipeline ? [
-    null,
-    document.getElementById('pp-stop-1'),
-    document.getElementById('pp-stop-2'),
-    document.getElementById('pp-stop-3')
+
+  var pp2Phases = isPipeline ? [null,
+    document.getElementById('pp2-ph-1'),
+    document.getElementById('pp2-ph-2'),
+    document.getElementById('pp2-ph-3'),
   ] : null;
-  var STAGE_LABEL = { 1: 'Capture', 2: 'Validate', 3: 'Report' };
-  // 'pending' | 'active' | 'pass' | 'fail' — index 0 unused
-  var stageState = [null, 'pending', 'pending', 'pending'];
-  var currentStage = 0;
+  var pp2Conns = isPipeline ? [null,
+    document.getElementById('pp2-conn-1'),
+    document.getElementById('pp2-conn-2'),
+  ] : null;
+  var pp2RunningView = isPipeline ? document.getElementById('pp2-running-view') : null;
+  var pp2SuccessView = isPipeline ? document.getElementById('pp2-success-view') : null;
+  var pp2ErrorView   = isPipeline ? document.getElementById('pp2-error-view')   : null;
+  var pp2StageNameEl = isPipeline ? document.getElementById('pp2-stage-name')   : null;
+  var pp2ElapsedEl   = isPipeline ? document.getElementById('pp2-elapsed')      : null;
+  var pp2StatusEl    = isPipeline ? document.getElementById('pp2-status')       : null;
+  var pp2ActivityEl  = isPipeline ? document.getElementById('pp2-activity')     : null;
+  var pp2LogLabelEl  = isPipeline ? document.getElementById('pp2-log-label')    : null;
 
-  function ppApplyClasses(stage) {
-    if (!ppStops || !ppStops[stage]) return;
-    var s = ppStops[stage];
-    s.classList.remove('is-active', 'is-done', 'is-pass', 'is-fail');
-    var st = stageState[stage];
-    if (st === 'active') s.classList.add('is-active');
-    else if (st === 'pass') { s.classList.add('is-done', 'is-pass'); }
-    else if (st === 'fail') { s.classList.add('is-done', 'is-fail'); }
+  // Phase state (1-indexed; index 0 unused)
+  var pp2State = [null, 'pending', 'pending', 'pending'];
+  var pp2CurrentStage = 0;
+
+  // Per-stage sub-state
+  var pp2Tier      = '';     // 'standard' | 'extended'
+  var pp2CollDone  = false;  // received "Collection pass complete"
+  var pp2Modules   = [];     // module names from "  ✓ name" post-collection
+  var pp2AggTotal  = 0;
+  var pp2Aggs      = {};     // idx → {name,collection,status,meta}
+  var pp2ValCats   = [];     // [{name,pass,fail,skip}]
+  var pp2Reports   = { compliance: false, operational: false, architecture: false };
+  var pp2ElapsedTimer = null;
+  var pp2LastMsg    = '';   // last meaningful activity line during the silent collect wait
+  var pp2TierDetail = '';   // e.g. "107 rules" extracted from the tier announcement
+
+  // Elapsed clock
+  if (isPipeline && pp2ElapsedEl && startedAt) {
+    pp2ElapsedTimer = setInterval(function () {
+      var s = Math.floor(Date.now() / 1000 - startedAt);
+      var m = Math.floor(s / 60);
+      pp2ElapsedEl.textContent = m + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
+    }, 1000);
+    // Register cleanup alongside the main EventSource cleanup
+    document.addEventListener('htmx:beforeSwap', function () {
+      if (pp2ElapsedTimer) { clearInterval(pp2ElapsedTimer); pp2ElapsedTimer = null; }
+    }, { once: true });
+    window.addEventListener('pagehide', function () {
+      if (pp2ElapsedTimer) { clearInterval(pp2ElapsedTimer); pp2ElapsedTimer = null; }
+    }, { once: true });
   }
-  function ppSetFill(pct, isFail) {
-    if (!ppEl) return;
-    ppEl.style.setProperty('--pp-pct', pct + '%');
-    if (ppFill) ppFill.classList.toggle('is-fail', !!isFail);
+
+  var PP2_CHECK = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+  var PP2_X     = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+  function pp2Esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
-  function ppMarkActive(stage) {
-    if (!ppEl || stage < 1 || stage > 3) return;
-    // Don't move backward — once a stage has a terminal state, leave it.
-    if (currentStage > stage) return;
-    // Any earlier stage that hasn't been explicitly marked pass/fail counts
-    // as pass at this point (the runner only emits "Stage N of 3" for N+1
-    // after N completed successfully).
-    for (var i = 1; i < stage; i++) {
-      if (stageState[i] === 'pending' || stageState[i] === 'active') {
-        stageState[i] = 'pass';
-        ppApplyClasses(i);
+
+  function pp2SetPhase(n, status) {
+    if (!pp2Phases || !pp2Phases[n]) return;
+    var node = pp2Phases[n];
+    var dot = node.querySelector('.pp2-dot');
+    if (!dot) return;
+    dot.dataset.status = status;
+    node.classList.toggle('is-active', status === 'active');
+    node.classList.toggle('is-done',   status === 'done');
+    node.classList.toggle('is-error',  status === 'error');
+    if (status === 'done')  dot.innerHTML = PP2_CHECK;
+    if (status === 'error') dot.innerHTML = PP2_X;
+  }
+
+  function pp2ConnDone(n) {
+    if (pp2Conns && pp2Conns[n]) pp2Conns[n].classList.add('done');
+  }
+
+  var PP2_LABELS = ['', 'Stage 1 of 3 — Capture', 'Stage 2 of 3 — Validate', 'Stage 3 of 3 — Report'];
+
+  function pp2AdvanceTo(n) {
+    if (!isPipeline || n < 1 || n > 3 || pp2CurrentStage >= n) return;
+    for (var i = pp2CurrentStage; i < n; i++) {
+      if (pp2State[i] && pp2State[i] !== 'error') {
+        pp2State[i] = 'done'; pp2SetPhase(i, 'done'); pp2ConnDone(i);
       }
     }
-    stageState[stage] = 'active';
-    currentStage = stage;
-    ppApplyClasses(stage);
-    var pct = ((stage - 1) / 3) * 100 + 8;
-    ppSetFill(pct, false);
-    if (ppStatus) ppStatus.innerHTML = 'Stage ' + stage + ' of 3 &mdash; <b>' + STAGE_LABEL[stage] + '</b>';
+    pp2State[n] = 'active';
+    pp2CurrentStage = n;
+    pp2SetPhase(n, 'active');
+    if (pp2StageNameEl) pp2StageNameEl.textContent = PP2_LABELS[n] || '';
+    pp2ResetActivity(n);
   }
-  function ppMarkPass(stage) {
-    if (!ppEl || stage < 1 || stage > 3) return;
-    stageState[stage] = 'pass';
-    ppApplyClasses(stage);
-    ppSetFill((stage / 3) * 100, false);
+
+  function pp2StagePass(n) {
+    pp2State[n] = 'done'; pp2SetPhase(n, 'done'); pp2ConnDone(n);
   }
-  function ppMarkFail(stage) {
-    if (!ppEl || stage < 1 || stage > 3) return;
-    stageState[stage] = 'fail';
-    ppApplyClasses(stage);
-    // Pin the fill to "just past the previous stage" so it visibly stops
-    // before the failed dot — never advance through a failure.
-    ppSetFill(((stage - 1) / 3) * 100 + 8, true);
-    if (ppStatus) {
-      ppStatus.innerHTML = '<b style="color:var(--bad)">Stage ' + stage + ' of 3 failed &mdash; ' + STAGE_LABEL[stage] + '</b>';
+
+  function pp2StageFail(n) {
+    if (n < 1 || n > 3) return;
+    pp2State[n] = 'error'; pp2SetPhase(n, 'error');
+  }
+
+  function pp2AllDone() {
+    for (var i = 1; i <= 3; i++) {
+      if (pp2State[i] !== 'error') { pp2State[i] = 'done'; pp2SetPhase(i, 'done'); }
     }
+    pp2ConnDone(1); pp2ConnDone(2);
+    if (pp2StageNameEl) pp2StageNameEl.textContent = 'Pipeline complete';
   }
-  function ppAllPassed() {
-    return stageState[1] === 'pass' && stageState[2] === 'pass' && stageState[3] === 'pass';
-  }
-  function ppHandle(message) {
-    if (!ppEl || !message) return;
-    var m = String(message);
-    var match = m.match(/Stage\s+(\d)\s+of\s+3/i);
-    if (match) { ppMarkActive(parseInt(match[1], 10)); return; }
-    var cm = m.match(/^Stage\s+(\d)\s+complete/i);
-    if (cm) {
-      var s = parseInt(cm[1], 10);
-      ppMarkPass(s);
-      return;
-    }
-    if (/^Pipeline halted at Capture/i.test(m))   { ppMarkFail(1); return; }
-    if (/^Pipeline halted at Validate/i.test(m))  { ppMarkFail(2); return; }
-    if (/^Report stage failed/i.test(m))           { ppMarkFail(3); return; }
-    if (/^Pipeline complete/i.test(m)) {
-      // Force any still-pending/active stage to pass (the runner only emits
-      // this line once all three sub-jobs returned ok=True).
-      for (var i = 1; i <= 3; i++) {
-        if (stageState[i] !== 'fail') { stageState[i] = 'pass'; ppApplyClasses(i); }
-      }
-      ppSetFill(100, false);
-      if (ppStatus) ppStatus.innerHTML = '<b style="color:var(--ok)">Pipeline complete</b>';
+
+  // ── Activity panel ─────────────────────────────────────────
+  function pp2ResetActivity(stage) {
+    if (!pp2ActivityEl) return;
+    if (stage === 1) {
+      pp2CollDone = false; pp2Modules = []; pp2Aggs = {}; pp2AggTotal = 0;
+      pp2LastMsg = ''; pp2TierDetail = '';
+      pp2RenderCapture();
+    } else if (stage === 2) {
+      pp2ValCats = []; pp2RenderValidate();
+    } else if (stage === 3) {
+      pp2RenderReport();
     }
   }
 
-  // ── Collapsible logs (pipeline only) ──────────────────────────
-  // The verbose live-output stream is hidden by default for pipelines so
-  // the post-success mini-report has the screen to itself. Users can
-  // expand to see the raw event log if they want.
-  var logsToggle = document.getElementById('logs-toggle');
-  var logsBody   = document.getElementById('logs-body');
-  if (logsToggle && logsBody) {
-    logsToggle.addEventListener('click', function () {
-      var expanded = logsToggle.getAttribute('aria-expanded') === 'true';
-      var next = !expanded;
-      logsToggle.setAttribute('aria-expanded', next ? 'true' : 'false');
-      var label = logsToggle.querySelector('.label');
-      if (label) label.textContent = next ? 'Hide live output & debug log' : 'Show live output & debug log';
-      if (next) { logsBody.removeAttribute('hidden'); }
-      else      { logsBody.setAttribute('hidden', ''); }
-    });
-  }
+  var ICON_CHECK_SM = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:var(--ok);flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>';
+  var ICON_CIRCLE_SM = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-4);flex-shrink:0"><circle cx="12" cy="12" r="9"/></svg>';
 
-  // ── Mini-report rendering (pipeline succeeded) ────────────────
-  // Only revealed when (a) the terminal status was 'succeeded' AND (b)
-  // every stop is in 'pass' state. If the pipeline halted partway, the
-  // mini-report stays hidden and the failed dot does the talking.
-  function loadMiniReport() {
-    var host = document.getElementById('mini-report');
-    if (!host) return;
-    var sessionName = host.dataset.sessionName;
-    if (!sessionName) return;
-    fetch('/sessions/' + encodeURIComponent(sessionName) + '/summary.json', {
-      credentials: 'same-origin',
-    })
-      .then(function (r) { if (!r.ok) throw new Error('summary fetch failed'); return r.json(); })
-      .then(function (data) { renderMiniReport(host, data); })
-      .catch(function (err) {
-        // Fail soft — the user still has the standard "Continue" button
-        // in the page header so the failure path isn't dead-ended.
-        appendLine({ kind: 'warning', message: 'Could not load mini-report summary: ' + err.message,
-                     timestamp: Date.now() / 1000 });
+  function pp2RenderCapture() {
+    if (!pp2ActivityEl) return;
+    var tierLabel = pp2Tier === 'standard' ? 'Standard' : pp2Tier === 'extended' ? 'Extended' : '';
+    var tierCls   = pp2Tier === 'standard' ? 'pp2-tier-std' : 'pp2-tier-ext';
+    var tierHtml  = tierLabel
+      ? '<span class="pp2-tier-badge ' + tierCls + '">'
+        + tierLabel + (pp2TierDetail ? ' · ' + pp2TierDetail : '') + '</span>'
+      : '';
+    var header = tierHtml ? '<div class="pp2-act-header">' + tierHtml + '</div>' : '';
+
+    var body;
+    if (Object.keys(pp2Aggs).length > 0) {
+      body = pp2AggHtml();
+    } else if (pp2CollDone && pp2Modules.length) {
+      var grid = '<div class="pp2-mod-grid">';
+      pp2Modules.forEach(function (name) {
+        grid += '<div class="pp2-mod-item is-done">' + ICON_CHECK_SM + '<span>' + pp2Esc(name) + '</span></div>';
       });
-  }
-  function renderMiniReport(host, data) {
-    var pct = data.compliance_pct || 0;
-    var fail = data.fail_count || 0;
-    document.getElementById('mr-eyebrow').textContent = fail === 0 ? 'PASSED · 100% PASS RATE' : 'COMPLETED · ' + fail + ' FINDING' + (fail === 1 ? '' : 'S');
-    document.getElementById('mr-title').textContent = 'Compliance audit · ' + (data.environment || data.name);
-    var subParts = [];
-    if (data.ruleset_id) subParts.push(data.ruleset_id);
-    if (data.ruleset_profile) subParts.push(data.ruleset_profile);
-    subParts.push(data.total_rules + ' rules');
-    document.getElementById('mr-sub').textContent = subParts.join(' · ');
-    document.getElementById('mr-pass').textContent = data.pass_count || 0;
-    document.getElementById('mr-fail').textContent = fail;
-    document.getElementById('mr-skip').textContent = data.skip_count || 0;
-
-    // Findings pills were removed from the compact mini-report; the full
-     // breakdown is one click away via "Open full report". Keep the host
-     // lookup defensive so future re-additions of #mr-pills just work.
-    var pillsHost = document.getElementById('mr-pills');
-    var fails = data.failures || [];
-    if (pillsHost) {
-      pillsHost.innerHTML = '';
-      fails.forEach(function (f) {
-        var p = document.createElement('span');
-        p.className = 'pmr-pill ' + (f.severity === 'critical' ? 'bad' : 'warn');
-        var rn = document.createElement('code');
-        rn.textContent = f.rule_number;
-        p.appendChild(rn);
-        p.appendChild(document.createTextNode(' ' + f.name));
-        pillsHost.appendChild(p);
-      });
-    }
-
-    var continueBtn = document.getElementById('mr-continue');
-    if (continueBtn) {
-      continueBtn.href = streamEl.dataset.returnUrl || ('/sessions/' + encodeURIComponent(data.name));
-    }
-    var openBtn = document.getElementById('mr-open-report');
-    if (openBtn) {
-      if (data.report_file_url) {
-        openBtn.href = data.report_file_url;
-        openBtn.removeAttribute('hidden');
-      } else {
-        openBtn.setAttribute('hidden', '');
-      }
-    }
-
-    host.removeAttribute('hidden');
-    animateMiniReport(pct, fails.length);
-  }
-  function animateMiniReport(pct, pillCount) {
-    var ring = document.getElementById('mr-ring');
-    var num = document.getElementById('mr-num');
-    var pills = document.querySelectorAll('#mr-pills .pmr-pill');
-    var C_LEN = 666;
-    // Use anime.js v4 if loaded (script tag in jobs/detail.html), with a
-    // plain-rAF fallback so a missing CDN never leaves the user looking
-    // at a static "0%" badge.
-    if (window.anime && typeof anime.animate === 'function') {
-      var proxy = { v: 0 };
-      anime.animate(proxy, {
-        v: pct, duration: 1500, ease: 'outQuart',
-        onUpdate: function () { if (num) num.textContent = Math.round(proxy.v) + '%'; },
-      });
-      anime.animate(ring, {
-        strokeDashoffset: C_LEN * (1 - pct/100),
-        duration: 1500, ease: 'outQuart',
-      });
-      if (pills.length) {
-        anime.animate(pills, {
-          opacity: [0, 1], translateY: [8, 0],
-          duration: 600, ease: 'outQuart',
-          delay: anime.stagger(40, { start: 700 }),
-        });
-      }
+      grid += '</div>';
+      body = grid;
     } else {
-      var DURATION = 1500;
-      var start = performance.now();
-      function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
-      function frame(now) {
-        var t = Math.min(1, (now - start) / DURATION);
-        var e = easeOutQuart(t);
-        if (ring) ring.setAttribute('stroke-dashoffset', String(C_LEN * (1 - (pct/100) * e)));
-        if (num)  num.textContent = Math.round(pct * e) + '%';
-        if (t < 1) requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
-      pills.forEach(function (p, i) {
-        setTimeout(function () {
-          p.style.transition = 'opacity 0.4s, transform 0.4s';
-          p.style.opacity = '1';
-          p.style.transform = 'translateY(0)';
-        }, 700 + i * 40);
-      });
+      var mainMsg = pp2CollDone ? 'Analyzing collected data…' : 'Collecting data from targets…';
+      body = '<div class="pp2-activity-msg"><span class="pp2-pulse-dot"></span>' + mainMsg + '</div>'
+        + (pp2LastMsg ? '<div class="pp2-act-sub">' + pp2Esc(pp2LastMsg) + '</div>' : '');
     }
+
+    pp2ActivityEl.innerHTML = header + '<div class="pp2-act-body">' + body + '</div>';
+    pp2ActivityEl.removeAttribute('hidden');
+  }
+
+  function pp2AggHtml() {
+    var keys = Object.keys(pp2Aggs).sort(function (a, b) { return +a - +b; });
+    if (!keys.length) return '<div class="pp2-agg-empty">Starting pipelines…</div>';
+    var html = '<div class="pp2-agg-list">';
+    keys.forEach(function (k) {
+      var ag = pp2Aggs[k];
+      var cls = 'pp2-agg-row' + (ag.status === 'running' ? ' is-running' : ag.status === 'done' ? ' is-done' : ag.status === 'error' ? ' is-error' : '');
+      var icon = ag.status === 'running' ? '●' : ag.status === 'done' ? '✓' : ag.status === 'error' ? '✗' : '○';
+      html += '<div class="' + cls + '">'
+        + '<span class="pp2-agg-icon">' + icon + '</span>'
+        + '<span class="pp2-agg-name">' + pp2Esc(ag.name) + ' <span style="opacity:.5">→</span> ' + pp2Esc(ag.collection) + '</span>'
+        + (ag.meta ? '<span class="pp2-agg-meta">' + pp2Esc(ag.meta) + '</span>' : '')
+        + '<span class="pp2-agg-idx">' + k + '/' + pp2AggTotal + '</span>'
+        + '</div>';
+    });
+    return html + '</div>';
+  }
+
+  function pp2RenderValidate() {
+    if (!pp2ActivityEl) return;
+    var html;
+    if (!pp2ValCats.length) {
+      html = '<div class="pp2-activity-msg"><span class="pp2-pulse-dot"></span>Evaluating rules…</div>';
+    } else {
+      var totPass = 0, totFail = 0, totSkip = 0;
+      pp2ValCats.forEach(function(c) { totPass += c.pass; totFail += c.fail; totSkip += c.skip; });
+      var summary = '<div class="pp2-val-summary">'
+        + '<span style="color:var(--ok)">✓ ' + totPass + ' pass</span>'
+        + (totFail ? ' <span style="color:var(--bad)">· ✗ ' + totFail + ' fail</span>' : '')
+        + (totSkip ? ' <span style="color:var(--text-4)">· ' + totSkip + ' skip</span>' : '')
+        + '</div>';
+      html = summary + '<div class="pp2-cat-grid">';
+      pp2ValCats.forEach(function (cat) {
+        var hasFail = cat.fail > 0;
+        html += '<div class="pp2-cat-row ' + (hasFail ? 'has-fail' : 'all-pass') + '">'
+          + '<span class="pp2-cat-name">' + pp2Esc(cat.name) + '</span>'
+          + '<span class="pp2-cat-counts"><b style="color:var(--ok)">' + cat.pass + '</b>'
+          + (hasFail ? ' <span style="color:var(--bad)">· ' + cat.fail + '</span>' : '')
+          + (cat.skip ? ' <span style="color:var(--text-4)">· ' + cat.skip + '</span>' : '')
+          + '</span></div>';
+      });
+      html += '</div>';
+    }
+    pp2ActivityEl.innerHTML = html;
+    pp2ActivityEl.removeAttribute('hidden');
+  }
+
+  function pp2RenderReport() {
+    if (!pp2ActivityEl) return;
+    var items = [
+      { key: 'compliance',   label: 'Compliance report' },
+      { key: 'operational',  label: 'Operational report', ext: true },
+      { key: 'architecture', label: 'Architecture report' },
+    ];
+    var html = '<div class="pp2-report-list">';
+    items.forEach(function (item) {
+      if (item.ext && pp2Tier === 'standard') return;
+      var done = pp2Reports[item.key];
+      html += '<div class="pp2-report-item' + (done ? ' is-done' : '') + '">'
+        + (done ? ICON_CHECK_SM : ICON_CIRCLE_SM)
+        + '<span>' + pp2Esc(item.label) + '</span></div>';
+    });
+    pp2ActivityEl.innerHTML = html + '</div>';
+    pp2ActivityEl.removeAttribute('hidden');
+  }
+
+  // ── Main pp2 event dispatcher ───────────────────────────────
+  // Robust patterns — accept common Unicode variants (✓/✔, ✗/✘/×, →/->, ·/•, —/-)
+  var PP2_CAT_RE  = /^\s+\S+\s+([\w][\w\-]*):\s+(\d+)\s+pass\s+[·•]\s+(\d+)\s+fail\s+[·•]\s+(\d+)\s+skip/;
+  var PP2_AGG_RUN = /\[(\d+)\/(\d+)\]\s+Running\s+(\S+)\s+(?:→|->)\s+(\S+)/;
+  var PP2_AGG_OK  = /\[(\d+)\/(\d+)\]\s+[✓✔]\s+(\S+)\s+[—\-]+\s+([\d,]+)\s+rows?\s+[·•]\s+([\d.]+)/;
+  var PP2_AGG_ERR = /\[(\d+)\/(\d+)\]\s+[✗✘×]\s+(\S+)/;
+  var PP2_SKIP    = [/^Stage\s+\d\s+of\s+3/i, /^Full pipeline\s+·/i, /^Three stages:/i, /^Pipeline\s+(complete|halted)/i];
+
+  function pp2Handle(payload) {
+    if (!isPipeline) return;
+    var msg = payload.message || '';
+    var kind = payload.kind || 'info';
+
+    // Stage transitions (from run_full_pipeline_job)
+    var sm = msg.match(/^Stage\s+(\d)\s+of\s+3/i);
+    if (sm) { pp2AdvanceTo(+sm[1]); }
+
+    var cm = msg.match(/^Stage\s+(\d)\s+complete\s+in/i);
+    if (cm) { pp2StagePass(+cm[1]); }
+
+    if (/^Pipeline complete$/i.test(msg.trim())) pp2AllDone();
+    if (/^Pipeline halted at Capture/i.test(msg))  pp2StageFail(1);
+    if (/^Pipeline halted at Validate/i.test(msg)) pp2StageFail(2);
+    if (/^Report stage failed/i.test(msg))          pp2StageFail(3);
+
+    // Live status message — skip boilerplate phase headers
+    if (pp2StatusEl && kind !== 'debug') {
+      var skip = PP2_SKIP.some(function (re) { return re.test(msg); });
+      if (!skip && msg.trim()) pp2StatusEl.textContent = msg.replace(/\s+/g, ' ').trim();
+    }
+
+    // Stage-specific activity
+    if (pp2CurrentStage === 1) {
+      // Tier detection — also extract rule count for the badge
+      if (!pp2Tier) {
+        var tmM = msg.match(/Tier:\s+(Standard|Extended)/i);
+        if (tmM) {
+          pp2Tier = tmM[1].toLowerCase();
+          var rmM = msg.match(/(\d+)\s+rules?/i);
+          pp2TierDetail = rmM ? rmM[1] + ' rules' : '';
+          pp2RenderCapture();
+        }
+      }
+      // Collection complete — clear the sub-label and re-render
+      if (/collection pass complete/i.test(msg) && !pp2CollDone) {
+        pp2CollDone = true; pp2LastMsg = ''; pp2RenderCapture();
+      }
+      // During the silent collection wait, show the last meaningful message as a sub-label
+      if (!pp2CollDone && kind !== 'debug') {
+        var skipLast = PP2_SKIP.some(function(re) { return re.test(msg); })
+          || /^Tier:/i.test(msg) || !msg.trim();
+        if (!skipLast) {
+          pp2LastMsg = msg.replace(/\s+/g, ' ').trim();
+          if (!Object.keys(pp2Aggs).length) pp2RenderCapture();
+        }
+      }
+      // Module names from "  ✓ / ✔ module" info events post-collection
+      if (pp2CollDone && kind === 'info' && !Object.keys(pp2Aggs).length) {
+        var mm = msg.match(/^\s+[✓✔]\s+(.+)$/);
+        if (mm) { pp2Modules.push(mm[1].trim()); pp2RenderCapture(); }
+      }
+      // Aggregation phase start
+      if (kind === 'phase' && /mongodb aggregation pipelines/i.test(msg)) {
+        var scm = msg.match(/pipelines\s*\(([^)]+)\)/i);
+        pp2AggTotal = 0;
+        var aggTitle = '<div class="pp2-activity-title">MongoDB aggregation pipelines'
+          + (scm ? ' — ' + pp2Esc(scm[1]) : '') + '</div>';
+        if (pp2ActivityEl) {
+          pp2ActivityEl.innerHTML = aggTitle + pp2AggHtml();
+          pp2ActivityEl.removeAttribute('hidden');
+        }
+      }
+      // Aggregation: pipeline starting
+      var arM = msg.match(PP2_AGG_RUN);
+      if (arM && kind === 'info') {
+        pp2AggTotal = +arM[2];
+        pp2Aggs[arM[1]] = { name: arM[3], collection: arM[4].replace(/[…\.]+$/, ''), status: 'running', meta: '' };
+        if (pp2ActivityEl) pp2ActivityEl.innerHTML = '<div class="pp2-activity-title">MongoDB aggregation pipelines</div>' + pp2AggHtml();
+        if (pp2ActivityEl) pp2ActivityEl.removeAttribute('hidden');
+      }
+      // Aggregation: pipeline done (info with ✓)
+      var aoM = msg.match(PP2_AGG_OK);
+      if (aoM && kind === 'info') {
+        var ai = aoM[1];
+        pp2Aggs[ai] = pp2Aggs[ai] || { name: aoM[3], collection: '?', status: 'done', meta: '' };
+        pp2Aggs[ai].status = 'done';
+        pp2Aggs[ai].meta = aoM[4] + ' rows · ' + Math.round(+aoM[5]) + ' ms';
+        if (pp2ActivityEl) pp2ActivityEl.innerHTML = '<div class="pp2-activity-title">MongoDB aggregation pipelines</div>' + pp2AggHtml();
+      }
+      // Aggregation: pipeline failed (warning with ✗)
+      var aeM = msg.match(PP2_AGG_ERR);
+      if (aeM && kind === 'warning') {
+        var ei = aeM[1];
+        pp2Aggs[ei] = pp2Aggs[ei] || { name: aeM[3], collection: '?', status: 'error', meta: '' };
+        pp2Aggs[ei].status = 'error';
+        if (pp2ActivityEl) pp2ActivityEl.innerHTML = '<div class="pp2-activity-title">MongoDB aggregation pipelines</div>' + pp2AggHtml();
+      }
+    }
+
+    if (pp2CurrentStage === 2) {
+      var catM = msg.match(PP2_CAT_RE);
+      if (catM && kind === 'info') {
+        pp2ValCats.push({ name: catM[1], pass: +catM[2], fail: +catM[3], skip: +catM[4] });
+        pp2RenderValidate();
+      }
+    }
+
+    if (pp2CurrentStage === 3 && kind === 'success') {
+      if (/compliance report/i.test(msg) && /ready/i.test(msg))  { pp2Reports.compliance  = true; pp2RenderReport(); }
+      if (/operational report/i.test(msg) && /ready/i.test(msg)) { pp2Reports.operational = true; pp2RenderReport(); }
+      if (/architecture report/i.test(msg) && /ready/i.test(msg)){ pp2Reports.architecture= true; pp2RenderReport(); }
+    }
+  }
+
+  // ── Success / error terminal screens ───────────────────────
+  function pp2ShowSuccess() {
+    pp2AllDone();
+    if (pp2ElapsedTimer) { clearInterval(pp2ElapsedTimer); pp2ElapsedTimer = null; }
+    var sessName = streamEl.dataset.sessionName || '';
+    if (!sessName) { pp2RevealSuccess({}); return; }
+    fetch('/sessions/' + encodeURIComponent(sessName) + '/summary.json', { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+      .then(function (d) { pp2RevealSuccess(d); })
+      .catch(function ()  { pp2RevealSuccess({}); });
+  }
+
+  function pp2RevealSuccess(data) {
+    if (!pp2RunningView || !pp2SuccessView) return;
+    var pct  = data.compliance_pct || 0;
+    var fail = data.fail_count  || 0;
+    var pass = data.pass_count  || 0;
+    var skip = data.skip_count  || 0;
+
+    var titleEl = document.getElementById('pp2-hero-title');
+    var subEl   = document.getElementById('pp2-hero-sub');
+    var pctEl   = document.getElementById('pp2-score-pct');
+    var passEl  = document.getElementById('pp2-pass-count');
+    var failEl  = document.getElementById('pp2-fail-count');
+    var skipEl  = document.getElementById('pp2-skip-count');
+
+    if (titleEl) titleEl.textContent = fail === 0 ? 'All rules passed' : 'Audit complete — ' + fail + ' finding' + (fail !== 1 ? 's' : '');
+    if (subEl) {
+      var parts = [];
+      if (data.environment) parts.push(data.environment);
+      if (data.ruleset_id)  parts.push(data.ruleset_id);
+      subEl.textContent = parts.join(' · ');
+    }
+    if (passEl) passEl.textContent = pass;
+    if (failEl) failEl.textContent = fail;
+    if (skipEl) skipEl.textContent = skip;
+    if (pctEl)  pctEl.style.color  = fail > 0 ? (pct >= 80 ? 'var(--warn)' : 'var(--bad)') : 'var(--ok)';
+
+    // Report links
+    var sessName  = streamEl.dataset.sessionName || (data.name || '');
+    var returnUrl = streamEl.dataset.returnUrl   || ('/sessions/' + encodeURIComponent(sessName));
+    var compBtn  = document.getElementById('pp2-link-compliance');
+    var sessBtn  = document.getElementById('pp2-link-session');
+    var altRow   = document.getElementById('pp2-alt-row');
+    if (compBtn && data.report_file_url) { compBtn.href = data.report_file_url; compBtn.removeAttribute('hidden'); }
+    if (sessBtn) { sessBtn.href = returnUrl; sessBtn.removeAttribute('hidden'); }
+    if (altRow)  { altRow.removeAttribute('hidden'); }
+
+    pp2RunningView.setAttribute('hidden', '');
+    pp2SuccessView.removeAttribute('hidden');
+
+    // Animate percentage count-up
+    if (pct > 0 && pctEl) {
+      var t0 = performance.now(), DUR = 1200;
+      (function frame(now) {
+        var prog = Math.min(1, (now - t0) / DUR);
+        var e = 1 - Math.pow(1 - prog, 4); // easeOutQuart
+        pctEl.textContent = Math.round(pct * e) + '%';
+        if (prog < 1) requestAnimationFrame(frame);
+      }(performance.now()));
+    } else if (pctEl) {
+      pctEl.textContent = Math.round(pct) + '%';
+    }
+  }
+
+  function pp2ShowError(errMsg) {
+    if (pp2ElapsedTimer) { clearInterval(pp2ElapsedTimer); pp2ElapsedTimer = null; }
+    if (!pp2RunningView || !pp2ErrorView) return;
+    var errEl = document.getElementById('pp2-error-msg');
+    if (errEl) errEl.textContent = errMsg || 'An error occurred. Check the output log for details.';
+    pp2RunningView.setAttribute('hidden', '');
+    pp2ErrorView.removeAttribute('hidden');
+  }
+
+  function pp2UpdateLogLabel() {
+    if (!pp2LogLabelEl || !streamEl) return;
+    pp2LogLabelEl.textContent = 'Live output (' + streamEl.children.length + ' lines)';
   }
 
   // ── Single dispatch for narrative events ───────────────────────
@@ -621,7 +808,7 @@
     var payload;
     try { payload = JSON.parse(e.data); } catch (_) { return; }
     appendLine(payload);
-    if (isPipeline) ppHandle(payload.message);
+    if (isPipeline) { pp2Handle(payload); pp2UpdateLogLabel(); }
     if (isPreflight) {
       if (payload.kind === 'phase') pfAddPhase(payload.message);
       else if (payload.kind === 'info') pfMaybeShowFromInfo(payload.message);
@@ -640,6 +827,7 @@
     var payload;
     try { payload = JSON.parse(e.data); } catch (_) { return; }
     appendCheck(payload);
+    if (isPipeline) pp2UpdateLogLabel();
     if (isPreflight) pfAddCheck(payload);
     if (hasCards) {
       var c = pfCardFromCheck(payload.data);
@@ -667,19 +855,14 @@
     if (isPreflight) pfHideCurrent();
     if (hasCards) pfFinalize();
     if (isPipeline) {
-      // If the job ended in failure and a stage was still in-flight, mark
-      // it failed now — the runner doesn't always emit a "halted" line for
-      // unexpected exceptions.
-      if (payload.data.status !== 'succeeded' && currentStage > 0
-          && stageState[currentStage] !== 'pass'
-          && stageState[currentStage] !== 'fail') {
-        ppMarkFail(currentStage);
-      }
-      // Only reveal the mini-report when *every* stage is verifiably
-      // passing AND the terminal status agrees. Either signal alone isn't
-      // enough — better to show nothing than to show a misleading score.
-      if (payload.data.status === 'succeeded' && ppAllPassed()) {
-        loadMiniReport();
+      var pp2ok = payload.data.status === 'succeeded';
+      if (pp2ok) {
+        pp2ShowSuccess();
+      } else {
+        if (pp2CurrentStage > 0 && pp2State[pp2CurrentStage] !== 'done' && pp2State[pp2CurrentStage] !== 'error') {
+          pp2StageFail(pp2CurrentStage);
+        }
+        pp2ShowError(payload.data.error || '');
       }
     }
   });

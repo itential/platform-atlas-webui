@@ -24,6 +24,7 @@ _templates = get_templates()
 async def landing(request: Request) -> HTMLResponse:
     entries, summary = await run_in_threadpool(collect_fleet)
     return _templates.TemplateResponse(
+        request,
         "fleet/landing.html",
         template_context(
             request,

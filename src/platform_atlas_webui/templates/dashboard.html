@@ -63,6 +63,27 @@
   </div>
 </header>
 
+{# ── Ruleset update notice ────────────────────────────────────────── #}
+{% if ruleset_updates %}
+<div class="flex items-center gap-3 rounded-md border border-line bg-surface px-3.5 py-2 mb-4 text-[12.5px]"
+     style="border-left: 3px solid var(--accent);">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+       stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-accent">
+    <path d="M12 19V5M5 12l7-7 7 7"/>
+  </svg>
+  <span class="text-text-2">
+    Ruleset update available —
+    {% for u in ruleset_updates %}
+      <span class="font-medium text-text">{{ u.id }}</span>
+      <span class="text-text-3">{{ u.current_version }} → </span><span class="text-ok font-medium">{{ u.available_version }}</span>{% if not loop.last %}, {% endif %}
+    {% endfor %}
+  </span>
+  <span class="ml-auto text-text-3 shrink-0">
+    Run <code class="font-mono bg-bg-2 border border-line rounded px-1.5 py-0.5 text-[11.5px] text-text-2">platform-atlas ruleset update</code>
+  </span>
+</div>
+{% endif %}
+
 {# ── Customize toolbar + cards ────────────────────────────────────── #}
 <div x-data="dashboardEditor" x-init="init()">
 

@@ -14,6 +14,7 @@ configuration exists and gives a clear path to first audit.
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -62,6 +63,36 @@ _AUTH_BYPASS_PREFIXES: tuple[str, ...] = (
 )
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    if is_initialized():
+        try:
+            from platform_atlas.core.init_env import sync_bundled_files
+            sync_bundled_files()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Bundled file sync failed at startup: %s", exc)
+        try:
+            init_context()
+            logger.info("Atlas context initialized for WebUI (tier=%s)", _safe_tier())
+        except Exception as exc:  # noqa: BLE001 — startup must never crash the server
+            logger.warning("Atlas context not initialized at startup: %s", exc)
+        # Continuous-audit scheduler. Starts unconditionally — its tick is a
+        # cheap fs check, and the loop is a no-op when no env has it enabled.
+        try:
+            from platform_atlas_webui.services.continuous import get_scheduler
+            await get_scheduler().start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Continuous-audit scheduler failed to start: %s", exc)
+    else:
+        logger.info("Atlas not initialized — first-run setup required at /setup")
+    yield
+    try:
+        from platform_atlas_webui.services.continuous import get_scheduler
+        await get_scheduler().stop()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Continuous scheduler shutdown noisy: %s", exc)
+
+
 def create_app(settings: WebUISettings | None = None) -> FastAPI:
     """Build the FastAPI app and wire in startup, static assets, and routes."""
     if settings is None:
@@ -73,39 +104,8 @@ def create_app(settings: WebUISettings | None = None) -> FastAPI:
         version=ATLAS_VERSION,
         docs_url="/_docs" if settings.reload else None,
         redoc_url=None,
+        lifespan=_lifespan,
     )
-
-    @app.on_event("startup")
-    async def _bootstrap_atlas() -> None:
-        if not is_initialized():
-            logger.info("Atlas not initialized — first-run setup required at /setup")
-            return
-        try:
-            from platform_atlas.core.init_env import sync_bundled_files
-            sync_bundled_files()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Bundled file sync failed at startup: %s", exc)
-        try:
-            init_context()
-            logger.info("Atlas context initialized for WebUI (tier=%s)", _safe_tier())
-        except Exception as exc:  # noqa: BLE001 — startup must never crash the server
-            logger.warning("Atlas context not initialized at startup: %s", exc)
-
-        # Continuous-audit scheduler. Starts unconditionally — its tick is a
-        # cheap fs check, and the loop is a no-op when no env has it enabled.
-        try:
-            from platform_atlas_webui.services.continuous import get_scheduler
-            await get_scheduler().start()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Continuous-audit scheduler failed to start: %s", exc)
-
-    @app.on_event("shutdown")
-    async def _stop_continuous() -> None:
-        try:
-            from platform_atlas_webui.services.continuous import get_scheduler
-            await get_scheduler().stop()
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Continuous scheduler shutdown noisy: %s", exc)
 
     # CSRF-exempt prefixes (read-only or auth-protected by nonce instead)
     _CSRF_BYPASS_PREFIXES: tuple[str, ...] = (

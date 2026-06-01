@@ -42,6 +42,7 @@ def _render_form(
         pass
 
     return _templates.TemplateResponse(
+        request,
         "setup/welcome.html",
         {
             "request": request,
@@ -278,6 +279,7 @@ async def setup_done(request: Request) -> HTMLResponse:
     cfg = _cfg_svc.read_config()
     theme, mode = _cfg_svc.resolve_appearance(cfg)
     return _templates.TemplateResponse(
+        request,
         "setup/done.html",
         {
             "request": request,

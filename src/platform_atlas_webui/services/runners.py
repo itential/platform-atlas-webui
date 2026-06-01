@@ -235,6 +235,7 @@ def run_capture_job(
     headless: bool = True,
     run_aggregations: bool = True,
     pipeline_names: list[str] | None = None,
+    resume: bool = True,
 ) -> dict[str, Any]:
     """Run capture for a session and write the result to its capture file.
 
@@ -254,6 +255,25 @@ def run_capture_job(
 
     mgr = get_session_manager()
     session = mgr.get(session_name)
+
+    # Capture checkpoint — create for this session so incremental results
+    # survive an interrupted run. If resume=False the user chose "Start over"
+    # on the banner, so clear any existing checkpoint first.
+    from platform_atlas.capture.checkpoint import CaptureCheckpoint
+    _checkpoint = CaptureCheckpoint(session.directory)
+    if _checkpoint.exists:
+        _done = _checkpoint.completed_modules()
+        if resume:
+            jlogger.info(
+                f"Incomplete capture found — resuming from checkpoint "
+                f"({len(_done)} module(s) already collected: {', '.join(_done)})"
+            )
+        else:
+            jlogger.info(
+                f"Starting over — clearing checkpoint "
+                f"({len(_done)} module(s) from interrupted run discarded)"
+            )
+            _checkpoint.clear()
 
     jlogger.phase(f"Capture · session '{session_name}'")
 
@@ -301,7 +321,7 @@ def run_capture_job(
     except Exception as _e:  # noqa: BLE001
         jlogger.info(f"Raw-capture toggle resolution failed (continuing without): {_e}")
 
-    raw = run_capture(headless=headless, on_raw_capture=_raw_callback)
+    raw = run_capture(headless=headless, on_raw_capture=_raw_callback, checkpoint=_checkpoint)
 
     # Summarize what was collected — emit each fact as its own event so the
     # timeline reads like a play-by-play instead of a single dense paragraph.
@@ -347,6 +367,7 @@ def run_capture_job(
     capture_path.write_text(raw_json, encoding="utf-8")
     size_kb = len(raw_json.encode()) // 1024
     session.mark_stage_complete(SessionStage.CAPTURE)
+    _checkpoint.clear()
     jlogger.success(f"Capture saved — {capture_path.name} ({size_kb} KB)")
 
     # Optional follow-up: MongoDB aggregation pipelines. The CLI runs these
@@ -775,3 +796,162 @@ def run_full_pipeline_job(
     jlogger.info(f"Open the report from the session page or the Reports tab.")
 
     return {"capture": cap, "validate": val, "report": rep}
+
+
+def run_support_bundle_job(
+    jlogger,
+    *,
+    ticket: str = "",
+    description: str = "",
+    log_days: int = 7,
+) -> dict[str, Any]:
+    """Collect Platform health + logs and pack into a support bundle ZIP.
+
+    Mirrors the CLI's handle_support_bundle but streams progress via jlogger
+    instead of Rich so the WebUI gets live events. The ZIP is written to a
+    temp file; the download route reads ``result["bundle_path"]`` to serve it
+    as a single-use FileResponse.
+    """
+    import os
+    import tempfile
+    import warnings
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from platform_atlas.core.context import ctx
+    from platform_atlas.core.handlers.support_bundle import (
+        _build_zip,
+        _collect_logs_and_system,
+        _collect_platform_health,
+        _redact_config,
+    )
+
+    config = ctx().config
+    is_extended = not ctx().is_standard
+    env_name = getattr(config, "active_environment", None) or "—"
+    mode_label = "Extended" if is_extended else "Standard"
+
+    jlogger.phase(f"Support Bundle · {mode_label} tier · {env_name} environment")
+    if ticket:
+        jlogger.info(f"Ticket: {ticket}")
+    if description:
+        jlogger.info(f"Description: {description}")
+    jlogger.info(f"Log window: last {log_days} days")
+
+    errors: list[str] = []
+    collected: list[str] = []
+
+    # ── Platform health endpoints ─────────────────────────────────
+    jlogger.info("Collecting Platform health endpoints…")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            platform_health = _collect_platform_health(log_days)
+        ok_count = sum(
+            1 for v in platform_health.values()
+            if not (isinstance(v, dict) and v.get("status") == "failed")
+        )
+        total_count = len(platform_health)
+        collected.append(f"Platform health ({ok_count}/{total_count} endpoints)")
+        for name, v in platform_health.items():
+            if isinstance(v, dict) and v.get("status") == "failed":
+                errors.append(f"Platform/{name}: {v.get('error', 'failed')}")
+        jlogger.success(f"{ok_count}/{total_count} health endpoints collected")
+    except Exception as exc:  # noqa: BLE001
+        platform_health = {}
+        errors.append(f"Platform health collection failed: {exc}")
+        jlogger.warning(f"Platform health collection failed — {exc}")
+
+    # ── SSH logs + system info (Extended only) ────────────────────
+    logs: dict = {}
+    system: dict = {}
+    raw_logs: dict = {}
+    if is_extended:
+        jlogger.info("Collecting SSH logs and system info (Extended tier)…")
+        try:
+            logs, system, raw_logs = _collect_logs_and_system(log_days, progress_cb=jlogger.info)
+            if logs:
+                ok_logs = sum(
+                    1 for v in logs.values()
+                    if not (isinstance(v, dict) and v.get("status") == "failed")
+                )
+                collected.append(f"Logs ({ok_logs}/{len(logs)} sources)")
+                jlogger.success(f"{ok_logs}/{len(logs)} log sources collected")
+            if system and "_error" not in system and "_tier_error" not in system:
+                collected.append("System info")
+                jlogger.success("System info collected")
+            if raw_logs:
+                collected.append(f"Raw logs ({len(raw_logs)} file(s))")
+                jlogger.success(f"{len(raw_logs)} raw log file(s) transferred to raw_logs/")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"Log/system collection failed: {exc}")
+            jlogger.warning(f"Log/system collection failed — {exc}")
+    else:
+        jlogger.info("SSH logs and system info skipped — Standard tier collects Platform health + Atlas config only.")
+
+    # ── Atlas config (redacted) ───────────────────────────────────
+    jlogger.info("Bundling Atlas config (redacted)…")
+    try:
+        config_redacted = _redact_config(config)
+        collected.append("Atlas config (redacted)")
+        jlogger.success("Config snapshot included (credentials redacted)")
+    except Exception as exc:  # noqa: BLE001
+        config_redacted = {"error": str(exc)}
+        errors.append(f"Config redaction failed: {exc}")
+        jlogger.warning(f"Config redaction failed — {exc}")
+
+    # ── Assemble ZIP ──────────────────────────────────────────────
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    ticket_slug = ticket.replace("/", "-").replace(" ", "-") if ticket else ""
+    bundle_name = (
+        f"atlas-support-bundle-{ticket_slug}-{timestamp}.zip"
+        if ticket_slug else
+        f"atlas-support-bundle-{timestamp}.zip"
+    )
+    try:
+        from platform_atlas.core._version import __version__ as _atlas_ver
+    except Exception:
+        _atlas_ver = None
+    manifest = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "ticket": ticket or None,
+        "description": description or None,
+        "environment": env_name,
+        "log_window_days": log_days,
+        "mode": "extended" if is_extended else "standard",
+        "atlas_version": _atlas_ver,
+        "collected": collected,
+        "errors": errors,
+    }
+
+    jlogger.info("Assembling ZIP…")
+    try:
+        bundle_bytes = _build_zip(platform_health, logs, system, raw_logs, config_redacted, manifest, folder=bundle_name.removesuffix(".zip"))
+    except Exception as exc:  # noqa: BLE001
+        jlogger.error(f"Failed to build ZIP: {exc}")
+        return {"ok": False, "error": str(exc)}
+
+    # Write to a temp file — the download route reads result["bundle_path"]
+    # and serves it as a single-use FileResponse with a cleanup BackgroundTask.
+    try:
+        fd, tmp = tempfile.mkstemp(suffix=".zip", prefix="atlas-bundle-")
+        os.close(fd)
+        bundle_path = Path(tmp)
+        bundle_path.write_bytes(bundle_bytes)
+    except Exception as exc:  # noqa: BLE001
+        jlogger.error(f"Failed to write bundle to temp file: {exc}")
+        return {"ok": False, "error": str(exc)}
+
+    size_kb = round(len(bundle_bytes) / 1024, 1)
+    jlogger.success(f"Bundle ready — {bundle_name} ({size_kb} KB)")
+    if errors:
+        jlogger.warning(f"{len(errors)} collection error(s) logged in manifest.json — bundle still complete")
+
+    return {
+        "ok": True,
+        "bundle_path": str(bundle_path),
+        "bundle_name": bundle_name,
+        "size_kb": size_kb,
+        "collected": collected,
+        "errors": errors,
+    }

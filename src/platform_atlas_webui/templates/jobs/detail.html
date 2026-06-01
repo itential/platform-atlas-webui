@@ -28,7 +28,7 @@
 <div id="kill-bar" hidden class="mb-4 px-4 py-3 rounded-lg flex items-center gap-3"
      style="background:oklch(72% .16 25/.08); border:1px solid oklch(72% .16 25/.3);">
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-warn shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-  <span class="text-[13px] text-text-2 flex-1">This job has been running for over 60 seconds. If it appears stuck, you can force-stop it.</span>
+  <span class="text-[13px] text-text-2 flex-1">This job has been running for over 5 minutes. If it appears stuck, you can force-stop it.</span>
   <button type="button" class="btn sm danger" id="kill-btn">Force stop</button>
 </div>
 {% endif %}
@@ -38,96 +38,306 @@
 {% set _session_name = job.metadata.get('session_name', '') %}
 
 {% if _is_pipeline %}
-{# Pipeline-only: dedicated card holds progress bar at the top and the
-   post-success mini-report below, with the verbose live output collapsed
-   underneath so the score has room to breathe. JS reveals the mini-report
-   only after every stage actually succeeds. #}
+<style nonce="{{ csp_nonce }}">
+/* ── Pipeline phase stepper (pp2) ──────────────────────────── */
+.pp2-body { padding: 32px 28px 28px !important; }
+.pp2-stepper {
+  display: flex; align-items: flex-start;
+  max-width: 520px; width: 100%; margin: 0 auto 20px; padding: 4px 0;
+}
+.pp2-phase {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; flex-shrink: 0; min-width: 88px;
+}
+.pp2-dot {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .3s, border-color .3s, box-shadow .3s;
+}
+.pp2-dot[data-status="pending"] { background:var(--surface-3); border:2px solid var(--line-2); color:var(--text-4); }
+.pp2-dot[data-status="active"]  { background:var(--accent-soft); border:2px solid var(--accent); color:var(--accent); animation:pp2Pulse 2s ease-in-out infinite; }
+.pp2-dot[data-status="done"]    { background:var(--ok-soft); border:2px solid var(--ok); color:var(--ok); }
+.pp2-dot[data-status="error"]   { background:var(--bad-soft); border:2px solid var(--bad); color:var(--bad); }
+@keyframes pp2Pulse {
+  0%,100% { box-shadow:0 0 0 0 var(--accent-soft); opacity:1; }
+  50%     { box-shadow:0 0 0 8px var(--accent-soft); opacity:.85; }
+}
+.pp2-label {
+  font-size:11px; font-weight:500; color:var(--text-4);
+  text-align:center; line-height:1.3; letter-spacing:.01em; transition:color .2s;
+}
+.pp2-phase.is-active .pp2-label { color:var(--accent); }
+.pp2-phase.is-done   .pp2-label { color:var(--ok); }
+.pp2-phase.is-error  .pp2-label { color:var(--bad); }
+.pp2-conn {
+  flex:1; height:2px; background:var(--line-2);
+  margin-top:21px; min-width:24px; transition:background .4s;
+}
+.pp2-conn.done { background:var(--ok); }
+/* Stage info bar */
+.pp2-stage-bar {
+  display:flex; align-items:center; justify-content:space-between;
+  max-width:520px; width:100%; margin:0 auto 6px;
+}
+.pp2-stage-name { font-size:13px; font-weight:600; color:var(--text-2); }
+.pp2-elapsed { font-size:12px; font-family:var(--font-mono,"JetBrains Mono",monospace); color:var(--text-4); letter-spacing:.02em; }
+/* Status */
+.pp2-status {
+  text-align:center; font-size:13px; color:var(--text-2);
+  min-height:20px; line-height:1.5; padding:0 8px;
+  max-width:480px; margin:0 auto 18px; transition:opacity .15s;
+}
+/* Activity panel */
+.pp2-activity {
+  background:var(--surface-2); border:1px solid var(--line-2);
+  border-radius:10px; padding:14px 18px;
+  max-width:520px; width:100%; margin:0 auto 18px;
+}
+.pp2-activity-title {
+  font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.08em; color:var(--text-4); margin-bottom:10px;
+}
+.pp2-act-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.pp2-tier-badge {
+  font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; padding:2px 7px; border-radius:99px;
+}
+.pp2-tier-std { background:oklch(75% .10 260/.12); color:var(--accent); border:1px solid oklch(75% .10 260/.3); }
+.pp2-tier-ext { background:oklch(75% .15 155/.12); color:var(--ok);    border:1px solid oklch(75% .15 155/.3); }
+.pp2-activity-msg { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-3); }
+.pp2-pulse-dot {
+  width:7px; height:7px; border-radius:50%; background:var(--accent);
+  flex-shrink:0; animation:pp2DotPulse 1.4s ease-in-out infinite;
+}
+@keyframes pp2DotPulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%     { opacity:.4; transform:scale(.7); }
+}
+.pp2-mod-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:6px 12px; }
+.pp2-mod-item { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-4); }
+.pp2-mod-item.is-done { color:var(--ok); }
+/* Sub-label shown below "Collecting…" during the silent wait */
+.pp2-act-sub {
+  font-size:11.5px; color:var(--text-4); margin-top:5px; padding-left:15px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.4;
+}
+/* Validation running-totals summary header */
+.pp2-val-summary {
+  font-size:12px; color:var(--text-3); margin-bottom:8px;
+  display:flex; gap:4px; flex-wrap:wrap; align-items:center;
+}
+/* Aggregation list */
+.pp2-agg-list { display:flex; flex-direction:column; gap:5px; }
+.pp2-agg-row {
+  display:flex; align-items:center; gap:7px;
+  font-size:12px; font-family:var(--font-mono,"JetBrains Mono",monospace);
+  color:var(--text-3); padding:4px 6px; border-radius:5px;
+}
+.pp2-agg-row.is-running { background:oklch(from var(--accent) l c h/.07); color:var(--accent); }
+.pp2-agg-row.is-done  { color:var(--ok); }
+.pp2-agg-row.is-error { color:var(--bad); }
+.pp2-agg-icon { font-size:11px; width:14px; text-align:center; flex-shrink:0; }
+.pp2-agg-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pp2-agg-meta { font-size:11px; color:var(--text-4); white-space:nowrap; flex-shrink:0; }
+.pp2-agg-idx  { font-size:10px; color:var(--text-4); white-space:nowrap; flex-shrink:0; }
+.pp2-agg-empty { font-size:12px; color:var(--text-4); padding:4px 2px; }
+/* Validation categories */
+.pp2-cat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:5px 14px; }
+.pp2-cat-row { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:12px; padding:3px 0; }
+.pp2-cat-name { color:var(--text-2); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.pp2-cat-counts { font-size:11px; white-space:nowrap; }
+.pp2-cat-row.has-fail .pp2-cat-name { color:var(--bad); }
+.pp2-cat-row.all-pass .pp2-cat-name { color:var(--ok); }
+/* Report checklist */
+.pp2-report-list { display:flex; flex-direction:column; gap:8px; }
+.pp2-report-item { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-3); transition:color .2s; }
+.pp2-report-item.is-done { color:var(--ok); }
+/* Collapsible log */
+.pp2-log-details { max-width:520px; width:100%; margin:6px auto 0; }
+.pp2-log-summary {
+  display:flex; align-items:center; gap:6px; cursor:pointer;
+  font-size:12px; color:var(--text-3); user-select:none;
+  list-style:none; padding:6px 2px;
+}
+.pp2-log-summary::-webkit-details-marker { display:none; }
+.pp2-log-arrow { font-size:8px; transition:transform .2s; color:var(--text-4); }
+.pp2-log-details[open] .pp2-log-arrow { transform:rotate(90deg); }
+/* Hero (success / error) */
+.pp2-hero {
+  display:flex; flex-direction:column; align-items:center;
+  text-align:center; padding:32px 20px 28px;
+  max-width:580px; margin:0 auto;
+}
+.pp2-hero-ring {
+  width:72px; height:72px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; margin-bottom:16px;
+}
+.pp2-hero-ring--ok  { background:var(--ok-soft);  border:2px solid var(--ok);  color:var(--ok);  animation:pp2RingIn .45s cubic-bezier(.34,1.56,.64,1) both; }
+.pp2-hero-ring--bad { background:var(--bad-soft); border:2px solid var(--bad); color:var(--bad); }
+@keyframes pp2RingIn {
+  from { transform:scale(.5); opacity:0; }
+  to   { transform:scale(1);  opacity:1; }
+}
+.pp2-hero-title { font-size:22px; font-weight:600; letter-spacing:-.025em; margin:0 0 6px; color:var(--ok); }
+.pp2-hero-sub   { font-size:13px; color:var(--text-2); margin:0 0 20px; max-width:46ch; line-height:1.5; }
+.pp2-score-card {
+  background:var(--surface-2); border:1px solid var(--line-2);
+  border-radius:12px; padding:20px 28px;
+  width:100%; max-width:420px; margin-bottom:20px;
+}
+.pp2-score-pct   { font-size:48px; font-weight:700; letter-spacing:-.045em; color:var(--ok); line-height:1; margin-bottom:3px; font-family:var(--font-mono,"JetBrains Mono",monospace); }
+.pp2-score-lbl   { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-4); margin-bottom:14px; }
+.pp2-score-counts { display:flex; justify-content:center; gap:20px; }
+.pp2-score-count  { font-size:13px; color:var(--text-3); }
+.pp2-score-count b { font-size:16px; font-weight:700; }
+.pp2-score-count.ok  b { color:var(--ok); }
+.pp2-score-count.bad b { color:var(--bad); }
+.pp2-score-count.dim b { color:var(--text-3); }
+.pp2-action-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center; margin-bottom:8px; }
+.pp2-alt-row { display:flex; align-items:center; gap:8px; font-size:12.5px; justify-content:center; flex-wrap:wrap; }
+.pp2-alt-row a { color:var(--accent); text-decoration:none; }
+.pp2-alt-row a:hover { text-decoration:underline; }
+.pp2-alt-row .sep { color:var(--text-4); }
+</style>
+
 <section class="card" id="pipeline-shell">
   <div class="card-head">
-    <h3>Pipeline</h3>
-    <span class="sub">capture → validate → report</span>
+    <h3>Full audit pipeline</h3>
+    <span class="sub">
+      capture · validate · report
+      {% if _session_name %}&nbsp;&mdash;&nbsp;<code class="font-mono text-[12px]">{{ _session_name }}</code>{% endif %}
+    </span>
   </div>
-  <div class="card-body" style="padding: 0;">
-    {# Progress bar — JS advances per stage, marks pass/fail per stop. #}
-    <div class="pipeline-progress" id="pipeline-progress" style="--pp-pct: 0%;">
-      <div class="pp-head">
-        <span class="pp-title">Pipeline progress</span>
-        <span class="pp-status" id="pp-status">Waiting to start&hellip;</span>
-      </div>
-      <div class="pp-track">
-        <div class="pp-fill" id="pp-fill"></div>
-        <span class="pp-stop" id="pp-stop-1" style="left: 33.333%">
-          <span class="pp-dot"></span>
-          <span class="pp-label">Capture</span>
-        </span>
-        <span class="pp-stop" id="pp-stop-2" style="left: 66.666%">
-          <span class="pp-dot"></span>
-          <span class="pp-label">Validate</span>
-        </span>
-        <span class="pp-stop" id="pp-stop-3" style="left: 100%">
-          <span class="pp-dot"></span>
-          <span class="pp-label">Report</span>
-        </span>
-      </div>
-    </div>
 
-    {# Mini-report — short teaser. The big score circle, percentage, and
-       findings pills were intentionally removed: this surface is meant
-       to be a brief acknowledgement that the run finished, with the full
-       breakdown one click away via "Open full report".
+  <div class="card-body pp2-body">
 
-       Hidden until JS has confirmed all three stages emitted a "complete"
-       event AND the job's terminal status is "succeeded". #}
-    <section class="pipeline-mini-report pipeline-mini-report--compact" id="mini-report" hidden
-             data-session-name="{{ _session_name }}">
-      <div class="pmr-eyebrow" id="mr-eyebrow">PASSED</div>
-      <h2 class="pmr-title" id="mr-title">Compliance audit complete</h2>
-      <div class="pmr-sub" id="mr-sub">—</div>
-      <div class="pmr-counts">
-        <span><b style="color:var(--ok)" id="mr-pass">0</b> compliant</span>
-        <span><b style="color:var(--bad)" id="mr-fail">0</b> non-compliant</span>
-        <span><b id="mr-skip">0</b> skip</span>
-      </div>
-      <div class="pmr-actions">
-        <a class="btn primary" id="mr-continue" href="#">Continue →</a>
-        <a class="btn" id="mr-open-report" href="#" target="_blank" rel="noopener">Open full report ↗</a>
-      </div>
-    </section>
+    {# ── Running view ─────────────────────────────────────── #}
+    <div id="pp2-running-view">
 
-    {# Verbose log section — collapsed by default. The user can expand if
-       they want to see the SSE stream or the raw debug log. #}
-    <button type="button" class="pipeline-logs-toggle" id="logs-toggle"
-            aria-expanded="false" aria-controls="logs-body">
-      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="6 9 12 15 18 9"/>
-      </svg>
-      <span class="label">Show live output &amp; debug log</span>
-      <span class="hint">SSE stream · human or raw view</span>
-    </button>
-    <div class="pipeline-logs-body" id="logs-body" hidden>
-      <div class="stream-mode" id="stream-mode" data-mode="human">
-        <span class="stream-mode-label">Output mode</span>
-        <div class="stream-mode-pills" role="tablist" aria-label="Output verbosity">
-          <button type="button" class="stream-mode-pill is-active"
-                  data-mode="human" role="tab" aria-selected="true">
-            Human-friendly
-          </button>
-          <button type="button" class="stream-mode-pill"
-                  data-mode="raw" role="tab" aria-selected="false">
-            Raw progress logs
-          </button>
+      {# Phase stepper — 3 nodes with SVG icons #}
+      <div class="pp2-stepper">
+
+        <div class="pp2-phase is-active" id="pp2-ph-1">
+          <div class="pp2-dot" data-status="active">
+            {# Database — data collection #}
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <span class="pp2-label">Capture</span>
         </div>
-        <span class="stream-mode-hint" id="stream-mode-hint">curated narrative only</span>
+
+        <div class="pp2-conn" id="pp2-conn-1"></div>
+
+        <div class="pp2-phase" id="pp2-ph-2">
+          <div class="pp2-dot" data-status="pending">
+            {# Shield — rule validation #}
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <span class="pp2-label">Validate</span>
+        </div>
+
+        <div class="pp2-conn" id="pp2-conn-2"></div>
+
+        <div class="pp2-phase" id="pp2-ph-3">
+          <div class="pp2-dot" data-status="pending">
+            {# Bar chart — report generation #}
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          </div>
+          <span class="pp2-label">Reports</span>
+        </div>
+
+      </div>{# /stepper #}
+
+      {# Stage info: current stage name + elapsed clock #}
+      <div class="pp2-stage-bar">
+        <span class="pp2-stage-name" id="pp2-stage-name">Preparing pipeline…</span>
+        <span class="pp2-elapsed" id="pp2-elapsed"></span>
       </div>
-      <div class="job-stream mode-human" id="job-stream"
-           data-job-id="{{ job.id }}"
-           data-job-kind="pipeline"
-           data-session-name="{{ _session_name }}"
-           data-return-url="{{ job.metadata.get('return_url', '') }}"
-           data-started-at="{{ job.started_at_epoch }}"></div>
-    </div>
-  </div>
+
+      {# Live single-line status from the SSE stream #}
+      <div class="pp2-status" id="pp2-status">Connecting…</div>
+
+      {# Activity panel — JS populates per stage:
+         Capture → module checklist + aggregation pipeline list
+         Validate → category breakdown grid
+         Report  → report checklist #}
+      <div class="pp2-activity" id="pp2-activity" hidden></div>
+
+      {# Collapsible verbose log (human / raw mode) #}
+      <details class="pp2-log-details" id="pp2-log-details">
+        <summary class="pp2-log-summary">
+          <span class="pp2-log-arrow">▶</span>
+          <span id="pp2-log-label">Show live output</span>
+        </summary>
+        <div class="stream-mode" id="stream-mode" data-mode="human">
+          <span class="stream-mode-label">Output mode</span>
+          <div class="stream-mode-pills" role="tablist" aria-label="Output verbosity">
+            <button type="button" class="stream-mode-pill is-active"
+                    data-mode="human" role="tab" aria-selected="true">Human-friendly</button>
+            <button type="button" class="stream-mode-pill"
+                    data-mode="raw" role="tab" aria-selected="false">Raw progress logs</button>
+          </div>
+          <span class="stream-mode-hint" id="stream-mode-hint">curated narrative only</span>
+        </div>
+        <div class="job-stream mode-human" id="job-stream"
+             data-job-id="{{ job.id }}"
+             data-job-kind="pipeline"
+             data-session-name="{{ _session_name }}"
+             data-return-url="{{ job.metadata.get('return_url', '') }}"
+             data-started-at="{{ job.started_at_epoch }}"></div>
+      </details>
+
+    </div>{# /pp2-running-view #}
+
+    {# ── Success view (revealed when pipeline succeeds) ────── #}
+    <div id="pp2-success-view" hidden>
+      <div class="pp2-hero">
+        <div class="pp2-hero-ring pp2-hero-ring--ok">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h2 class="pp2-hero-title" id="pp2-hero-title">Compliance audit complete</h2>
+        <p class="pp2-hero-sub" id="pp2-hero-sub"></p>
+        <div class="pp2-score-card">
+          <div class="pp2-score-pct" id="pp2-score-pct">—%</div>
+          <div class="pp2-score-lbl">compliance rate</div>
+          <div class="pp2-score-counts">
+            <span class="pp2-score-count ok"><b id="pp2-pass-count">0</b> passed</span>
+            <span class="pp2-score-count bad"><b id="pp2-fail-count">0</b> findings</span>
+            <span class="pp2-score-count dim"><b id="pp2-skip-count">0</b> skipped</span>
+          </div>
+        </div>
+        <div class="pp2-action-row">
+          <a class="btn primary" id="pp2-link-compliance" href="#" target="_blank" rel="noopener" hidden>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Open compliance report ↗
+          </a>
+          <a class="btn" id="pp2-link-session" href="#" hidden>Back to session</a>
+        </div>
+        <div class="pp2-alt-row" id="pp2-alt-row" hidden>
+          <a id="pp2-link-operational"  href="#" target="_blank" rel="noopener" hidden>Operational ↗</a>
+          <span class="sep" id="pp2-sep1" hidden>·</span>
+          <a id="pp2-link-architecture" href="#" target="_blank" rel="noopener" hidden>Architecture ↗</a>
+          <span class="sep" id="pp2-sep2" hidden>·</span>
+          <a href="/jobs" class="text-text-3 hover:text-accent hover:underline">View all jobs</a>
+        </div>
+      </div>
+    </div>{# /pp2-success-view #}
+
+    {# ── Error view (revealed when pipeline fails) ──────────── #}
+    <div id="pp2-error-view" hidden>
+      <div class="pp2-hero">
+        <div class="pp2-hero-ring pp2-hero-ring--bad">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+        <h2 class="pp2-hero-title" style="color:var(--bad)">Pipeline failed</h2>
+        <p class="pp2-hero-sub" id="pp2-error-msg">An error occurred. Check the output log for details.</p>
+        <div class="pp2-action-row">
+          <a class="btn" href="{{ job.metadata.get('return_url', '/sessions') }}">Back to session</a>
+          <a class="btn" href="/jobs">View all jobs</a>
+        </div>
+      </div>
+    </div>{# /pp2-error-view #}
+
+  </div>{# /card-body #}
 </section>
 {% else %}
 <section class="card"{% if _is_preflight %} data-pf-logs="hidden"{% endif %}>

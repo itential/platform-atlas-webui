@@ -70,6 +70,7 @@ def _missing_credentials(env: dict) -> list[dict]:
 async def list_environments(request: Request, from_tier: str = Query("")) -> HTMLResponse:
     items = env_svc.list_environments()
     return _templates.TemplateResponse(
+        request,
         "environments/list.html",
         template_context(
             request,
@@ -85,6 +86,7 @@ async def new_environment_form(request: Request) -> HTMLResponse:
     # ``organization_name`` is no longer a per-env field — it lives in the
     # global Configuration and is supplied to the template by ``template_context``.
     return _templates.TemplateResponse(
+        request,
         "environments/form.html",
         template_context(
             request,
@@ -177,6 +179,7 @@ async def view_environment(
     missing_creds = _missing_credentials(env)
     topology = env_svc.topology_summary(env.get("data"))
     return _templates.TemplateResponse(
+        request,
         "environments/detail.html",
         template_context(
             request,
@@ -195,6 +198,7 @@ async def edit_environment_form(request: Request, name: str, from_tier: str = Qu
     if env is None:
         raise HTTPException(status_code=404, detail=f"Environment '{name}' not found")
     return _templates.TemplateResponse(
+        request,
         "environments/form.html",
         template_context(
             request,

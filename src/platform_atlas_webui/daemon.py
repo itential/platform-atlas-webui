@@ -287,8 +287,11 @@ def stop_daemon(
 
     # Hard escalate. Anything still alive after `timeout` s of SIGTERM
     # is either wedged or ignoring the signal.
+    # signal.SIGKILL is POSIX-only; on Windows (where stop_daemon is guarded
+    # by is_supported()) fall back to SIGTERM as a no-crash safety net.
+    _sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
     try:
-        os.kill(pid, signal.SIGKILL)
+        os.kill(pid, _sigkill)
     except ProcessLookupError:
         pass
     time.sleep(0.5)

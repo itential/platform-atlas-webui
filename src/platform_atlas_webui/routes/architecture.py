@@ -17,6 +17,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from platform_atlas.core import architecture_store
+from platform_atlas.reporting.arch_warnings import compute_arch_warnings
 
 from platform_atlas_webui.dependencies import get_atlas_context, get_templates, template_context
 from platform_atlas_webui.services import environments as env_svc
@@ -65,6 +66,7 @@ async def architecture_form(request: Request, env: str | None = None) -> HTMLRes
     if not architecture_store.is_safe_env_name(target_env):
         available_envs = await run_in_threadpool(env_svc.list_environments)
         return _templates.TemplateResponse(
+            request,
             "architecture/index.html",
             template_context(
                 request,
@@ -86,6 +88,9 @@ async def architecture_form(request: Request, env: str | None = None) -> HTMLRes
         )
 
     arch_data = await run_in_threadpool(architecture_store.load, target_env)
+    arch_warnings = await run_in_threadpool(
+        compute_arch_warnings, arch_data.get("completed", {})
+    )
     available_envs = await run_in_threadpool(env_svc.list_environments)
     envs_with_data = await run_in_threadpool(architecture_store.list_envs_with_data)
 
@@ -119,6 +124,7 @@ async def architecture_form(request: Request, env: str | None = None) -> HTMLRes
     copy_error = (request.query_params.get("copy_error") or "").strip()
 
     return _templates.TemplateResponse(
+        request,
         "architecture/index.html",
         template_context(
             request,
@@ -131,6 +137,7 @@ async def architecture_form(request: Request, env: str | None = None) -> HTMLRes
             copied_from=copied_from,
             copied_count=copied_count,
             copy_error=copy_error,
+            arch_warnings=arch_warnings,
         ),
     )
 
@@ -172,6 +179,31 @@ def _sanitize_arch_payload(payload: object) -> dict:
         safe_skipped.append(entry)
 
     return {"completed": safe_completed, "skipped": safe_skipped, "status": status}
+
+
+@router.get("/warnings")
+async def get_arch_warnings(request: Request, env: str | None = None) -> JSONResponse:
+    """Return architecture warnings for the active (or requested) environment."""
+    target_env = _resolve_target_env(env)
+    arch_data = await run_in_threadpool(architecture_store.load, target_env)
+    if not arch_data.get("completed"):
+        return JSONResponse({"warnings": [], "count": 0})
+    warnings = await run_in_threadpool(
+        compute_arch_warnings, arch_data.get("completed", {})
+    )
+    return JSONResponse({
+        "warnings": [
+            {
+                "category": w.category,
+                "severity": w.severity,
+                "component": w.component,
+                "message": w.message,
+                "detail": w.detail,
+            }
+            for w in warnings
+        ],
+        "count": len(warnings),
+    })
 
 
 @router.post("/save")

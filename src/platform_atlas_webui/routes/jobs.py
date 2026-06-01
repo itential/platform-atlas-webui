@@ -31,6 +31,7 @@ async def list_jobs(request: Request) -> HTMLResponse:
             "error": j.error or "",
         })
     return _templates.TemplateResponse(
+        request,
         "jobs/list.html",
         template_context(request, atlas_version=ATLAS_VERSION, jobs=items),
     )
@@ -43,6 +44,7 @@ async def view_job(request: Request, job_id: str) -> HTMLResponse:
     if record is None:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
     return _templates.TemplateResponse(
+        request,
         "jobs/detail.html",
         template_context(
             request,

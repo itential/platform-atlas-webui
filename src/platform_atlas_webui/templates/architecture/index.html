@@ -270,6 +270,42 @@
   color: oklch(82% .13 75);
 }
 .arch-flash strong { color: inherit; font-weight: 700; }
+
+/* ── Architecture warnings panel ─────────────────────────────────── */
+.aw-panel {
+  margin-bottom: 18px;
+}
+.aw-panel-heading {
+  font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--text-3); margin: 0 0 8px;
+}
+.aw-card {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 8px;
+  padding: 9px 12px; margin-bottom: 6px; border-radius: 6px;
+  font-size: 12px; line-height: 1.45;
+  background: oklch(75% .14 55 / .06); border: 1px solid oklch(75% .14 55 / .22);
+}
+.aw-card.critical {
+  background: oklch(65% .17 30 / .07); border-color: oklch(65% .17 30 / .28);
+}
+.aw-card.warning {
+  background: oklch(75% .14 55 / .07); border-color: oklch(75% .14 55 / .28);
+}
+.aw-card.info {
+  background: oklch(60% .12 230 / .06); border-color: oklch(60% .12 230 / .20);
+}
+.aw-badge {
+  display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .08em;
+  padding: 2px 6px; border-radius: 3px; flex-shrink: 0; color: #fff;
+}
+.aw-badge.critical { background: #FF6633; }
+.aw-badge.warning  { background: #c47b00; }
+.aw-badge.info     { background: #1B93D2; }
+.aw-component {
+  font-weight: 700; color: var(--text); flex-shrink: 0;
+}
+.aw-message { color: var(--text-2); flex: 1; min-width: 0; }
+.aw-detail  { font-size: 11px; color: var(--text-3); width: 100%; padding-left: 2px; }
 </style>
 
 <header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
@@ -308,6 +344,22 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12" y2="16"/></svg>
     <div>{{ copy_error }}</div>
   </div>
+{% endif %}
+
+
+{# ── Architecture warnings ── #}
+{% if arch_warnings %}
+<div class="aw-panel" role="note" aria-label="Architecture warnings">
+  <p class="aw-panel-heading">Architecture warnings ({{ arch_warnings | length }})</p>
+  {% for w in arch_warnings %}
+  <div class="aw-card {{ w.severity }}">
+    <span class="aw-badge {{ w.severity }}">{{ w.category | upper }}</span>
+    <span class="aw-component">{{ w.component }}</span>
+    <span class="aw-message">{{ w.message }}</span>
+    {% if w.detail %}<span class="aw-detail">{{ w.detail }}</span>{% endif %}
+  </div>
+  {% endfor %}
+</div>
 {% endif %}
 
 {# ── Env switcher + copy-from ── #}
@@ -1023,6 +1075,15 @@
             <option value="Other">Other</option>
           </select>
         </div>
+        <div class="arch-subsection">Node Infrastructure</div>
+        <div class="arch-field" data-field="node_instance_type">
+          <div class="arch-field-label">Worker node instance type <span class="arch-optional">(optional)</span></div>
+          <input type="text" id="f-k8s-node-instance-type" placeholder="e.g., m5.2xlarge, c6i.4xlarge" oninput="onAF(this)">
+        </div>
+        <div class="arch-field" data-field="node_count">
+          <div class="arch-field-label">Number of worker nodes in the cluster <span class="arch-optional">(optional)</span></div>
+          <input type="number" min="1" id="f-k8s-node-count" placeholder="e.g., 3" oninput="onAF(this)">
+        </div>
         <div class="arch-field" data-field="deployment_method">
           <div class="arch-field-label">How are Itential components deployed to Kubernetes?</div>
           <select id="f-k8s-deployment-method" onchange="onAF(this); document.getElementById('k8s-method-warn').classList.toggle('visible', this.value !== '' && !this.value.includes('Helm'))">
@@ -1033,6 +1094,33 @@
             <option value="Kustomize">Kustomize</option><option value="Other">Other</option>
           </select>
           <div class="arch-warning" id="k8s-method-warn">⚠ Itential recommends Helm charts for consistent, repeatable deployments.</div>
+        </div>
+        <div class="arch-subsection">Autoscaling (HPA)</div>
+        <div class="arch-field" data-field="hpa_enabled">
+          <div class="arch-field-label">Horizontal Pod Autoscaler (HPA) configured for Itential pods?</div>
+          <div class="arch-confirm">
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-hpa-enabled', true, this); archCond('hpa_min_replicas', true); archCond('hpa_max_replicas', true); archCond('hpa_scaling_metric', true)">Yes</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-hpa-enabled', false, this); archCond('hpa_min_replicas', false); archCond('hpa_max_replicas', false); archCond('hpa_scaling_metric', false)">No</div>
+          </div>
+          <input type="hidden" id="f-k8s-hpa-enabled">
+        </div>
+        <div class="arch-field hidden" data-field="hpa_min_replicas" data-cond="true">
+          <div class="arch-field-label">HPA minimum replica count</div>
+          <input type="number" min="1" id="f-k8s-hpa-min-replicas" placeholder="e.g., 2" oninput="onAF(this)">
+        </div>
+        <div class="arch-field hidden" data-field="hpa_max_replicas" data-cond="true">
+          <div class="arch-field-label">HPA maximum replica count</div>
+          <input type="number" min="1" id="f-k8s-hpa-max-replicas" placeholder="e.g., 10" oninput="onAF(this)">
+        </div>
+        <div class="arch-field hidden" data-field="hpa_scaling_metric" data-cond="true">
+          <div class="arch-field-label">Scaling metric</div>
+          <select id="f-k8s-hpa-scaling-metric" onchange="onAF(this)">
+            <option value="">— Select —</option>
+            <option value="CPU utilization">CPU utilization</option>
+            <option value="Memory utilization">Memory utilization</option>
+            <option value="Both CPU &amp; Memory">Both CPU &amp; Memory</option>
+            <option value="Custom metric">Custom metric</option>
+          </select>
         </div>
         <div class="arch-subsection">Resource Configuration</div>
         <div class="arch-field" data-field="has_custom_resources">
@@ -1057,6 +1145,19 @@
         <div class="arch-field hidden" data-field="k8s_resource_notes" data-cond="true">
           <div class="arch-field-label">Notable resource overrides (optional)</div>
           <input type="text" id="f-k8s-resource-notes" placeholder="e.g., Platform pods set to 8Gi memory" oninput="onAF(this)">
+        </div>
+        <div class="arch-subsection">Pod Health</div>
+        <div class="arch-field" data-field="pod_restarts_observed">
+          <div class="arch-field-label">Pod restarts observed?</div>
+          <div class="arch-confirm">
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-pod-restarts', true, this); archCond('pod_restart_notes', true)">Yes</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-pod-restarts', false, this); archCond('pod_restart_notes', false)">No</div>
+          </div>
+          <input type="hidden" id="f-k8s-pod-restarts">
+        </div>
+        <div class="arch-field hidden" data-field="pod_restart_notes" data-cond="true">
+          <div class="arch-field-label">Approximate frequency or restart count (optional)</div>
+          <input type="text" id="f-k8s-pod-restart-notes" placeholder="e.g., 3 restarts in last 24h, crash-looping weekly" oninput="onAF(this)">
         </div>
         <div class="arch-subsection">Probe Configuration</div>
         <div class="arch-field" data-field="probes_customized">
@@ -1414,10 +1515,18 @@
     ]},
     { id: 'kubernetes', skippable: true, fields: [
       { key: 'k8s_distribution',              inputId: 'f-k8s-distribution',              type: 'select' },
+      { key: 'node_instance_type',            inputId: 'f-k8s-node-instance-type',        type: 'text', optional: true },
+      { key: 'node_count',                    inputId: 'f-k8s-node-count',                type: 'int', optional: true },
       { key: 'deployment_method',             inputId: 'f-k8s-deployment-method',         type: 'select' },
+      { key: 'hpa_enabled',                   inputId: 'f-k8s-hpa-enabled',               type: 'confirm' },
+      { key: 'hpa_min_replicas',              inputId: 'f-k8s-hpa-min-replicas',          type: 'int', cond: true },
+      { key: 'hpa_max_replicas',              inputId: 'f-k8s-hpa-max-replicas',          type: 'int', cond: true },
+      { key: 'hpa_scaling_metric',            inputId: 'f-k8s-hpa-scaling-metric',        type: 'select', cond: true },
       { key: 'has_custom_resources',          inputId: 'f-k8s-custom-resources',          type: 'confirm' },
       { key: 'values_source',                 inputId: 'f-k8s-values-source',             type: 'select', cond: true },
       { key: 'resource_notes',                inputId: 'f-k8s-resource-notes',            type: 'text', cond: true },
+      { key: 'pod_restarts_observed',         inputId: 'f-k8s-pod-restarts',              type: 'confirm' },
+      { key: 'pod_restart_notes',             inputId: 'f-k8s-pod-restart-notes',         type: 'text', cond: true },
       { key: 'probes_customized',             inputId: 'f-k8s-probes-customized',         type: 'confirm' },
       { key: 'probe_notes',                   inputId: 'f-k8s-probe-notes',               type: 'text', cond: true },
     ]},
@@ -1854,6 +1963,14 @@
     });
 
     // fire conditional logic based on restored values
+    const k8sHpa = document.getElementById('f-k8s-hpa-enabled');
+    if (k8sHpa && k8sHpa.value === 'true') {
+      archCond('hpa_min_replicas', true);
+      archCond('hpa_max_replicas', true);
+      archCond('hpa_scaling_metric', true);
+    }
+    const k8sPodRestarts = document.getElementById('f-k8s-pod-restarts');
+    if (k8sPodRestarts && k8sPodRestarts.value === 'true') archCond('pod_restart_notes', true);
     onTotalInstances();
     const redisType = document.getElementById('f-redis-deployment-type');
     if (redisType && redisType.value) onRedisTopology();

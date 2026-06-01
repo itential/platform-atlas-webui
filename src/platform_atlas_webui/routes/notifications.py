@@ -72,6 +72,7 @@ async def landing(request: Request, sent: str = "", failed: str = "") -> HTMLRes
         flash = {"kind": "error", "message": f"Test send failed for channel {failed}. See server log for details."}
 
     return _templates.TemplateResponse(
+        request,
         "notifications/landing.html",
         template_context(
             request,

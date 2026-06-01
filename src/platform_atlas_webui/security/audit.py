@@ -49,7 +49,7 @@ def _get_audit_logger() -> logging.Logger:
     # Touch the file at 0600 before the handler opens it.
     if not AUDIT_LOG_FILE.exists():
         AUDIT_LOG_FILE.touch(mode=0o600)
-    else:
+    elif os.name == "posix":
         current = stat.S_IMODE(AUDIT_LOG_FILE.stat().st_mode)
         if current != 0o600:
             AUDIT_LOG_FILE.chmod(0o600)

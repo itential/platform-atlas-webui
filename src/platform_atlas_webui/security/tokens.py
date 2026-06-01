@@ -50,6 +50,8 @@ _nonce_lock = threading.Lock()
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def _enforce_600(path: Path) -> None:
+    if os.name != "posix":
+        return
     current = stat.S_IMODE(path.stat().st_mode)
     if current != 0o600:
         path.chmod(0o600)
@@ -60,7 +62,8 @@ def _write_secret(path: Path) -> bytes:
     ATLAS_HOME.mkdir(mode=0o700, exist_ok=True)
     raw = secrets.token_bytes(32)
     path.write_text(raw.hex(), encoding="ascii")
-    path.chmod(0o600)
+    if os.name == "posix":
+        path.chmod(0o600)
     return raw
 
 

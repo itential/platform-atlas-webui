@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import time as _time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from platform_atlas.core.session_manager import get_session_manager
+
+# In-process cache for get_session_summary() — avoids re-reading the Parquet
+# file on every mini-report fetch. Keyed by session name; TTL prevents stale
+# data from lingering if the user re-runs validation. Only populated when
+# validation_completed so in-progress sessions always read fresh.
+_summary_cache: dict[str, tuple[dict[str, Any], float]] = {}
+_SUMMARY_CACHE_TTL = 60.0  # seconds
 
 
 def is_session_complete(session_dict: dict[str, Any]) -> bool:
@@ -204,6 +212,14 @@ def get_session(name: str) -> dict[str, Any] | None:
         "directory": str(s.directory),
         "failed_log_modules": _failed_log_modules_from_capture(s),
     }
+    try:
+        from platform_atlas.capture.checkpoint import CaptureCheckpoint
+        ckpt = CaptureCheckpoint(s.directory)
+        d["has_checkpoint"] = ckpt.exists
+        d["checkpoint_module_count"] = len(ckpt.completed_modules()) if ckpt.exists else 0
+    except Exception:  # noqa: BLE001
+        d["has_checkpoint"] = False
+        d["checkpoint_module_count"] = 0
     return _annotate_tier_lock(d, active_tier)
 
 
@@ -356,6 +372,9 @@ def get_session_summary(name: str, *, max_failures: int = 12) -> dict[str, Any] 
     the validation parquet. Severity ordering matches the report — critical
     first, then warning, then info — so the UI renders by-importance without
     sorting client-side.
+
+    Result is cached for _SUMMARY_CACHE_TTL seconds once validation is complete
+    so repeated fetches (e.g. SSE close + frontend poll) skip the Parquet read.
     """
     mgr = get_session_manager()
     try:
@@ -363,6 +382,13 @@ def get_session_summary(name: str, *, max_failures: int = 12) -> dict[str, Any] 
     except Exception:
         return None
     m = s.metadata
+
+    cached = _summary_cache.get(name)
+    if cached is not None and m.validation_completed:
+        result, ts = cached
+        if _time.monotonic() - ts < _SUMMARY_CACHE_TTL:
+            return result
+
     evaluated = (m.pass_count or 0) + (m.fail_count or 0)
     compliance_pct = round((m.pass_count / evaluated) * 100) if evaluated else 0
 
@@ -370,7 +396,13 @@ def get_session_summary(name: str, *, max_failures: int = 12) -> dict[str, Any] 
     if m.validation_completed and s.validation_file.exists():
         try:
             import pandas as pd
-            df = pd.read_parquet(s.validation_file)
+            # Read only the columns needed for the summary — avoids deserializing
+            # the full DataFrame (which can be 100+ MB for large audits).
+            df = pd.read_parquet(
+                s.validation_file,
+                columns=["status", "severity", "rule_number", "name", "category",
+                         "path", "expected", "actual", "recommendations"],
+            )
             fail_df = df[df["status"].astype(str).str.upper() == "FAIL"]
             sev_order = {"critical": 0, "warning": 1, "info": 2}
             fail_df = fail_df.assign(
@@ -393,7 +425,7 @@ def get_session_summary(name: str, *, max_failures: int = 12) -> dict[str, Any] 
             # empty failures list. The summary is still useful.
             pass
 
-    return {
+    result = {
         "name": m.name,
         "environment": m.environment or "",
         "tier": getattr(m, "tier", None) or "extended",
@@ -412,6 +444,11 @@ def get_session_summary(name: str, *, max_failures: int = 12) -> dict[str, Any] 
         "report_file_url": f"/reports/{m.name}" if s.report_file.exists() else None,
         "session_url": f"/sessions/{m.name}",
     }
+
+    if m.validation_completed:
+        _summary_cache[name] = (result, _time.monotonic())
+
+    return result
 
 
 def create_session(

@@ -18,7 +18,9 @@ _600 = stat.S_IRUSR | stat.S_IWUSR
 
 
 def _enforce_600(path: Path) -> None:
-    """Tighten permissions to 0600 if they are looser."""
+    """Tighten permissions to 0600 if they are looser (POSIX only)."""
+    if os.name != "posix":
+        return
     current = stat.S_IMODE(path.stat().st_mode)
     if current != 0o600:
         path.chmod(0o600)
@@ -84,10 +86,12 @@ def _generate_cert() -> None:
             encryption_algorithm=serialization.NoEncryption(),
         )
     )
-    KEY_FILE.chmod(0o600)
+    if os.name == "posix":
+        KEY_FILE.chmod(0o600)
 
     CERT_FILE.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
-    CERT_FILE.chmod(0o600)
+    if os.name == "posix":
+        CERT_FILE.chmod(0o600)
 
 
 def _cert_expiry() -> datetime.datetime | None:

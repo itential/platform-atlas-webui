@@ -82,6 +82,7 @@ async def list_sessions(
         if locked_session:
             lock_kind = "view" if lock_view else "run"
     return _templates.TemplateResponse(
+        request,
         "sessions/list.html",
         template_context(
             request,
@@ -124,6 +125,7 @@ async def new_session_form(request: Request) -> HTMLResponse:
         rulesets = []
         profiles = []
     return _templates.TemplateResponse(
+        request,
         "sessions/form.html",
         template_context(
             request,
@@ -168,6 +170,7 @@ async def create_session(
             rulesets = []
             profiles = []
         return _templates.TemplateResponse(
+            request,
             "sessions/form.html",
             template_context(
                 request,
@@ -269,6 +272,7 @@ async def view_session(
                     break
 
     return _templates.TemplateResponse(
+        request,
         "sessions/detail.html",
         template_context(
             request,
@@ -479,6 +483,7 @@ def _retry_fragment(
     path without re-navigating.
     """
     return _templates.TemplateResponse(
+        request,
         "sessions/_log_retry_result.html",
         template_context(
             request,
@@ -545,10 +550,15 @@ async def run_session_stage(
 
     reg = get_registry()
     if stage == "capture":
+        # ``resume_checkpoint`` is "0" when the user explicitly chose "Start over"
+        # from the checkpoint banner; anything else (including the default "1" from
+        # the normal Run capture button) resumes from the checkpoint if one exists.
+        resume_capture = form.get("resume_checkpoint", "1") != "0"
         record = await reg.submit(
             f"capture: {name}",
             runners.run_capture_job,
             session_name=name,
+            resume=resume_capture,
             run_aggregations=aggregations_on,
             pipeline_names=selected_pipelines,
             metadata={"return_url": f"/sessions/{name}"},

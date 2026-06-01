@@ -41,6 +41,7 @@ async def landing(
     counts = alerts_mod.counts(env or "")
     events = await run_in_threadpool(storage.read_events, env or "", limit=100)
     return _templates.TemplateResponse(
+        request,
         "alerts/landing.html",
         template_context(
             request,

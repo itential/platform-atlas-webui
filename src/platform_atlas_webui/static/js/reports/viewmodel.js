@@ -438,7 +438,7 @@
     // that exactly matches a rule number shows only that one rule. After
     // flipping display:none, fade-up newly-visible rows so re-filtering
     // feels alive instead of silent.
-    window.atlasReportRulesFilter = function (opts) {
+    var _atlasFilterRaw = function (opts) {
       const raw = (opts && opts.q || '').trim().toLowerCase();
       const status = (opts && opts.status) || 'all';
       const tokens = raw.length ? raw.split(/\s+/).filter(Boolean) : [];
@@ -480,6 +480,24 @@
           delay: window.anime.stagger(14),
           ease: 'outQuad',
         });
+      }
+    };
+
+    // Expose a debounce-wrapped version for text-input calls (high-frequency
+    // @input events). Status chip clicks pass a changed status but the same q,
+    // so we detect text-input by tracking the last q value — chip clicks run
+    // immediately, keystrokes are batched into one call per 180 ms.
+    var _filterTimer = null;
+    var _filterLastQ = '';
+    window.atlasReportRulesFilter = function (opts) {
+      var q = (opts && opts.q) || '';
+      if (q !== _filterLastQ) {
+        _filterLastQ = q;
+        clearTimeout(_filterTimer);
+        _filterTimer = setTimeout(function () { _atlasFilterRaw(opts); }, 180);
+      } else {
+        clearTimeout(_filterTimer);
+        _atlasFilterRaw(opts);
       }
     };
 
@@ -647,7 +665,22 @@
     if (isError) {
       bodyHtml += '<div class="vm-error-inline"><strong>Error:</strong> ' + escapeHTML(p.error || 'unknown') + '</div>';
     } else {
-      bodyHtml += renderSortableTable(p.columns || [], p.rows || []);
+      var linkDefs = null;
+      if ((p.name || '').toLowerCase().indexOf('largest job') !== -1) {
+        linkDefs = {};
+        var platformBase = (_vm && _vm.session && _vm.session.platform_uri)
+          ? _vm.session.platform_uri.replace(/\/+$/, '')
+          : '';
+        if (platformBase) {
+          linkDefs['Job ID'] = function (val) {
+            return platformBase + '/operations-manager/#/jobs/' + encodeURIComponent(val);
+          };
+        }
+        linkDefs['Workflow Name'] = function (val) {
+          return 'http://localhost:3000/automation-studio/#/edit?tab=0&workflow=' + encodeURIComponent(val);
+        };
+      }
+      bodyHtml += renderSortableTable(p.columns || [], p.rows || [], linkDefs);
     }
 
     pane.innerHTML = bodyHtml;
@@ -904,7 +937,7 @@
   // Click a header to sort by that column. Click again to reverse.
   // anime.js fades the rows out, mutates DOM order, fades back in.
   // ─────────────────────────────────────────────────────────────
-  function renderSortableTable(columns, rows) {
+  function renderSortableTable(columns, rows, linkDefs) {
     if (!rows || !rows.length) return '<div class="text-text-3 text-[12px] py-2">No rows.</div>';
     const cols = columns && columns.length ? columns : Object.keys(rows[0] || {});
     let out = '<div class="vm-table-wrap"><table class="vm-data-table" data-sortable><thead><tr>';
@@ -916,8 +949,23 @@
     rows.forEach(function (r) {
       out += '<tr>';
       cols.forEach(function (c) {
-        out += '<td data-col="' + escapeAttr(c) + '" data-raw="' + escapeAttr(formatLeaf(r[c])) + '">' +
-          escapeHTML(formatLeaf(r[c])) + '</td>';
+        const rawVal = formatLeaf(r[c]);
+        const linkFn = linkDefs && linkDefs[c];
+        if (linkFn && rawVal) {
+          const href = linkFn(rawVal);
+          out += '<td data-col="' + escapeAttr(c) + '" data-raw="' + escapeAttr(rawVal) + '">' +
+            '<a href="' + escapeAttr(href) + '" target="_blank" rel="noopener noreferrer" class="vm-cell-link">' +
+            escapeHTML(rawVal) +
+            '<svg class="vm-cell-link-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+              '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' +
+              '<polyline points="15 3 21 3 21 9"/>' +
+              '<line x1="10" y1="14" x2="21" y2="3"/>' +
+            '</svg>' +
+            '</a></td>';
+        } else {
+          out += '<td data-col="' + escapeAttr(c) + '" data-raw="' + escapeAttr(rawVal) + '">' +
+            escapeHTML(rawVal) + '</td>';
+        }
       });
       out += '</tr>';
     });

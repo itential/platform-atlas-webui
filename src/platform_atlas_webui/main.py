@@ -25,6 +25,20 @@ import argparse
 import logging
 import sys
 
+# -- Windows UTF-8 bootstrap ----------------------------------------------
+# Reconfigure stdout/stderr to UTF-8 on Windows before anything prints.
+# Windows consoles default to a locale code page (cp1252/cp850) that cannot
+# represent Unicode characters (✓ ✘ ● em-dashes, box-drawing, etc.).
+if sys.platform == "win32":
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            if hasattr(_s, "reconfigure"):
+                _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    del _s
+# -------------------------------------------------------------------------
+
 from platform_atlas_webui.app import create_app
 from platform_atlas_webui.config import WebUISettings
 
@@ -259,7 +273,7 @@ def _run_server(args: argparse.Namespace) -> int:
 
     _log_file = tls_mod.CERT_FILE.parent / "webui.log"
     _fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    _handlers: list[logging.Handler] = [logging.FileHandler(str(_log_file))]
+    _handlers: list[logging.Handler] = [logging.FileHandler(str(_log_file), encoding="utf-8")]
     if not quiet:
         _handlers.append(logging.StreamHandler())
 

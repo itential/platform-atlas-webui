@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time as _time
 from typing import Any
 
 from platform_atlas.core.paths import ATLAS_CONFIG_FILE
@@ -14,6 +15,17 @@ from platform_atlas.core.utils import atomic_write_json
 # the pre-write state and the second writer would clobber the first.
 # threading.Lock works for both sync def (threadpool) and async def callers.
 _CONFIG_LOCK = threading.Lock()
+
+# Short-lived in-process cache for resolve_active_tier() — covers burst reads
+# within a single page-load cycle (list_sessions + get_session both call it).
+_tier_cache_value: str | None = None
+_tier_cache_ts: float = 0.0
+_TIER_CACHE_TTL = 1.0  # seconds
+
+
+def _invalidate_tier_cache() -> None:
+    global _tier_cache_ts
+    _tier_cache_ts = 0.0
 
 
 # Fields the WebUI will let the user edit. The CLI's `config set` allows
@@ -109,10 +121,21 @@ def resolve_active_tier(default: str = "extended") -> str:
     Order: ATLAS_TIER env var > active environment overlay > root config > default.
     Returns the literal tier string ("standard"/"extended"); does not validate.
     Read-only — never writes.
+
+    Result is cached for _TIER_CACHE_TTL seconds to avoid re-reading config.json
+    on every route handler that calls list_sessions() and get_session() in the same
+    request. _invalidate_tier_cache() is called by update_config() on every write.
     """
+    global _tier_cache_value, _tier_cache_ts
+    now = _time.monotonic()
+    if _tier_cache_value is not None and now - _tier_cache_ts < _TIER_CACHE_TTL:
+        return _tier_cache_value
+
     import os as _os
     env_tier = _os.environ.get("ATLAS_TIER", "").strip().lower()
     if env_tier in ("standard", "extended"):
+        _tier_cache_value = env_tier
+        _tier_cache_ts = now
         return env_tier
     cfg = read_config()
     tier = cfg.get("tier") or default
@@ -127,6 +150,8 @@ def resolve_active_tier(default: str = "extended") -> str:
                     tier = env_data["tier"]
         except Exception:
             pass
+    _tier_cache_value = tier
+    _tier_cache_ts = now
     return tier
 
 
@@ -150,6 +175,7 @@ def mirror_tier_to_active_overlay(new_tier: str) -> None:
         env_data = json.loads(env_file.read_text(encoding="utf-8"))
         env_data["tier"] = new_tier
         atomic_write_json(env_file, env_data)
+        _invalidate_tier_cache()
     except Exception:
         pass
 
@@ -167,6 +193,7 @@ def update_config(updates: dict[str, Any]) -> dict[str, Any]:
                 continue
             data[key] = _coerce(key, raw)
         atomic_write_json(ATLAS_CONFIG_FILE, data)
+        _invalidate_tier_cache()
         return data
 
 

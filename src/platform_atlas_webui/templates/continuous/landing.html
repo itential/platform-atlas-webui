@@ -396,6 +396,320 @@
   </div>
 </section>
 
+{# ── Log Watches — TODO: implement in a later version of Atlas ── #}
+{# To re-enable: change {% if false %} below to {% if true %} and restore the
+   lw_* keys in routes/continuous.py landing(), then uncomment the engine.py
+   block, handlers/continuous.py handlers, and cli.py subparser. #}
+{% if false %}
+<section class="card" style="margin-top:12px;">
+  <div class="card-head">
+    <h3>Log Watches</h3>
+    {% if settings.log_watch_enabled %}
+      <span class="chip ok"><span class="dot"></span>Enabled</span>
+    {% else %}
+      <span class="chip"><span class="dot"></span>Disabled</span>
+    {% endif %}
+    <span class="sub">Extended mode only · tails logs each audit run for known error keywords</span>
+  </div>
+  <div class="card-body">
+
+    <p style="color:var(--text-3); font-size:12px; line-height:1.55; margin:0 0 14px;">
+      Each watch scans Platform, webserver, or MongoDB logs for a keyword from Atlas's
+      curated heuristics list. Alerts flow through the same policy and notification
+      pipeline as drift events — notifications only fire on a <strong>new or re-opened</strong>
+      alert, not on every matching run.
+    </p>
+
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
+      {% if settings.log_watch_enabled %}
+        <form method="post" action="/continuous/log-watch/disable">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn" data-loading-label="Disabling…">Disable log watches</button>
+        </form>
+      {% else %}
+        <form method="post" action="/continuous/log-watch/enable">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn primary" data-loading-label="Enabling…">Enable log watches</button>
+        </form>
+      {% endif %}
+    </div>
+
+    {# ── Existing watches table ── #}
+    {% if settings.log_watches %}
+      <div style="overflow-x:auto; margin-bottom:16px;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--line);">
+              <th style="text-align:left; padding:8px 12px; font-size:11px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Name</th>
+              <th style="text-align:left; padding:8px 12px; font-size:11px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Keyword</th>
+              <th style="text-align:left; padding:8px 12px; font-size:11px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Source</th>
+              <th style="text-align:left; padding:8px 12px; font-size:11px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Threshold</th>
+              <th style="text-align:left; padding:8px 12px; font-size:11px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Severity</th>
+              <th style="text-align:left; padding:8px 12px; font-size:11px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Status</th>
+              <th style="text-align:right; padding:8px 12px; font-size:11px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for w in settings.log_watches %}
+              <tr style="border-bottom:1px solid var(--line); {% if not w.enabled %}opacity:0.55;{% endif %}">
+                <td style="padding:7px 12px;">{{ w.name }}</td>
+                <td style="padding:7px 12px; font-family:var(--mono); font-size:11px;">{{ w.pattern }}</td>
+                <td style="padding:7px 12px; font-family:var(--mono); font-size:11px; color:var(--text-3);">{{ w.log_source }}</td>
+                <td style="padding:7px 12px; font-size:11px; color:var(--text-3);">
+                  {% if w.threshold_mode == 'any' %}
+                    any match
+                  {% elif w.threshold_mode == 'count' %}
+                    ≥{{ w.threshold_count }} per run
+                  {% elif w.threshold_mode == 'window' %}
+                    ≥{{ w.threshold_count }} in {{ w.threshold_window_minutes }}m
+                  {% endif %}
+                </td>
+                <td style="padding:7px 12px;">
+                  {% if w.severity == 'critical' %}
+                    <span class="chip bad" style="font-size:10px;">critical</span>
+                  {% elif w.severity == 'warning' %}
+                    <span class="chip warn" style="font-size:10px;">warning</span>
+                  {% else %}
+                    <span class="chip" style="font-size:10px;">{{ w.severity }}</span>
+                  {% endif %}
+                </td>
+                <td style="padding:7px 12px;">
+                  {% if w.enabled %}
+                    <span class="chip ok" style="font-size:10px;"><span class="dot"></span>Active</span>
+                  {% else %}
+                    <span class="chip" style="font-size:10px;">Paused</span>
+                  {% endif %}
+                </td>
+                <td style="padding:7px 12px; text-align:right; white-space:nowrap;">
+                  <form method="post" action="/continuous/log-watch/{{ w.id }}/toggle" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn sm" style="font-size:11px;">
+                      {{ 'Pause' if w.enabled else 'Resume' }}
+                    </button>
+                  </form>
+                  <form method="post" action="/continuous/log-watch/{{ w.id }}/remove" style="display:inline; margin-left:4px;"
+                        data-confirm-action data-confirm-kind="danger"
+                        data-confirm-title="Remove watch?"
+                        data-confirm-message="Remove log watch '{{ w.name }}'? This cannot be undone."
+                        data-confirm-label="Remove">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn sm danger" style="font-size:11px;">Remove</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p style="color:var(--text-4); font-size:12px; font-style:italic; margin-bottom:16px;">
+        No log watches configured — add one below.
+      </p>
+    {% endif %}
+
+    {# ── Add watch form ── #}
+    <details id="lw-add-form">
+      <summary style="cursor:pointer; font-size:13px; font-weight:600; color:var(--text-2); padding:6px 0; user-select:none;">
+        + Add a log watch
+      </summary>
+      <form method="post" action="/continuous/log-watch/add"
+            style="margin-top:12px; display:flex; flex-direction:column; gap:12px; max-width:540px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <label style="display:flex; flex-direction:column; gap:4px;">
+          <span style="font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">Watch name</span>
+          <input type="text" name="name" placeholder="e.g. MongoDB connection errors" required
+                 style="height:30px; padding:0 10px; border:1px solid var(--line); border-radius:6px;
+                        background:var(--surface-2); color:var(--text); font-size:12px;">
+        </label>
+
+        {# ── Keyword combobox — replaces native <select> ── #}
+        <div style="display:flex; flex-direction:column; gap:4px; position:relative;"
+             x-data="{open:false,search:'',selected:'',groups:[],
+                      get filtered(){
+                        var q=this.search.toLowerCase().trim();
+                        if(!q)return this.groups;
+                        return this.groups
+                          .map(function(g){return[g[0],g[1].filter(function(k){return k.toLowerCase().indexOf(q)!==-1;})];})
+                          .filter(function(g){return g[1].length>0;});
+                      },
+                      pick:function(kw){this.selected=kw;this.open=false;this.search=''}}"
+             x-init="groups=JSON.parse($el.getAttribute('data-groups'))"
+             data-groups="{{ lw_keyword_groups | tojson | e }}"
+             @keydown.escape="open=false">
+
+          <input type="hidden" name="pattern" :value="selected">
+          <span style="font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">Keyword</span>
+
+          {# Trigger button #}
+          <button type="button"
+                  @click="open=!open" @click.outside="open=false"
+                  :aria-expanded="open.toString()"
+                  style="display:flex; align-items:center; justify-content:space-between; gap:8px;
+                         height:30px; padding:0 10px; width:100%; text-align:left; cursor:pointer;
+                         border-radius:6px; font-size:12px; transition:border-color .12s, background .12s;"
+                  :style="open
+                          ? 'border:1px solid var(--accent); background:var(--surface-2); color:var(--text);'
+                          : 'border:1px solid var(--line); background:var(--surface-2); color:var(--text);'">
+            <span x-text="selected || '(select a keyword)'"
+                  :style="selected ? '' : 'color:var(--text-4)'"></span>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                 style="flex-shrink:0; opacity:.5; transition:transform .15s;"
+                 :style="open && 'transform:rotate(180deg); opacity:.8'">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+
+          {# Dropdown panel #}
+          <div x-show="open" x-cloak
+               x-transition:enter="transition ease-out duration-150"
+               x-transition:enter-start="opacity-0 -translate-y-1"
+               x-transition:enter-end="opacity-100 translate-y-0"
+               x-transition:leave="transition ease-in duration-100"
+               x-transition:leave-start="opacity-100 translate-y-0"
+               x-transition:leave-end="opacity-0 -translate-y-1"
+               x-effect="if(open) $nextTick(function(){ var s=$el.querySelector('input[type=text]'); if(s) s.focus(); })"
+               class="absolute z-50 left-0 right-0 rounded-lg overflow-hidden"
+               style="top:calc(100% + 4px); background:var(--surface-2);
+                      border:1px solid var(--accent); box-shadow:0 8px 28px rgba(0,0,0,.4);">
+
+            {# Search row #}
+            <div style="padding:7px 7px 6px; border-bottom:1px solid var(--line);">
+              <input type="text" x-model="search" placeholder="Filter keywords…"
+                     autocomplete="off" @keydown.enter.prevent
+                     style="width:100%; height:26px; padding:0 9px;
+                            background:var(--surface); border:1px solid var(--line);
+                            border-radius:5px; color:var(--text); font-size:12px;
+                            outline:none; box-sizing:border-box;"
+                     @focus="$el.style.borderColor='var(--accent)'"
+                     @blur="$el.style.borderColor='var(--line)'">
+            </div>
+
+            {# Grouped keyword list #}
+            <div style="max-height:214px; overflow-y:auto; padding:4px 0;">
+              <template x-for="group in filtered" :key="group[0]">
+                <div>
+                  {# Group label #}
+                  <div x-text="group[0]"
+                       style="padding:7px 11px 2px; font-size:10px; font-weight:700;
+                              letter-spacing:.08em; text-transform:uppercase;
+                              color:var(--text-4); user-select:none; pointer-events:none;"></div>
+                  {# Keywords #}
+                  <template x-for="kw in group[1]" :key="kw">
+                    <button type="button" @click="pick(kw)"
+                            style="display:flex; align-items:center; justify-content:space-between;
+                                   width:100%; padding:5px 11px 5px 18px; text-align:left;
+                                   font-family:var(--mono); font-size:11.5px;
+                                   background:none; border:none; cursor:pointer;"
+                            :style="kw===selected
+                                    ? 'color:var(--accent); background:oklch(60% .15 200 / .1);'
+                                    : 'color:var(--text-2);'"
+                            @mouseenter="$el.style.background=(kw===selected?'oklch(60% .15 200 / .15)':'var(--surface-3,var(--bg-2,var(--surface)))')"
+                            @mouseleave="$el.style.background=(kw===selected?'oklch(60% .15 200 / .1)':'')">
+                      <span x-text="kw"></span>
+                      <svg x-show="kw===selected" width="10" height="10" viewBox="0 0 24 24"
+                           fill="none" stroke="currentColor" stroke-width="3"
+                           style="flex-shrink:0; color:var(--accent);">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    </button>
+                  </template>
+                </div>
+              </template>
+              {# Empty search state #}
+              <div x-show="filtered.length===0"
+                   style="padding:16px; text-align:center; color:var(--text-4); font-size:12px;">
+                No keywords match &ldquo;<span x-text="search" style="font-family:var(--mono);"></span>&rdquo;
+              </div>
+            </div>
+          </div>
+
+          <span style="font-size:11px; color:var(--text-4); line-height:1.4;">
+            Keywords are from Atlas's curated heuristics list — case-insensitive substring match against log lines.
+          </span>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span style="font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">Log source</span>
+            <select name="log_source"
+                    style="height:30px; padding:0 8px; border:1px solid var(--line); border-radius:6px;
+                           background:var(--surface-2); color:var(--text); font-size:12px;">
+              {% for src in lw_sources %}
+                <option value="{{ src }}" {% if src == 'any' %}selected{% endif %}>{{ src }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span style="font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">Severity</span>
+            <select name="severity"
+                    style="height:30px; padding:0 8px; border:1px solid var(--line); border-radius:6px;
+                           background:var(--surface-2); color:var(--text); font-size:12px;">
+              <option value="warning" selected>warning</option>
+              <option value="critical">critical</option>
+              <option value="info">info</option>
+            </select>
+          </label>
+        </div>
+
+        <label style="display:flex; flex-direction:column; gap:4px;">
+          <span style="font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">Alert threshold</span>
+          <select name="threshold_mode" id="lw-threshold-mode"
+                  onchange="(function(s){
+                    var c=document.getElementById('lw-count-row'),w=document.getElementById('lw-window-row');
+                    c.style.display=(s.value==='count'||s.value==='window')?'block':'none';
+                    w.style.display=(s.value==='window')?'block':'none';
+                    document.getElementById('lw-any-warn').style.display=(s.value==='any')?'block':'none';
+                  })(this)"
+                  style="height:30px; padding:0 8px; border:1px solid var(--line); border-radius:6px;
+                         background:var(--surface-2); color:var(--text); font-size:12px;">
+            <option value="count" selected>Count — ≥ N matches per run</option>
+            <option value="window">Window — ≥ N matches in last T minutes</option>
+            <option value="any">Any — first match triggers</option>
+          </select>
+          <div id="lw-any-warn" style="display:none; margin-top:4px; padding:7px 10px;
+               background:var(--warn-tint,rgba(245,158,11,.1)); border:1px solid var(--warn);
+               border-radius:5px; font-size:11px; color:var(--warn); line-height:1.45;">
+            <strong>Note:</strong> Any-match mode will re-alert after every acknowledgment as long as the
+            keyword appears in logs. Use Count or Window mode for common keywords to avoid notification noise.
+          </div>
+        </label>
+
+        <div id="lw-count-row" style="display:block;">
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span style="font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">
+              Minimum matches (min {{ lw_min_count }})
+            </span>
+            <input type="number" name="threshold_count" value="{{ lw_min_count }}"
+                   min="{{ lw_min_count }}" max="9999"
+                   style="height:30px; padding:0 10px; border:1px solid var(--line); border-radius:6px;
+                          background:var(--surface-2); color:var(--text); font-size:12px; width:120px;">
+          </label>
+        </div>
+
+        <div id="lw-window-row" style="display:none;">
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span style="font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">
+              Window (minutes, min {{ lw_min_window }})
+            </span>
+            <input type="number" name="threshold_window_minutes" value="60"
+                   min="{{ lw_min_window }}" max="10080"
+                   style="height:30px; padding:0 10px; border:1px solid var(--line); border-radius:6px;
+                          background:var(--surface-2); color:var(--text); font-size:12px; width:120px;">
+          </label>
+        </div>
+
+        <div>
+          <button type="submit" class="btn primary" style="font-size:12px;"
+                  data-loading-label="Adding…">Add watch</button>
+        </div>
+      </form>
+    </details>
+
+  </div>
+</section>
+{% endif %}
+
 {# ── OS scheduler status (systemd on Linux, launchd on macOS) ── #}
 {% set _is_launchd = timer.backend == 'launchd' %}
 {% set _backend_label = 'launch agent' if _is_launchd else 'systemd timer' %}

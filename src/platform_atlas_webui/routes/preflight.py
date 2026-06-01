@@ -63,6 +63,7 @@ async def preflight_landing(request: Request, job: str = "") -> HTMLResponse:
             started_at_epoch = rec.started_at or 0.0
 
     return _templates.TemplateResponse(
+        request,
         "preflight/landing.html",
         template_context(
             request,

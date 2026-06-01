@@ -5,6 +5,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-06-01
+
+Requires `platform-atlas >=1.8,<2.0`.
+
+### Added
+
+- **Ruleset update notice** — a slim banner appears on the dashboard when a ruleset update is available but has not yet been applied. Reads `~/.atlas/.ruleset_update_available.json`; disappears on the next page load once the file is gone.
+- **Windows 11 support** — WebUI entry point (`main.py`) now reconfigures `stdout`/`stderr` to UTF-8 before any output so Unicode characters (✓ ✘ ● em-dashes) render correctly on Windows consoles. `daemon.py` already gates daemonization on `os.name == "posix"` and uses `getattr(signal, "SIGKILL", signal.SIGTERM)` for safe cross-platform process termination. Additional hardening:
+  - `logging.FileHandler` now passes `encoding="utf-8"` — fixes a `UnicodeEncodeError` crash on non-UTF-8 Windows locales when job output contains Unicode characters (em-dashes in rule messages, ✓/✘ in status events).
+  - `os.chmod()` calls in `security/tls.py`, `security/tokens.py`, `security/audit.py`, and `services/setup.py` are now skipped on Windows (`if os.name == "posix"` / early return) — they were silent no-ops but are now explicitly gated for clarity.
+- **Support Bundle page** (`/support-bundle`) — collects Platform health endpoints, SSH logs and system info (Extended tier), and a redacted Atlas config snapshot into a ZIP. Form takes a ticket number, optional description, and log-window days. Job streams live via SSE; a Download button appears on completion. The download link is single-use — the temp file is removed after the first download.
+- **Resume interrupted captures** — when a capture is interrupted mid-run, a checkpoint file records which modules completed. The session detail page now shows a banner with **Resume** (pick up from where it left off) and **Start over** (discard checkpoint) buttons. The capture runner creates and manages the checkpoint transparently; it is cleared automatically on successful completion.
+- **Rule suppression in the ruleset table** — each rule row now has a **Suppress** button that expands an inline reason form (min 10 chars required). Suppressed rules show an amber **Suppressed** pill, the justification reason in italic below it, and a **Restore** button. Calls `/rulesets/suppress` and `/rulesets/unsuppress`, which write to the active environment's `skip_rules` list (not the profile). Profile-disabled rules continue to show a muted **Disabled in profile** pill with no toggle.
+- **Architecture warnings panel** — the `/architecture` page now renders a warnings strip above the form. Each warning is a color-coded card (orange = latency risk, blue = availability risk) derived from the collected datacenter and HA topology data. Also exposed via `GET /architecture/warnings` for API consumers.
+
+### Performance
+
+- **Report viewmodel HTTP caching** — `GET /reports/{name}/viewmodel` now returns `Cache-Control: private, max-age=120`. The viewmodel JSON is already persisted to disk at report-generation time and only changes on `?refresh=1`, so the browser no longer re-downloads the full payload (often 500 KB+) on every tab switch or HTMX back/forward. Force-refresh responses use `no-store` so they always re-fetch.
+- **Rules search debounce** — `atlasReportRulesFilter` now batches rapid text-input events into a single DOM pass after 180 ms of inactivity, preventing a full table scan and DOM mutation on every keystroke. Status chip clicks (which change the filter without changing the search text) are still applied immediately.
+- **Parquet column projection in session summary** — `get_session_summary()` passes an explicit `columns=[...]` list to `pd.read_parquet()`, reading only the 9 fields it uses rather than deserializing the entire DataFrame. Avoids unnecessary I/O on large validation files.
+- **Session summary in-process cache** — `get_session_summary()` caches its result for 60 seconds once `validation_completed` is true, so repeated calls from the post-pipeline mini-report (SSE close + frontend poll) skip the Parquet read entirely.
+- **Tier resolution in-process cache** — `resolve_active_tier()` now caches its result for 1 second, covering burst reads within a single page-load cycle where `list_sessions()` and `get_session()` each call it independently. Cache is invalidated immediately by `update_config()` and `mirror_tier_to_active_overlay()` on any tier write.
+
+---
+
 ## [1.0.0] - 2026-05-13
 
 Initial release. The WebUI works together with CLI `platform-atlas` 1.7.x.

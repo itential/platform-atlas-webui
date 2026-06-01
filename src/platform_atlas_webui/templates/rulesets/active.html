@@ -32,11 +32,11 @@
     border-radius: 0 0 var(--r-lg) var(--r-lg);
     overflow: hidden;
   }
-  .rs-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .rs-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .rs-table thead th {
-    text-align: left; padding: 10px 14px;
-    font-size: 10.5px; font-weight: 600;
-    color: var(--text-3); letter-spacing: .07em; text-transform: uppercase;
+    text-align: left; padding: 11px 14px;
+    font-size: 11.5px; font-weight: 600;
+    color: var(--text-3); letter-spacing: .06em; text-transform: uppercase;
     background: var(--surface-2); border-bottom: 1px solid var(--line);
     white-space: nowrap; position: sticky; top: 0; z-index: 1;
   }
@@ -48,33 +48,31 @@
   .rs-table tbody tr:hover { background: var(--surface-2); }
   .rs-table tbody tr.is-disabled { opacity: .55; }
   .rs-table tbody tr.is-open { background: var(--surface-2); }
-  .rs-table td { padding: 10px 14px; vertical-align: middle; }
+  .rs-table td { padding: 11px 14px; vertical-align: middle; }
   .rs-table tbody tr:last-child td { border-bottom: none; }
-  .rs-table .col-num   { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
-  .rs-table .col-sev   { width: 92px; }
-  .rs-table .col-cat   { width: 110px; }
+  .rs-table .col-num   { font-family: var(--mono); font-size: 12.5px; color: var(--text-3); white-space: nowrap; }
+  .rs-table .col-sev   { width: 100px; }
+  .rs-table .col-cat   { width: 120px; }
   .rs-table .col-name  { font-weight: 500; color: var(--text); }
-  .rs-table .col-name .desc { display: block; font-weight: 400; color: var(--text-3); font-size: 11.5px; margin-top: 2px; }
-  .rs-table .col-path  { font-family: var(--mono); font-size: 11px; color: var(--text-3); white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
-  .rs-table .col-status { width: 92px; text-align: right; }
+  .rs-table .col-name .desc { display: block; font-weight: 400; color: var(--text-3); font-size: 12.5px; margin-top: 3px; }
+  .rs-table .col-path  { font-family: var(--mono); font-size: 12px; color: var(--text-3); white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+  .rs-table .col-status { white-space: nowrap; }
 
-  /* Compact density — toggled via .rs-density-btn buttons, persisted in
-     localStorage. Tightens vertical padding, drops the rule description
-     subtitle, and shrinks pill sizing so 2× more rules fit on screen
-     without changing the underlying table semantics. */
-  .rs-table.is-compact { font-size: 11.5px; }
-  .rs-table.is-compact thead th { padding: 5px 14px; }
-  .rs-table.is-compact tbody td { padding: 4px 14px; }
+  /* Compact density */
+  .rs-table.is-compact { font-size: 12px; }
+  .rs-table.is-compact thead th { padding: 6px 14px; font-size: 10.5px; }
+  .rs-table.is-compact tbody td { padding: 5px 14px; }
   .rs-table.is-compact .col-num,
-  .rs-table.is-compact .col-path { font-size: 10.5px; }
+  .rs-table.is-compact .col-path { font-size: 11px; }
   .rs-table.is-compact .col-name .desc { display: none; }
   .rs-table.is-compact .sev-pill,
-  .rs-table.is-compact .cat-pill { font-size: 9.5px; padding: 1px 7px; }
-  .rs-table.is-compact .status-pill { font-size: 10px; }
+  .rs-table.is-compact .cat-pill { font-size: 10px; padding: 1px 7px; }
+  .rs-table.is-compact .status-pill { font-size: 11px; }
+  .rs-table.is-compact .rule-toggle-btn { font-size: 10.5px; padding: 2px 8px; }
 
   .sev-pill {
     display: inline-flex; align-items: center; gap: 5px;
-    font-size: 10.5px; font-weight: 600; padding: 3px 9px;
+    font-size: 11.5px; font-weight: 600; padding: 3px 10px;
     border-radius: 999px; border: 1px solid;
     text-transform: uppercase; letter-spacing: .05em;
   }
@@ -84,7 +82,7 @@
   .sev-pill.is-other    { color: var(--text-3); border-color: var(--line-2); }
 
   .cat-pill {
-    display: inline-block; font-size: 10.5px; padding: 2px 8px;
+    display: inline-block; font-size: 11.5px; padding: 3px 9px;
     border-radius: 4px; border: 1px solid var(--line-2);
     color: var(--text-2); background: var(--surface-2);
     font-family: var(--mono); letter-spacing: .02em;
@@ -92,32 +90,115 @@
 
   .status-pill {
     display: inline-flex; align-items: center; gap: 5px;
-    font-size: 11px; color: var(--text-3);
+    font-size: 12px; color: var(--text-3);
   }
-  .status-pill .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--text-4); }
+  .status-pill .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--text-4); }
   .status-pill.is-on .dot { background: var(--ok); box-shadow: 0 0 0 2px oklch(from var(--ok) l c h / .15); }
-  /* Disabled-in-profile variant — visibly distinct from a plain "Disabled"
-     so users can tell at a glance the disable came from the profile overlay
-     (editable in rules/rulesets/profiles/) rather than the base ruleset. */
   .status-pill.is-profile-off {
-    color: var(--text-2);
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 1px 8px;
+    color: var(--text-2); background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px;
   }
   .status-pill.is-profile-off .dot { background: var(--text-3); }
+  .status-pill.is-suppressed {
+    color: #b36b00; background: rgba(255,153,0,0.10);
+    border: 1px solid rgba(255,153,0,0.35);
+    border-radius: 999px; padding: 2px 9px;
+  }
+  .status-pill.is-suppressed .dot { background: #e08000; }
+
+  /* Status cell layout — pill + action button on one line */
+  .col-status-inner { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+
+  .rule-toggle-btn {
+    font-size: 11.5px; font-weight: 500; line-height: 1;
+    padding: 3px 10px; border-radius: 999px; cursor: pointer;
+    border: 1px solid #b36b00; color: #b36b00; background: transparent;
+    transition: background .15s, color .15s; white-space: nowrap;
+    vertical-align: middle;
+  }
+  .rule-toggle-btn:hover { background: #b36b00; color: #fff; }
+  .rule-toggle-btn.is-enable { border-color: #99CA3C; color: #5a7a1e; }
+  .rule-toggle-btn.is-enable:hover { background: #99CA3C; color: #fff; }
+
+  /* Suppress modal */
+  .suppress-backdrop {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,.45); backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .suppress-modal {
+    background: var(--surface); border: 1px solid var(--line-2);
+    border-radius: var(--r-lg); box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    width: 100%; max-width: 440px; padding: 0; overflow: hidden;
+  }
+  .suppress-modal-head {
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  }
+  .suppress-modal-head h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+  .suppress-modal-head .rule-ref { font-family: var(--mono); font-size: 12px; color: var(--text-3); margin-top: 3px; }
+  .suppress-modal-close {
+    background: none; border: none; cursor: pointer; padding: 2px;
+    color: var(--text-3); line-height: 1; font-size: 20px;
+    transition: color .15s; flex-shrink: 0;
+  }
+  .suppress-modal-close:hover { color: var(--text); }
+  .suppress-modal-body { padding: 18px 20px 20px; }
+  .suppress-modal-body label {
+    display: block; font-size: 12px; font-weight: 600;
+    color: var(--text-2); margin-bottom: 6px; letter-spacing: .03em;
+  }
+  .suppress-modal-body .hint { font-size: 11.5px; color: var(--text-3); margin-bottom: 10px; }
+  .suppress-modal-body textarea {
+    width: 100%; box-sizing: border-box;
+    padding: 9px 11px; font-size: 13px; line-height: 1.5;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px;
+    resize: vertical; min-height: 80px;
+    transition: border-color .15s, box-shadow .15s;
+    outline: none;
+  }
+  .suppress-modal-body textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .suppress-modal-actions {
+    display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;
+  }
+  .suppress-modal-actions .btn-cancel {
+    padding: 7px 16px; font-size: 13px; border-radius: var(--r-md);
+    border: 1px solid var(--line); background: transparent; color: var(--text-2);
+    cursor: pointer; transition: background .15s;
+  }
+  .suppress-modal-actions .btn-cancel:hover { background: var(--surface-2); }
+  .suppress-modal-actions .btn-confirm {
+    padding: 7px 16px; font-size: 13px; font-weight: 600;
+    border-radius: var(--r-md); border: none;
+    background: #b36b00; color: #fff; cursor: pointer;
+    transition: background .15s;
+  }
+  .suppress-modal-actions .btn-confirm:hover { background: #8f5200; }
 
   /* Expanded row drawer */
   .rs-drawer-row td { padding: 0 !important; background: var(--bg); }
   .rs-drawer { padding: 16px 22px 18px; border-top: 1px dashed var(--line-2); display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
-  .rs-drawer h5 { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); }
-  .rs-drawer p, .rs-drawer .kv { font-size: 12.5px; color: var(--text-2); line-height: 1.55; margin: 0 0 12px; }
-  .rs-drawer .kv code { font-family: var(--mono); font-size: 11.5px; color: var(--text); background: var(--surface); padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; }
-  .rs-msg { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; padding: 8px 10px; border-radius: 6px; margin-bottom: 6px; line-height: 1.45; }
+  .rs-drawer h5 { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); }
+  .rs-drawer p, .rs-drawer .kv { font-size: 13px; color: var(--text-2); line-height: 1.55; margin: 0 0 12px; }
+  .rs-drawer .kv code { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--surface); padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; }
+  .rs-msg { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; padding: 9px 11px; border-radius: 6px; margin-bottom: 6px; line-height: 1.45; }
   .rs-msg.is-pass { color: var(--ok);  background: var(--ok-soft);  border: 1px solid oklch(from var(--ok) l c h / .25); }
   .rs-msg.is-fail { color: var(--bad); background: var(--bad-soft); border: 1px solid oklch(from var(--bad) l c h / .25); }
-  .rs-msg .label { font-weight: 600; text-transform: uppercase; font-size: 9.5px; letter-spacing: .07em; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,.1); flex-shrink: 0; margin-top: 1px; }
+  .rs-msg .label { font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: .07em; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,.1); flex-shrink: 0; margin-top: 2px; }
+  .rs-drawer .suppression-box {
+    padding: 10px 12px; border-radius: 6px; margin-bottom: 12px;
+    background: rgba(255,153,0,0.08); border: 1px solid rgba(255,153,0,0.30);
+  }
+  .rs-drawer .suppression-box .sup-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; color: #a05a00; margin-bottom: 4px;
+  }
+  .rs-drawer .suppression-box .sup-reason { font-size: 13px; color: #7a4400; line-height: 1.5; }
 
   .rs-empty { padding: 50px 20px; text-align: center; color: var(--text-3); }
   .rs-empty strong { display: block; margin-bottom: 4px; color: var(--text); font-size: 14px; }
@@ -127,7 +208,6 @@
     .rs-drawer { grid-template-columns: 1fr; }
   }
 
-  /* Defensive: ensure [hidden] on a drawer <tr> beats user-agent table-row default */
   tr[hidden] { display: none !important; }
 </style>
 
@@ -307,10 +387,28 @@
           </td>
           <td class="col-path" title="{{ r.path }}">{{ r.path or '—' }}</td>
           <td class="col-status">
-            {% if r.enabled %}
-              <span class="status-pill is-on" title="Active in this ruleset + profile">
-                <span class="dot"></span>Enabled
-              </span>
+            {% if r.suppressed_by_user %}
+              <div class="col-status-inner">
+                <span class="status-pill is-suppressed" title="Suppressed for this environment — shows as SKIP in reports.">
+                  <span class="dot"></span>Suppressed
+                </span>
+                <form method="post" action="/rulesets/unsuppress">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="rule_number" value="{{ r.rule_number }}">
+                  <button type="submit" class="rule-toggle-btn is-enable" title="Remove suppression for {{ r.rule_number }}">Restore</button>
+                </form>
+              </div>
+            {% elif r.enabled %}
+              <div class="col-status-inner">
+                <span class="status-pill is-on" title="Active in this ruleset + profile">
+                  <span class="dot"></span>Enabled
+                </span>
+                <button type="button" class="rule-toggle-btn suppress-open-btn"
+                        data-rule="{{ r.rule_number }}"
+                        data-rule-name="{{ r.name|e }}"
+                        data-csrf="{{ csrf_token }}"
+                        title="Suppress {{ r.rule_number }} for this environment">Suppress</button>
+              </div>
             {% elif r.disabled_by_profile %}
               <span class="status-pill is-profile-off"
                     title="Disabled by the active profile ({{ ruleset.profile or 'default' }}). Edit rules/rulesets/profiles/{{ ruleset.profile or '<profile>' }}.json to re-enable.">
@@ -327,6 +425,13 @@
           <td colspan="6">
             <div class="rs-drawer">
               <div>
+                {% if r.suppressed_by_user and r.suppression_reason %}
+                  <div class="suppression-box">
+                    <div class="sup-label">Suppression Reason</div>
+                    <div class="sup-reason">{{ r.suppression_reason }}</div>
+                  </div>
+                {% endif %}
+
                 <h5>Description</h5>
                 <p>{{ r.description or 'No additional description.' }}</p>
 
@@ -393,6 +498,31 @@
   </div>
 </section>
 {% endif %}
+
+{# ── Suppress modal ── #}
+<div class="suppress-backdrop" id="suppress-modal" hidden>
+  <div class="suppress-modal" role="dialog" aria-modal="true" aria-labelledby="suppress-modal-title">
+    <div class="suppress-modal-head">
+      <div>
+        <h3 id="suppress-modal-title">Suppress Rule</h3>
+        <div class="rule-ref" id="suppress-modal-ref"></div>
+      </div>
+      <button type="button" class="suppress-modal-close" id="suppress-modal-close" aria-label="Close">×</button>
+    </div>
+    <div class="suppress-modal-body">
+      <label for="suppress-modal-reason">Justification</label>
+      <p class="hint">Provide a brief reason (min 10 characters). Shown in audit reports when this rule is suppressed.</p>
+      <textarea id="suppress-modal-reason" rows="3"
+                placeholder="e.g. Waived by security team per ticket INC-1234…"
+                maxlength="500"></textarea>
+      <div id="suppress-modal-error" style="display:none;font-size:12px;color:var(--bad);margin-top:6px;"></div>
+      <div class="suppress-modal-actions">
+        <button type="button" class="btn-cancel" id="suppress-modal-cancel">Cancel</button>
+        <button type="button" class="btn-confirm" id="suppress-modal-confirm">Suppress Rule</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script nonce="{{ csp_nonce }}">
 (function () {
@@ -487,6 +617,85 @@
   });
 
 }());
+
+// Suppress modal
+(function () {
+  'use strict';
+  var backdrop  = document.getElementById('suppress-modal');
+  var modalRef  = document.getElementById('suppress-modal-ref');
+  var textarea  = document.getElementById('suppress-modal-reason');
+  var errorEl   = document.getElementById('suppress-modal-error');
+  var confirmBtn = document.getElementById('suppress-modal-confirm');
+  var closeBtn   = document.getElementById('suppress-modal-close');
+  var cancelBtn  = document.getElementById('suppress-modal-cancel');
+  if (!backdrop) return;
+
+  var activeRule = null;
+  var activeCsrf = null;
+
+  function openModal(ruleNumber, ruleName, csrfToken) {
+    activeRule = ruleNumber;
+    activeCsrf = csrfToken;
+    if (modalRef)  modalRef.textContent = ruleNumber + (ruleName ? ' — ' + ruleName : '');
+    if (textarea)  textarea.value = '';
+    if (errorEl)   { errorEl.textContent = ''; errorEl.style.display = 'none'; }
+    backdrop.hidden = false;
+    document.body.style.overflow = 'hidden';
+    if (textarea) setTimeout(function () { textarea.focus(); }, 50);
+  }
+
+  function closeModal() {
+    backdrop.hidden = true;
+    document.body.style.overflow = '';
+    activeRule = null;
+    activeCsrf = null;
+  }
+
+  // Delegated open — works for all rows including future ones
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.suppress-open-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    openModal(btn.dataset.rule, btn.dataset.ruleName, btn.dataset.csrf);
+  });
+
+  if (closeBtn)  closeBtn.addEventListener('click', closeModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+  // Click on backdrop (outside modal box) closes
+  backdrop.addEventListener('click', function (e) {
+    if (e.target === backdrop) closeModal();
+  });
+
+  // Esc closes
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !backdrop.hidden) closeModal();
+  });
+
+  // Confirm — build and submit a hidden form so CSRF and redirect work normally
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', function () {
+      var reason = textarea ? textarea.value.trim() : '';
+      if (reason.length < 10) {
+        if (errorEl) { errorEl.textContent = 'Reason must be at least 10 characters.'; errorEl.style.display = ''; }
+        if (textarea) textarea.focus();
+        return;
+      }
+      var form = document.createElement('form');
+      form.method = 'post';
+      form.action = '/rulesets/suppress';
+      form.style.display = 'none';
+      [['csrf_token', activeCsrf || ''], ['rule_number', activeRule || ''], ['reason', reason]].forEach(function (pair) {
+        var el = document.createElement('input');
+        el.type = 'hidden'; el.name = pair[0]; el.value = pair[1];
+        form.appendChild(el);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    });
+  }
+}());
+
 </script>
 
 {% endblock %}

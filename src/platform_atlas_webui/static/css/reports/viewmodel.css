@@ -1353,6 +1353,25 @@ html[data-mode="light"] .vm-backdrop__wash--info   { opacity: 0.5; }
 .vm-data-table tbody tr:hover td {
   background: color-mix(in oklab, var(--accent) 5%, transparent);
 }
+.vm-cell-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.vm-cell-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+.vm-cell-link-icon {
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity .15s ease;
+}
+.vm-cell-link:hover .vm-cell-link-icon {
+  opacity: 1;
+}
 
 /* ──────────────────────────────────────────────────────────────────
  * Empty state
