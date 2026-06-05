@@ -1,0 +1,31 @@
+<!doctype html>
+{# Standalone themed error page — intentionally does NOT extend base.html.
+   base.html's sidebar/topbar need a full template context (tier flags,
+   continuous summary, env dropdown, CSP nonce, version strings) that an
+   exception handler can't reliably assemble — and a missing key there would
+   raise a *second* error mid-render. So this page is self-contained: it pulls
+   in atlas.css directly and uses the itential/dark theme defaults so it still
+   looks on-brand. Rendered for browser (text/html) requests only; API/HTMX/
+   JSON clients get the normal JSON error response. #}
+<html lang="en" data-theme="itential" data-mode="dark" data-radius="pill">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ status_code }} · Platform Atlas</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/atlas.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/atlas.tw.compiled.css') }}?v={{ asset_version }}">
+</head>
+<body class="min-h-screen flex items-center justify-center p-6"
+      style="background:var(--bg); color:var(--text);">
+  <main class="w-full max-w-[460px] text-center bg-surface border border-line rounded-lg px-8 py-12">
+    <div class="text-[64px] leading-none font-semibold tracking-[-0.04em] text-accent mb-3 tabular-nums">{{ status_code }}</div>
+    <h1 class="text-[18px] font-semibold mb-2">{{ heading }}</h1>
+    <p class="text-[13px] text-text-2 leading-relaxed mb-7 max-w-[40ch] mx-auto">{{ message }}</p>
+    <a class="btn primary" href="/">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;"><path d="M3 12l9-9 9 9"/><path d="M9 21V12h6v9"/></svg>
+      Back to Dashboard
+    </a>
+  </main>
+</body>
+</html>

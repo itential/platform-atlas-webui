@@ -18,8 +18,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import Response as _StarletteResponse
 
@@ -27,6 +28,7 @@ from platform_atlas.core.context import init_context
 from platform_atlas.core._version import __version__ as ATLAS_VERSION
 
 from platform_atlas_webui.config import WebUISettings
+from platform_atlas_webui.dependencies import get_templates, _ASSET_VERSION
 from platform_atlas_webui.routes import register_routes
 from platform_atlas_webui.security.audit import AuditMiddleware
 from platform_atlas_webui.security.headers import SecurityHeadersMiddleware
@@ -39,6 +41,35 @@ logger = logging.getLogger(__name__)
 
 
 _STATIC_DIR = Path(__file__).parent / "static"
+
+# Templates instance for the themed error page. Built once at import — the
+# error handler must never depend on the (heavier, fail-prone) per-request
+# template_context() so a 500 can't trigger a second 500 while rendering.
+_ERROR_TEMPLATES = get_templates()
+
+# Friendly fallback copy keyed by status code. ``exc.detail`` (when it's a
+# real human message and not the bare status phrase) takes precedence as the
+# body message; these supply the heading and a default body line.
+_ERROR_COPY: dict[int, tuple[str, str]] = {
+    403: ("Access denied", "You don't have permission to view this page."),
+    404: ("Page not found", "The page you're looking for doesn't exist or has moved."),
+    405: ("Method not allowed", "That action isn't supported on this page."),
+    500: ("Something went wrong", "Atlas hit an unexpected error. Try again, or head back to the dashboard."),
+}
+_ERROR_COPY_DEFAULT: tuple[str, str] = (
+    "Something went wrong",
+    "Atlas couldn't complete that request.",
+)
+
+
+def _wants_html_error(request: Request) -> bool:
+    """True when a browser navigation should get the themed HTML error page.
+
+    HTMX swaps and JSON/API clients fall through to the default JSON body so
+    their fetch/swap logic is unaffected.
+    """
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept and request.headers.get("hx-request") != "true"
 
 # Paths the setup-redirect middleware should leave alone.
 _SETUP_BYPASS_PREFIXES: tuple[str, ...] = (
@@ -173,6 +204,42 @@ def create_app(settings: WebUISettings | None = None) -> FastAPI:
             if path == prefix or path.startswith(prefix + "/") or path == prefix:
                 return await call_next(request)
         return RedirectResponse(url="/setup", status_code=303)
+
+    # Themed error page for browser navigations. Covers 404/405/403 (and any
+    # other HTTPException, including the 500s Starlette wraps). HTMX swaps and
+    # JSON/API clients keep the default JSON body so their handling is
+    # unchanged — see _wants_html_error.
+    @app.exception_handler(StarletteHTTPException)
+    async def _render_http_exception(request: Request, exc: StarletteHTTPException):
+        if not _wants_html_error(request):
+            # Same shape Starlette's default handler produces.
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        heading, default_msg = _ERROR_COPY.get(exc.status_code, _ERROR_COPY_DEFAULT)
+        # Prefer a meaningful detail string over the generic line, but ignore
+        # the bare status phrase Starlette uses as detail when none was given
+        # (e.g. "Not Found") — the friendlier default reads better there.
+        from http import HTTPStatus
+        try:
+            status_phrase = HTTPStatus(exc.status_code).phrase
+        except ValueError:
+            status_phrase = ""
+        detail = exc.detail if isinstance(exc.detail, str) else ""
+        message = detail if (detail and detail != status_phrase) else default_msg
+        try:
+            return _ERROR_TEMPLATES.TemplateResponse(
+                request,
+                "errors/error.html",
+                {
+                    "request": request,
+                    "status_code": exc.status_code,
+                    "heading": heading,
+                    "message": message,
+                    "asset_version": _ASSET_VERSION,
+                },
+                status_code=exc.status_code,
+            )
+        except Exception:  # noqa: BLE001 — never let error rendering itself 500
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
     app.add_middleware(AuditMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)

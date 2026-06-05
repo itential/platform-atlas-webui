@@ -8,6 +8,7 @@ import re
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
+from markupsafe import escape
 
 from platform_atlas.core._version import __version__ as ATLAS_VERSION
 
@@ -128,16 +129,20 @@ async def check_kubectl_binary(path: str = "") -> HTMLResponse:
 
     if path.strip():
         p = _Path(path.strip()).expanduser()
+        # Escape the user-supplied path before it lands in HTML — it's reflected
+        # straight into the fragment below, so an unescaped value is a reflected
+        # XSS vector. (markupsafe.escape mirrors how preflight.py renders fragments.)
+        disp = escape(str(p))
         if p.is_file() and os.access(p, os.X_OK):
             return HTMLResponse(
-                f'<span style="{ok_style}">✓ Found: {p}</span>'
+                f'<span style="{ok_style}">✓ Found: {disp}</span>'
             )
         if p.exists():
             return HTMLResponse(
-                f'<span style="{err_style}">✗ Not executable: {p}</span>'
+                f'<span style="{err_style}">✗ Not executable: {disp}</span>'
             )
         return HTMLResponse(
-            f'<span style="{err_style}">✗ Not found: {p}</span>'
+            f'<span style="{err_style}">✗ Not found: {disp}</span>'
         )
 
     found = shutil.which("kubectl")
@@ -321,7 +326,24 @@ async def save_environment(
     try:
         env = env_svc.save_environment(payload)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Re-render the form with an inline error and the submitted values
+        # pre-filled so the user can fix the problem without retyping. The
+        # form reads prefill from ``env.data`` (``{% set d = env.data ... %}``),
+        # so wrap the flat payload in an env-shaped dict. Mirrors the session
+        # create flow's flash + prefill re-render in routes/sessions.py.
+        return _templates.TemplateResponse(
+            request,
+            "environments/form.html",
+            template_context(
+                request,
+                atlas_version=ATLAS_VERSION,
+                mode="create" if is_create else "edit",
+                env={"name": payload["name"], "data": payload},
+                ssh_keys=ssh_keys_svc.list_private_keys(),
+                flash={"kind": "error", "message": str(exc)},
+            ),
+            status_code=422,
+        )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 

@@ -89,7 +89,7 @@
       class="grid min-h-screen text-text bg-bg"
       style="grid-template-columns: var(--sidebar-w) 1fr; grid-template-rows: 52px 1fr; grid-template-areas: 'brand topbar' 'side main';">
 
-  <div class="flex items-center gap-2.5 px-4 border-r border-b border-line bg-bg-2 sticky top-0 z-[55]"
+  <div class="brand-cell flex items-center gap-2.5 px-4 border-r border-b border-line bg-bg-2 sticky top-0 z-[55]"
        style="grid-area: brand;">
     <a href="/" class="flex items-center gap-2.5 font-semibold tracking-[-0.01em] no-underline text-inherit">
       <div class="brand-mark shrink-0" role="img" aria-label="Itential"></div>
@@ -196,6 +196,7 @@
       {% set _state = continuous.state %}
       <a class="pill pill--continuous pill--state-{{ _state | lower }}{% if _state == 'ON' %} pill--pulse{% endif %}"
          href="/continuous"
+         aria-label="Continuous audit status"
          title="Continuous audit · last run {{ continuous.last_age }}{% if continuous.next_in %} · next in {{ continuous.next_in }}{% endif %}{% if continuous.os_scheduler_active %} · OS scheduler active{% endif %}">
         <span class="dot"></span>
         <span class="label">{% if continuous.os_scheduler_active %}OS · {% endif %}Continuous</span>
@@ -223,20 +224,20 @@
     </a>
   </header>
 
-  <aside class="border-r border-line bg-bg-2 px-3 py-3.5 flex flex-col sticky top-[52px] overflow-y-auto"
+  <aside class="side border-r border-line bg-bg-2 px-3 py-3.5 flex flex-col sticky top-[52px] overflow-y-auto"
          style="grid-area: side; height: calc(100vh - 52px);">
     <nav>
       {# Nav-item macro — handles active state (background + accent ::before
          indicator) and optional badge for unread counts. Keeps the 14
          repeated nav rows DRY without sacrificing readability. #}
       {% macro _nav_label(text) %}
-        <div class="text-[11px] tracking-[0.1em] uppercase font-semibold text-text-4 px-2.5 pt-1.5 pb-2 mb-1 flex items-center gap-1.5">
+        <div class="text-[12px] tracking-[0.1em] uppercase font-semibold text-accent px-2.5 pt-1.5 pb-2 mb-1 flex items-center gap-1.5">
           <span class="w-[5px] h-[5px] rounded-full bg-current opacity-65 shrink-0"></span>{{ text }}
         </div>
       {% endmacro %}
-      {% set _nav_base = "relative flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[14px] font-medium" %}
+      {% set _nav_base = "nav-link relative flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[14px] font-medium" %}
       {% set _nav_idle = "text-text-2 hover:bg-surface hover:text-text [&>svg]:text-text-3" %}
-      {% set _nav_active = "bg-surface-2 text-text [&>svg]:text-accent before:content-[''] before:absolute before:left-[-12px] before:top-2 before:bottom-2 before:w-0.5 before:bg-accent before:rounded-xs" %}
+      {% set _nav_active = "is-active bg-surface-2 text-text [&>svg]:text-accent before:content-[''] before:absolute before:left-[-12px] before:top-2 before:bottom-2 before:w-0.5 before:bg-accent before:rounded-xs" %}
 
       <div class="mb-3.5 first:mt-0">
         {{ _nav_label('Overview') }}
@@ -374,7 +375,8 @@
        aria-live="polite" aria-atomic="false">
     <template x-for="t in toasts" :key="t.id">
       <div :class="`toast toast--${t.kind || 'info'}`"
-           role="status"
+           :role="(t.kind === 'error' || t.kind === 'warning') ? 'alert' : 'status'"
+           :aria-live="(t.kind === 'error' || t.kind === 'warning') ? 'assertive' : 'polite'"
            x-transition:enter="transition ease-out duration-150"
            x-transition:enter-start="opacity-0 translate-x-2"
            x-transition:enter-end="opacity-100 translate-x-0"

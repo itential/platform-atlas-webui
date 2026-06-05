@@ -84,6 +84,38 @@
 </div>
 {% endif %}
 
+{# ── First-run "Get started" strip ────────────────────────────────────
+   Shown only before the user has created any environment. Dismissal is
+   remembered in localStorage so it doesn't reappear once acknowledged —
+   the strip is purely a nudge, not a blocker. #}
+{% if kpis.env_count == 0 %}
+<div x-data="{ dismissed: localStorage.getItem('atlas-getstarted-dismissed') === '1' }"
+     x-show="!dismissed" x-cloak
+     class="flex items-start gap-4 rounded-lg border border-line bg-surface px-5 py-4 mb-4"
+     style="border-left: 3px solid var(--accent); background:var(--accent-soft);">
+  <div class="shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-surface border border-line text-accent">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></svg>
+  </div>
+  <div class="flex-1 min-w-0">
+    <h3 class="text-[15px] m-0 mb-1">Welcome to Platform Atlas</h3>
+    <p class="text-[13px] text-text-2 m-0 mb-3 leading-relaxed">
+      Create an environment to point Atlas at your platform, then start your first audit session.
+    </p>
+    <div class="flex items-center gap-2 flex-wrap">
+      <a class="btn primary" href="/environments/new">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></svg>
+        Create an environment
+      </a>
+    </div>
+  </div>
+  <button type="button"
+          @click="dismissed = true; localStorage.setItem('atlas-getstarted-dismissed', '1')"
+          class="shrink-0 text-text-3 hover:text-text p-1 -mr-1 -mt-1" aria-label="Dismiss">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </button>
+</div>
+{% endif %}
+
 {# ── Customize toolbar + cards ────────────────────────────────────── #}
 <div x-data="dashboardEditor" x-init="init()">
 

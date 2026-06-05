@@ -5,6 +5,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.1] - 2026-06-05
+
+Requires `platform-atlas >=1.8,<2.0`.
+
+### Added
+
+- **Friendly error pages** — 404 / 500 / CSRF now render a themed page with a way back to the dashboard instead of raw JSON (API and HTMX requests still get JSON).
+- **First-run dashboard helper** — a dismissible "Get started" prompt appears when no environments exist yet.
+- **Credential pre-check on the capture step** — warns when the bound environment has no stored credentials before you run capture.
+
+### Changed
+
+- **Theme readability tweak — sidebar section labels now stand out in every palette** — the navigation group headings (Overview, Audit, Configuration, Continuous, System) render in each theme's accent color — a bright highlight in dark mode, a darker matching shade in light mode — and are bumped up 1px. They previously used the most-dimmed text token and faded into the sidebar background in several themes.
+- **Switching to Standard** now warns that Extended-tier sessions become view-only.
+- **Reports empty state** links straight to creating a session.
+- **Accessibility** — error toasts announce assertively, the continuous-audit pill is labelled, and the force-stop control now appears after ~75s (was 5 min) and is announced to screen readers.
+
+### Fixed
+
+- **Report fonts are self-hosted** — no external CDN, so the report view renders correctly on air-gapped installs.
+- **Environment save errors** re-render the form with your input intact instead of crashing to an error page.
+- **Job stream** shows a clear failure with reload / Jobs links instead of spinning forever when the connection drops.
+- **Continuous-audit empty state** no longer references the run button by the wrong name.
+
+### Security
+
+- **Reflected XSS hardening in the `/check-kubectl` endpoint** — the user-supplied `path` query parameter is now HTML-escaped (`markupsafe.escape`) before being reflected into the returned HTML fragment, closing a cross-site scripting vector where a crafted path (e.g. one containing `<img onerror=…>`) was echoed back unescaped (Snyk CWE-79).
+
 ## [1.1.0] - 2026-06-01
 
 Requires `platform-atlas >=1.8,<2.0`.

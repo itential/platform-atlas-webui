@@ -250,10 +250,17 @@ async def view_session(
     pipelines = await run_in_threadpool(_available_pipelines)
 
     cm_reminder_cmd = None
+    # Whether the session's bound environment is missing any required
+    # credentials. Reuses the same helper the environments detail page uses so
+    # the two stay in sync. Empty list (the default) means "all set" or "no
+    # bound env" — either way the capture step renders without the warning.
+    missing_creds: list[dict] = []
     env_name = session.get("environment", "")
     if env_name:
         env = await run_in_threadpool(get_environment, env_name)
         if env:
+            from platform_atlas_webui.routes.environments import _missing_credentials
+            missing_creds = await run_in_threadpool(_missing_credentials, env)
             nodes = (env.get("data") or {}).get("deployment", {}).get("nodes") or []
             for node in nodes:
                 if node.get("transport") == "control_master":
@@ -281,6 +288,7 @@ async def view_session(
             available_pipelines=pipelines,
             run_lock_flash=bool(lock_run),
             cm_reminder_cmd=cm_reminder_cmd,
+            missing_creds=missing_creds,
         ),
     )
 

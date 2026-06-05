@@ -272,7 +272,7 @@
   --text: #FFFFFF;
   --text-2: #BFCBDD;
   --text-3: #8595AC;
-  --text-4: #5E6E85;
+  --text-4: #7C8BA3;
   color: var(--text);
 }
 
@@ -284,15 +284,25 @@
   background-image: url("/static/img/itential-logo-dark.png");
 }
 
-/* Sidebar section headers: solid Itential blue band, edge-to-edge.
-   Negative margins bleed past .side's 12px horizontal padding;
-   compensating padding keeps text at the same 10px indent. */
-:root[data-theme="itential"] .nav-label {
-  background: #1B93D2;
-  color: #ffffff;
-  margin: 0 -12px;
-  padding: 7px 22px;
-  border-radius: 0;
+/* Sidebar nav — active item. Other themes render the active row as a subtle
+   surface highlight plus a thin accent left-bar (the Tailwind classes baked
+   into base.html's _nav_active). Itential instead fills the row as a brand-blue
+   pill with white text/icon, matching the Studio look. Scoped to .side so only
+   the navy sidebar is affected; the .side .nav-link.is-active specificity beats
+   the utility classes the row still carries, and the now-redundant ::before bar
+   is hidden. */
+:root[data-theme="itential"] .side .nav-link.is-active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+:root[data-theme="itential"] .side .nav-link.is-active svg {
+  color: var(--accent-ink);
+}
+:root[data-theme="itential"] .side .nav-link.is-active:hover {
+  background: var(--accent-hover);
+}
+:root[data-theme="itential"] .side .nav-link.is-active::before {
+  display: none;
 }
 
 /* Form fields — text inputs, textareas, and selects.

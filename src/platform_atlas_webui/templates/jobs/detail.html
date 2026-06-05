@@ -23,12 +23,12 @@
   </div>
 </header>
 
-{# Force-stop button — only shown for running jobs, appears after 60s #}
+{# Force-stop button — only shown for running jobs, appears after 75s #}
 {% if job.status == 'running' %}
-<div id="kill-bar" hidden class="mb-4 px-4 py-3 rounded-lg flex items-center gap-3"
+<div id="kill-bar" hidden role="status" aria-live="polite" class="mb-4 px-4 py-3 rounded-lg flex items-center gap-3"
      style="background:oklch(72% .16 25/.08); border:1px solid oklch(72% .16 25/.3);">
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-warn shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-  <span class="text-[13px] text-text-2 flex-1">This job has been running for over 5 minutes. If it appears stuck, you can force-stop it.</span>
+  <span class="text-[13px] text-text-2 flex-1">This job has been running for over a minute. If it appears stuck, you can force-stop it.</span>
   <button type="button" class="btn sm danger" id="kill-btn">Force stop</button>
 </div>
 {% endif %}

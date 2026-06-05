@@ -6,13 +6,8 @@
 {# ── Report-specific stylesheet (theme-agnostic — uses atlas.css vars) ── #}
 <link rel="stylesheet" href="{{ url_for('static', path='css/reports/viewmodel.css') }}?v={{ asset_version }}">
 
-{# ── Display + mono fonts (Inter + JetBrains Mono) — loaded only on this
-     route via parallel <link>s so they don't block the stylesheet. Falls
-     back to system sans / mono if the network is unreachable. The
-     "frosted" style guide calls for these two families. #}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+{# Inter + JetBrains Mono render via the self-hosted @font-face rules in
+   atlas.css (loaded by base.html) — no external CDN fonts here. #}
 
 {# ── Tabbed report shell ──────────────────────────────────────────────── #}
 {# Alpine drives tab state; viewmodel.js hydrates each panel from JSON.

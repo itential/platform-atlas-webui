@@ -95,7 +95,7 @@
   // ── Kill button timer ──────────────────────────────────────────
   if (killBar && startedAt) {
     var elapsed = Date.now() / 1000 - startedAt;
-    var delay = Math.max(0, 300 - elapsed) * 1000;
+    var delay = Math.max(0, 75 - elapsed) * 1000;
     killTimer = setTimeout(function () {
       killTimer = null;
       // isConnected guard handles the race where the timer fires after
@@ -868,6 +868,9 @@
   });
 
   evt.onerror = function () {
+    // A terminal status already arrived (or we already gave up) — the
+    // EventSource is closed; ignore any trailing error callback.
+    if (isTerminal) return;
     errorCount++;
     // EventSource auto-reconnects on transient blips; logging on every
     // retry produces a flood of "connection closed" lines for what is
@@ -880,6 +883,29 @@
         message: 'Stream connection lost — retrying…',
         timestamp: Date.now() / 1000,
       });
+    }
+    // Sustained failure with no successful event in between (each reset
+    // to 0 on info/check). The terminal `status` event will never arrive
+    // if the server died mid-pipeline, so stop retrying and surface a
+    // terminal failure instead of spinning on "Connecting…" forever.
+    if (errorCount >= 6) {
+      if (evt) { try { evt.close(); } catch (_) {} evt = null; }
+      isTerminal = true;
+      if (killBar) { killBar.hidden = true; }
+      appendLine({
+        kind: 'error',
+        message: 'Lost connection to the server — giving up. The job may still be running.',
+        timestamp: Date.now() / 1000,
+      });
+      if (isPipeline) {
+        pp2ShowError('Lost connection to the server. The job may still be running — reload or check Jobs.');
+      } else if (statusEl) {
+        // No dedicated 'unknown' status style — reuse the terminal 'failed'
+        // treatment so the badge stops looking live; the label conveys the
+        // real cause (we lost the stream, not necessarily the job).
+        statusEl.className = 'job-status job-status--failed';
+        statusEl.textContent = 'connection lost';
+      }
     }
   };
 })();

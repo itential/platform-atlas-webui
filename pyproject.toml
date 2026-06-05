@@ -1,6 +1,6 @@
 [project]
 name = "platform-atlas-webui"
-version = "1.1.0"
+version = "1.1.1"
 description = "Optional WebUI for Platform Atlas — ships as a separate wheel for customers who allow server components"
 license = "GPL-3.0-or-later"
 authors = [{ name = "Cody Rester", email = "cody.rester@itential.com" }]
