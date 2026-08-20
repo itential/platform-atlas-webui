@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Additional Validation Modules — Platform Atlas{% endblock %}
+{% block crumb %}<a href="/config" class="text-text-3 hover:text-accent no-underline">Settings</a> <span class="text-text-4 mx-1">/</span> Additional Validation Modules{% endblock %}
+{% block content %}
+
+<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
+  <div>
+    <div class="eyebrow"><span class="dot"></span> Settings</div>
+    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
+      Additional Validation Modules
+    </h1>
+    <p class="text-[16px] text-text-2 max-w-[64ch]">
+      Turn off individual extended validation checks — too slow, too invasive, or not
+      relevant to this environment. This is application-wide (not per-environment) and
+      shared with the CLI's <code>config edit</code> &gt; Advanced menu: a check disabled
+      here shows disabled there too, and vice versa. A disabled check appears in the
+      report as <strong>Module Deactivated</strong> instead of a normal result, so it's
+      clear the missing data was a deliberate choice. Every module defaults to enabled
+      <strong>except RBAC Authorization</strong>, which stays opt-in since it pulls the
+      full accounts/groups/roles graph from Platform 6 — privacy-sensitive, so it's
+      disabled until you check it yourself.
+      {% if disabled_count %}
+        <strong>{{ disabled_count }}</strong> of {{ total_count }} module(s) currently disabled.
+      {% else %}
+        All {{ total_count }} modules are currently enabled.
+      {% endif %}
+    </p>
+  </div>
+  <div class="flex items-center gap-2 shrink-0">
+    {% if not is_default %}
+      <form method="post" action="/config/avc-modules/reset" class="inline"
+            data-confirm-action data-confirm-message="Reset all Additional Validation Modules to their default state? (RBAC Authorization stays off.)">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn" data-loading-label="Resetting…">Reset all to default</button>
+      </form>
+    {% endif %}
+    <a class="btn" href="/config">← Settings</a>
+  </div>
+</header>
+
+<form class="form" method="post" action="/config/avc-modules">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  {# Same Save/Cancel as the bottom of the form, repeated here so a long,
+     categorized checklist doesn't force a scroll to find them. #}
+  <div class="flex items-center justify-between gap-3 mb-4 pb-4 border-b border-line">
+    <span class="text-[13px] text-text-3">Review the modules below, then confirm your choice.</span>
+    <div class="flex items-center gap-2 shrink-0">
+      <button type="submit" class="btn primary" data-loading-label="Saving…">Save and confirm</button>
+      <a class="btn" href="/config">Cancel</a>
+    </div>
+  </div>
+
+  <div class="flex items-center justify-end gap-1 mb-3">
+    <button type="button" class="ps-all-btn text-[13px] bg-transparent border-0 text-accent cursor-pointer px-1" data-target="avc-form">Select all</button>
+    <span class="text-text-4 text-[12px]">·</span>
+    <button type="button" class="ps-none-btn text-[13px] bg-transparent border-0 text-accent cursor-pointer px-1" data-target="avc-form">Select none</button>
+  </div>
+
+  <div id="avc-form" class="flex flex-col gap-4">
+    {% for category, checks in categories.items() %}
+    <fieldset>
+      <legend>{{ category }}
+        <span class="legend-scope">{{ checks|length }} check{{ 's' if checks|length != 1 else '' }}</span>
+      </legend>
+      <div class="flex items-center justify-end gap-1 mb-1.5 col-span-full">
+        <button type="button" class="ps-all-btn text-[12px] bg-transparent border-0 text-accent cursor-pointer px-1" data-target="avc-cat-{{ loop.index }}">All</button>
+        <span class="text-text-4 text-[12px]">·</span>
+        <button type="button" class="ps-none-btn text-[12px] bg-transparent border-0 text-accent cursor-pointer px-1" data-target="avc-cat-{{ loop.index }}">None</button>
+      </div>
+      <div id="avc-cat-{{ loop.index }}" class="col-span-full flex flex-col">
+        {% for c in checks %}
+        <label class="field field--row col-span-full flex items-center gap-1.5 py-1 cursor-pointer border-t border-line first:border-t-0">
+          <input type="checkbox" name="check_ids" value="{{ c.check_id }}" {% if c.enabled %}checked{% endif %}>
+          <span class="text-[14px]">{{ c.name }}</span>
+          {% if c.factory_disabled %}<span class="text-[12px] text-text-3 ml-1">(privacy-sensitive, off by default)</span>{% endif %}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% endfor %}
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" class="btn primary" data-loading-label="Saving…">Save and confirm</button>
+    <a class="btn" href="/config">Cancel</a>
+  </div>
+</form>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  document.querySelectorAll('.ps-all-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var panel = document.getElementById(btn.dataset.target);
+      if (panel) panel.querySelectorAll('input[type="checkbox"]').forEach(function (cb) { cb.checked = true; });
+    });
+  });
+  document.querySelectorAll('.ps-none-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var panel = document.getElementById(btn.dataset.target);
+      if (panel) panel.querySelectorAll('input[type="checkbox"]').forEach(function (cb) { cb.checked = false; });
+    });
+  });
+})();
+</script>
+{% endblock %}

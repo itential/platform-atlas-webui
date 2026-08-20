@@ -460,6 +460,15 @@ html[data-mode="light"] .vm-backdrop__wash--info   { opacity: 0.5; }
   font-size: 9.5px;
 }
 
+/* Horizon pairs with the standalone report.html's serif display font
+   (Iowan Old Style) everywhere else in the app; carry it into just the
+   two hero elements that read as "headline" text here — the rating
+   label and the score — without reflowing the rest of the report. */
+:root[data-theme="horizon"] .vm-hero-title,
+:root[data-theme="horizon"] .vm-ring-num {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+}
+
 /* ──────────────────────────────────────────────────────────────────
  * Compliance split — All Rules on the wider left column; the right
  * rail stacks Priority Actions, By Category, By Severity, and

@@ -1,6 +1,6 @@
 [project]
 name = "platform-atlas-webui"
-version = "2.2.0"
+version = "2.3.0"
 description = "Optional WebUI for Platform Atlas — ships as a separate wheel for customers who allow server components"
 license = "GPL-3.0-or-later"
 authors = [{ name = "Cody Rester", email = "cody.rester@itential.com" }]
@@ -8,7 +8,7 @@ maintainers = [{ name = "Cody Rester", email = "cody.rester@itential.com" }]
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 dependencies = [
-  "platform-atlas (>=2.0.0,<3.0)",
+  "platform-atlas (>=2.3.0,<3.0)",
   "fastapi (>=0.136,<1.0)",
   "uvicorn[standard] (>=0.32,<1.0)",
   "jinja2 (>=3.1,<4.0)",
@@ -29,6 +29,7 @@ packages = [{include = "platform_atlas_webui", from = "src"}]
 # At wheel-build time, the version constraint in [project.dependencies] is what
 # end users actually resolve against.
 platform-atlas = { path = "../platform-atlas", develop = true }
+pytest = "^8.3"
 
 [tool.bandit]
 skips = ["B105", "B106"]

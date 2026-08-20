@@ -39,7 +39,6 @@ EDITABLE_FIELDS: tuple[str, ...] = (
     "dark_mode",
     "theme",
     "extended_validation_checks",
-    "enable_rbac_collection",
     "debug",
     "webui_theme",
     "webui_mode",
@@ -229,7 +228,7 @@ def _coerce(key: str, raw: Any) -> Any:
     """Coerce form values (strings) to the right type for known boolean fields."""
     bool_keys = {
         "verify_ssl", "dark_mode",
-        "extended_validation_checks", "enable_rbac_collection", "debug",
+        "extended_validation_checks", "debug",
         "webui_palette_enabled",
     }
     if key in bool_keys:
@@ -281,3 +280,37 @@ def toggle_pinned_session(name: str) -> bool:
         cfg["pinned_sessions"] = pinned
         atomic_write_json(ATLAS_CONFIG_FILE, cfg)
         return new_state
+
+
+# ── Additional Validation Check (AVC) module toggles ─────────────────────
+# Stored in ``~/.atlas/config.json`` under the key ``disabled_extended_checks``
+# as a list of check_id strings — the exact same field the CLI's
+# `config edit` > Advanced > Additional Validation Modules writes, via
+# `platform_atlas.core.handlers.config._persist_config_value`. Bypasses the
+# EDITABLE_FIELDS / _coerce flow for the same reason ``pinned_sessions``
+# does: the value is a list, not a stringly-typed form field. Reading and
+# writing the shared JSON key directly (rather than any CLI-side helper) is
+# what keeps a check disabled from the CLI also showing disabled here, and
+# vice versa.
+
+def get_disabled_extended_checks() -> list[str]:
+    """Return the current disabled-check-id list (always a list of strings).
+
+    Delegates to the CLI's ``resolve_disabled_extended_checks()`` rather than
+    reading the raw key directly — a config.json that's never been through
+    either package's AVC-modules write path yet (still carrying only the
+    legacy ``enable_rbac_collection`` bool, or neither key at all) must
+    resolve identically here and in the CLI's ``load_config()``, or the two
+    surfaces would disagree about whether RBAC starts disabled.
+    """
+    from platform_atlas.core.config import resolve_disabled_extended_checks
+    return resolve_disabled_extended_checks(read_config())
+
+
+def set_disabled_extended_checks(disabled: list[str]) -> None:
+    """Overwrite the disabled-check-id list with ``disabled`` (deduped, sorted)."""
+    normalized = sorted({str(c) for c in disabled if c})
+    with _CONFIG_LOCK:
+        cfg = read_config()
+        cfg["disabled_extended_checks"] = normalized
+        atomic_write_json(ATLAS_CONFIG_FILE, cfg)

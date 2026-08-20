@@ -5,6 +5,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] - 2026-08-20
+
+Requires `platform-atlas >=2.3.0,<3.0`.
+
+### Added
+
+- **Additional Validation Modules page under Settings** — `/config/avc-modules` lists every extended validation check with a checkbox, plus a reset-to-default action, matching the CLI's new `config edit` > Advanced menu. Both surfaces read and write the same setting, so a check disabled from one is disabled on the other. The standalone "RBAC authorization collection" checkbox on the main Settings page is gone — RBAC is now just one more module in this list, still off by default since it's privacy-sensitive.
+
+### Changed
+
+- **Horizon theme now matches the CLI report's colors and fonts exactly** — light mode's paper background, ink text, and terracotta accent are pulled directly from the report design, and dark mode has been redesigned around the report's own dark navy palette instead of an unrelated color set. Horizon is now the only WebUI theme using the report's serif and system fonts rather than the site-wide font pairing every other theme uses.
+- **WebUI report generation now produces the single `report.html`** — matches the CLI's 2.3.0 report redesign: Compliance, Operational, and Architecture render as pages in one file instead of three separate reports, and session export bundles the new single report.
+
+### Removed
+
+- **Separate Operational and Architecture report-viewer routes are gone** — now that the CLI produces one report file instead of three, those sections are pages inside the single report view rather than their own WebUI URLs.
+
+---
+
 ## [2.2.0] - 2026-07-06
 
 Requires `platform-atlas >=2.2.0,<3.0`.

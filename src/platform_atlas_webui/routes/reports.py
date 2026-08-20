@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -55,32 +54,14 @@ async def list_reports(request: Request) -> HTMLResponse:
     )
 
 
-# Anchor-targeted rewrite: only mutate ``href="..."`` attributes pointing at
-# the relative cross-link filenames. A blanket ``str.replace`` would corrupt
-# any literal occurrence in <pre>/<code> blocks (audited log content can
-# legitimately contain "03_report.html" as text).
-#
-# /reports/{name} is now the new tabbed WebUI view; the standalone HTML moved
-# to /reports/{name}/html so cross-links from inside the HTML still land on
-# the HTML twin (and not bounce a user into the SPA-ish view they were trying
-# to leave).
-_HREF_REWRITES: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r'href="04_operational\.html"'), 'href="/reports/{name}/operational"'),
-    (re.compile(r'href="05_arch\.html"'),        'href="/reports/{name}/arch"'),
-    (re.compile(r'href="03_report\.html"'),      'href="/reports/{name}/html"'),
-)
+def _get_report_html(path: Path) -> str:
+    """Read the standalone report HTML as-is.
 
-
-def _get_report_html(path: Path, name: str) -> str:
-    """Read report HTML and rewrite relative cross-links to WebUI absolute URLs.
-
-    Only ``href="..."`` attributes are touched — string literals matching
-    these filenames inside <pre>/<code> blocks are left intact.
+    ``report.html`` is a single self-contained file now — Compliance,
+    Operational, and Architecture are in-page tabs, not separate files —
+    so there are no cross-link filenames left to rewrite.
     """
-    html = path.read_text(encoding="utf-8")
-    for pattern, replacement in _HREF_REWRITES:
-        html = pattern.sub(replacement.format(name=name), html)
-    return html
+    return path.read_text(encoding="utf-8")
 
 
 def _sandbox_headers() -> dict[str, str]:
@@ -110,7 +91,7 @@ def _sandbox_headers() -> dict[str, str]:
 
 @router.get("/{name}/html")
 async def view_session_report_html(name: str):
-    """Stream the standalone compliance HTML report (03_report.html).
+    """Stream the standalone HTML report (report.html).
 
     The standalone HTML lives here so the new ``GET /reports/{name}`` can
     serve the in-WebUI tabbed view. CLI users and exports still consume
@@ -126,7 +107,7 @@ async def view_session_report_html(name: str):
             detail=f"Session '{name}' has no generated report yet — run validate + report first.",
         )
     p = safe_under(Path(report_path).expanduser(), _SESSIONS_ROOT)
-    html = await run_in_threadpool(_get_report_html, p, name)
+    html = await run_in_threadpool(_get_report_html, p)
     return Response(content=html, media_type="text/html", headers=_sandbox_headers())
 
 
@@ -230,46 +211,6 @@ async def download_session_export(name: str, filename: str):  # pylint: disable=
         )
     media = "application/gzip" if filename.endswith(".gz") else "application/zip"
     return FileResponse(str(target), media_type=media, filename=filename)
-
-
-@router.get("/{name}/operational")
-async def view_session_operational(name: str):
-    """Stream the operational HTML report for a given session."""
-    session = await run_in_threadpool(session_svc.get_session, name)
-    if session is None:
-        raise HTTPException(status_code=404, detail=f"Session '{name}' not found")
-    session_dir = session.get("directory")
-    if not session_dir:
-        raise HTTPException(status_code=404, detail=f"Session '{name}' directory not found")
-    candidate = Path(session_dir) / "04_operational.html"
-    if not candidate.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Operational report not generated yet for session '{name}'.",
-        )
-    p = safe_under(candidate, _SESSIONS_ROOT)
-    html = await run_in_threadpool(_get_report_html, p, name)
-    return Response(content=html, media_type="text/html", headers=_sandbox_headers())
-
-
-@router.get("/{name}/arch")
-async def view_session_arch(name: str):
-    """Stream the architecture HTML report for a given session."""
-    session = await run_in_threadpool(session_svc.get_session, name)
-    if session is None:
-        raise HTTPException(status_code=404, detail=f"Session '{name}' not found")
-    session_dir = session.get("directory")
-    if not session_dir:
-        raise HTTPException(status_code=404, detail=f"Session '{name}' directory not found")
-    candidate = Path(session_dir) / "05_arch.html"
-    if not candidate.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Architecture report not generated yet for session '{name}'.",
-        )
-    p = safe_under(candidate, _SESSIONS_ROOT)
-    html = await run_in_threadpool(_get_report_html, p, name)
-    return Response(content=html, media_type="text/html", headers=_sandbox_headers())
 
 
 @router.get("/{name}/viewmodel")

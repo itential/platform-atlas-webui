@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -242,7 +243,6 @@ async def save_config(
     dark_mode: str = Form(""),
     theme: str = Form(""),
     extended_validation_checks: str = Form(""),
-    enable_rbac_collection: str = Form(""),
     debug: str = Form(""),
     tier: str = Form(""),
     manual_input_mode: str = Form(""),
@@ -260,7 +260,6 @@ async def save_config(
         "dark_mode": dark_mode,
         "theme": theme,
         "extended_validation_checks": extended_validation_checks,
-        "enable_rbac_collection": enable_rbac_collection,
         "debug": debug,
         "manual_input_mode": manual_input_mode,
         "webui_palette_enabled": webui_palette_enabled,
@@ -293,3 +292,88 @@ async def save_config(
     except Exception:
         pass
     return RedirectResponse(url="/config?saved=1", status_code=303)
+
+
+@router.get("/avc-modules", response_class=HTMLResponse)
+async def view_avc_modules(request: Request, saved: int = Query(0)) -> HTMLResponse:
+    """Additional Validation Modules — per-check enable/disable.
+
+    Reads check metadata straight from the CLI's ``ExtendedValidationRegistry``
+    (imported as a library — no duplicated check list to keep in sync) and the
+    disabled set from the same ``config.json`` key the CLI's `config edit` >
+    Advanced > Additional Validation Modules menu writes.
+    """
+    from platform_atlas.core.config import FACTORY_DISABLED_EXTENDED_CHECKS
+    from platform_atlas.validation.extended_validation import get_registry
+
+    disabled = set(config_svc.get_disabled_extended_checks())
+    categories: dict[str, list[dict[str, Any]]] = {}
+    for check_id, name, category in get_registry().list_checks():
+        label = category.name.replace("_", " ").title()
+        categories.setdefault(label, []).append({
+            "check_id": check_id,
+            "name": name,
+            "enabled": check_id not in disabled,
+            # Privacy-sensitive modules (currently just RBAC) stay opt-in
+            # even at "factory default" — annotated so the template can
+            # explain why this one starts unchecked unlike the rest.
+            "factory_disabled": check_id in FACTORY_DISABLED_EXTENDED_CHECKS,
+        })
+
+    return _templates.TemplateResponse(
+        request,
+        "config/avc_modules.html",
+        template_context(
+            request,
+            atlas_version=ATLAS_VERSION,
+            categories=categories,
+            disabled_count=len(disabled),
+            total_count=sum(len(v) for v in categories.values()),
+            is_default=(disabled == set(FACTORY_DISABLED_EXTENDED_CHECKS)),
+            flash={"kind": "success", "message": "Additional Validation Modules saved."} if saved else None,
+        ),
+    )
+
+
+@router.post("/avc-modules")
+async def save_avc_modules(request: Request) -> RedirectResponse:
+    from platform_atlas.validation.extended_validation import get_registry
+
+    # Raw getlist() — a FastAPI List[str] Form param is unreliable for a
+    # variable-length checkbox group (see routes/sessions.py's pipeline
+    # selector for the same issue and fix).
+    form = await request.form()
+    selected = set(form.getlist("check_ids"))
+
+    all_ids = [check_id for check_id, _, _ in get_registry().list_checks()]
+    disabled = [cid for cid in all_ids if cid not in selected]
+    config_svc.set_disabled_extended_checks(disabled)
+
+    # Reload in-process context (same as the main /config save) so the next
+    # validation run in this process picks up the change immediately.
+    try:
+        from platform_atlas.core.context import init_context
+        init_context()
+    except Exception:
+        pass
+    return RedirectResponse(url="/config/avc-modules?saved=1", status_code=303)
+
+
+@router.post("/avc-modules/reset")
+async def reset_avc_modules(request: Request) -> RedirectResponse:
+    """Explicitly reset every AVC module to its factory default.
+
+    Every module defaults to enabled EXCEPT RBAC authorization, which stays
+    opt-in even at "default" (privacy-sensitive) — this must not blanket
+    enable everything, or resetting would silently turn RBAC collection on.
+    Separate action from the checkbox save above — mirrors the CLI's
+    dedicated "Reset all AVC modules to default" menu item.
+    """
+    from platform_atlas.core.config import FACTORY_DISABLED_EXTENDED_CHECKS
+    config_svc.set_disabled_extended_checks(sorted(FACTORY_DISABLED_EXTENDED_CHECKS))
+    try:
+        from platform_atlas.core.context import init_context
+        init_context()
+    except Exception:
+        pass
+    return RedirectResponse(url="/config/avc-modules?saved=1", status_code=303)

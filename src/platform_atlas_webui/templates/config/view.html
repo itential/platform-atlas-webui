@@ -59,10 +59,10 @@
         <label class="theme-pick-card{% if prefs.theme == 'horizon' %} is-active{% endif %}">
           <input type="radio" name="theme" value="horizon" {% if prefs.theme == 'horizon' %}checked{% endif %}>
           <span class="theme-pick-swatches" aria-hidden="true">
-            <span class="sw" style="background:#1A1815;"></span>
-            <span class="sw" style="background:#2C2823;"></span>
-            <span class="sw" style="background:#E07B52;"></span>
-            <span class="sw" style="background:#E8DED0;"></span>
+            <span class="sw" style="background:#0D1424;"></span>
+            <span class="sw" style="background:#1C2942;"></span>
+            <span class="sw" style="background:#C98847;"></span>
+            <span class="sw" style="background:#F3EFE3;"></span>
           </span>
           <span class="theme-pick-name">Horizon</span>
           <span class="theme-pick-hint">Warm, editorial</span>
@@ -288,12 +288,8 @@
       <input id="extended_validation_checks" name="extended_validation_checks" type="checkbox" value="1" {% if cfg.get('extended_validation_checks', True) %}checked{% endif %}>
       <label for="extended_validation_checks">Run extended validation checks</label>
     </div>
-    <div class="field field--row">
-      <input id="enable_rbac_collection" name="enable_rbac_collection" type="checkbox" value="1" {% if cfg.get('enable_rbac_collection') %}checked{% endif %}>
-      <label for="enable_rbac_collection">RBAC authorization collection</label>
-    </div>
     <div class="field field--row col-span-full">
-      <span class="hint">Pulls the full RBAC graph (accounts, groups, roles, methods) from Platform 6's <code>/authorization/*</code> APIs for the RBAC tab in the CLI's <code>--unified</code> report. Disabled by default — privacy-sensitive. Requires <code>platform-atlas &gt;=2.2.0</code>. The RBAC tab itself is not yet rendered in this WebUI report viewer.</span>
+      <span class="hint">Need finer control — including RBAC authorization collection, off by default since it's privacy-sensitive? <a href="/config/avc-modules" class="text-accent hover:text-accent-hover">Enable/disable individual Additional Validation Modules →</a></span>
     </div>
     <div class="field field--row">
       <input id="debug" name="debug" type="checkbox" value="1" {% if cfg.get('debug') %}checked{% endif %}>

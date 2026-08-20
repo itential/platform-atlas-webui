@@ -137,33 +137,95 @@
   --bad-soft:  rgba(220, 38, 38, 0.10);
 }
 
-/* ── Horizon — editorial, terracotta ── */
+/* ── Horizon — editorial, terracotta ──────────────────────────────
+   Palette is pinned to the CLI report template's own paper/ink
+   dossier design (reporting/assets/templates/report.html), not an
+   independent invention:
+     - Light mode == the report's default `:root` (light paper) tokens,
+       byte-for-byte (bg/surface/text/accent/status hexes match).
+     - Dark mode == the report's own `.darkzone` tokens (the dark navy
+       sidebar + verdict-panel palette it already uses on top of the
+       light paper). The report never renders status pills inside
+       `.darkzone`, so ok/warn/bad/info here are lightened from the
+       report's light-mode status hexes using the same ratio the
+       report's own light→dark pairs use elsewhere, for contrast on navy.
+   Horizon is also the only theme pinned to the report's own font
+   stacks (Iowan Old Style / system-ui / ui-monospace) — see the
+   `[data-theme="horizon"]` font override below. ── */
 
 :root[data-theme="horizon"][data-mode="dark"],
 :root[data-theme="horizon"]:not([data-mode="light"]) {
-  --bg: #1A1815; --bg-2: #221F1B;
-  --surface: #2C2823; --surface-2: #36322C; --surface-3: #443E36;
-  --line: rgba(232, 222, 208, 0.14); --line-2: rgba(232, 222, 208, 0.28);
-  --text: #E8DED0; --text-2: #B5A98C; --text-3: #7E7560; --text-4: #5C5648;
-  --accent: #E07B52; --accent-ink: #1A0E08; --accent-soft: rgba(224, 123, 82, 0.18);
-  --accent-hover: #ED8E69; --accent-muted: #4A2818;
-  --ok: #8FAD7A; --warn: #D4A55A; --bad: #C77070; --info: #7B98AC;
-  --ok-soft:   rgba(143, 173, 122, 0.14);
-  --warn-soft: rgba(212, 165, 90, 0.14);
-  --bad-soft:  rgba(199, 112, 112, 0.14);
+  --bg: #0D1424; --bg-2: #141D33;
+  --surface: #1C2942; --surface-2: #232F4A; --surface-3: #2A3552;
+  --line: rgba(243, 239, 227, 0.12); --line-2: rgba(243, 239, 227, 0.20);
+  --text: #F3EFE3; --text-2: #B9BFCF; --text-3: #7D869C; --text-4: #414D69;
+  --accent: #C98847; --accent-ink: #1F1206; --accent-soft: rgba(201, 136, 71, 0.18);
+  --accent-hover: #D4A06C; --accent-muted: #3E2A16;
+  --ok: #85A57B; --warn: #B8A967; --bad: #CB7A71; --info: #64B6E0;
+  --ok-soft:   rgba(133, 165, 123, 0.14);
+  --warn-soft: rgba(184, 169, 103, 0.14);
+  --bad-soft:  rgba(203, 122, 113, 0.14);
 }
 
 :root[data-theme="horizon"][data-mode="light"] {
-  --bg: #EDEAE3; --bg-2: #F4F1EB;
-  --surface: #FBF8F3; --surface-2: #E5E1D8; --surface-3: #DCD7CB;
-  --line: rgba(45, 40, 35, 0.16); --line-2: rgba(45, 40, 35, 0.30);
-  --text: #2D2825; --text-2: #6B6359; --text-3: #8A8175; --text-4: #9A9085;
-  --accent: #C25A3A; --accent-ink: #FFF7F2; --accent-soft: rgba(194, 90, 58, 0.14);
-  --accent-hover: #A84A2D; --accent-muted: #F5DDD3;
-  --ok: #5C7A4A; --warn: #B89968; --bad: #A04848; --info: #45627A;
-  --ok-soft:   rgba(92, 122, 74, 0.12);
-  --warn-soft: rgba(184, 153, 104, 0.12);
-  --bad-soft:  rgba(160, 72, 72, 0.12);
+  --bg: #EFEADF; --bg-2: #F4F0E6;
+  --surface: #FAF8F1; --surface-2: #E3DDCC; --surface-3: #DAD3BF;
+  --line: rgba(18, 26, 44, 0.13); --line-2: rgba(18, 26, 44, 0.24);
+  --text: #181D29; --text-2: #4C5061; --text-3: #7C7F8C; --text-4: #B5B5B9;
+  --accent: #A3672E; --accent-ink: #FAF8F1; --accent-soft: rgba(163, 103, 46, 0.12);
+  --accent-hover: #8A551F; --accent-muted: #F1E1CC;
+  --ok: #4C7A3D; --warn: #96811F; --bad: #B23B2E; --info: #1B93D2;
+  --ok-soft:   rgba(76, 122, 61, 0.13);
+  --warn-soft: rgba(150, 129, 31, 0.13);
+  --bad-soft:  rgba(178, 59, 46, 0.11);
+}
+
+/* Horizon-only font pin — matches the report template's own stacks so a
+   Horizon report and the Horizon WebUI read as the same document. In the
+   report, the serif display face (Iowan Old Style) isn't just the hero —
+   it's nav labels, tab labels, table headers, card titles, and the prose
+   explanation/verdict text; the report's actual sans body font shows up in
+   only a couple of minor spots (search input, small hints). Detail VALUES
+   (IDs, hostnames, config values, table data cells, timestamps) are the
+   report's monospace face throughout. So here --ui (the WebUI's general
+   body/nav/label font) is pinned to the same serif as --display, matching
+   that ratio — nearly everything reads serif except what's explicitly
+   `var(--mono)`, which already covers the WebUI's own detail-value styling
+   (IDs, timestamps, counts, code) and is left untouched.
+   Every other theme keeps the site-wide Sora/Hanken Grotesk/JetBrains Mono
+   stack defined at :root further down. Scoped to the theme (not the mode)
+   since both Horizon light and dark should use it. */
+:root[data-theme="horizon"] {
+  --ui: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", monospace;
+}
+
+/* Horizon's sidebar is pinned to the exact navy gradient the report
+   template uses on its own sidebar (.rpt-side in report.html), always
+   on regardless of light/dark mode — the report has no theme toggle,
+   so its sidebar is always dark, and this keeps the WebUI's Horizon
+   sidebar matching it in both modes rather than going light in light
+   mode. `background` (not --bg-2) carries the gradient itself, since
+   --bg-2 only ever resolves through background-color; --bg-2 is still
+   redeclared as a flat fallback for any nested bg-bg-2 element. The
+   surface/text/line tokens reuse Horizon's own dark-mode values
+   (already pinned 1:1 to the report's .darkzone tokens above) so light
+   mode's sidebar content reads correctly against the gradient too. */
+:root[data-theme="horizon"] .side,
+:root[data-theme="horizon"] .brand-cell {
+  background: linear-gradient(175deg, #1C2942, #121A2C 60%);
+  --bg-2: #1C2942;
+  --surface: #1C2942;
+  --surface-2: #232F4A;
+  --surface-3: #2A3552;
+  --line: rgba(243, 239, 227, 0.12);
+  --line-2: rgba(243, 239, 227, 0.20);
+  --text: #F3EFE3;
+  --text-2: #B9BFCF;
+  --text-3: #7D869C;
+  --text-4: #414D69;
+  color: var(--text);
 }
 
 /* ── Obsidian — high-contrast OLED, violet accent ── */
@@ -301,6 +363,13 @@
    specificity above the global :root[data-mode="light"] .brand-mark
    rule defined later in the file. */
 :root[data-theme="itential"][data-mode] .brand-mark {
+  background-image: url("/static/img/itential-logo-dark.png");
+}
+
+/* Same reasoning for Horizon: its brand-cell is now always the report's
+   navy gradient (see the .side/.brand-cell block above), so it needs
+   the dark-bg logo in light mode too, overriding the global swap. */
+:root[data-theme="horizon"][data-mode] .brand-mark {
   background-image: url("/static/img/itential-logo-dark.png");
 }
 

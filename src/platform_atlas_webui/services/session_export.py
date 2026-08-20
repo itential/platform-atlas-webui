@@ -1,9 +1,9 @@
 """
 Session export service — the WebUI twin of ``platform-atlas session export``.
 
-Packages a finished session into a delivery archive (compliance / operational /
-architecture reports + machine-readable ``report.json`` + metadata + README)
-that the user attaches to an Itential ER ticket. The heavy lifting is reused
+Packages a finished session into a delivery archive (``report.html`` +
+machine-readable ``report.json`` + metadata + README) that the user attaches
+to an Itential ER ticket. The heavy lifting is reused
 verbatim from the core library so the WebUI archive is byte-for-byte identical
 to the one the CLI produces — this module only swaps the CLI's interactive
 prompt for plain arguments and its current-working-directory output for a
@@ -90,11 +90,7 @@ def build_session_export(
     # can list exactly what landed in the archive.
     contents: list[str] = []
     if session.report_file.exists():
-        contents.append("Compliance report")
-    if session.operational_file.exists():
-        contents.append("Operational report")
-    if session.arch_file.exists():
-        contents.append("Architecture report")
+        contents.append("Report")
     if report_json_included:
         contents.append("report.json")
     contents.append("Session metadata")

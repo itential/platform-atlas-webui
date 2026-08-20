@@ -561,23 +561,23 @@ def run_validate_job(jlogger, *, session_name: str) -> dict[str, Any]:
 
 
 def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
-    """Generate the three-report bundle (compliance, operational, arch)."""
+    """Generate ``report.html`` — Compliance, Operational, and Architecture as
+    top-bar pages in one file, rendered from the same viewmodel that powers
+    the WebUI's tabbed report view. Mirrors the CLI's
+    ``handle_session_run_report`` so both surfaces stay in lock step."""
     _restore_session_context(session_name, jlogger)
 
-    from platform_atlas.core.session_manager import get_session_manager, SessionStage
-    from platform_atlas.core.context import ctx
-    from platform_atlas.core.paths import (
-        REPORT_TEMPLATE,
-        OPERATIONAL_TEMPLATE,
-        ARCH_TEMPLATE,
+    from platform_atlas.core.session_manager import get_session_manager, rehydrate_validation_attrs, SessionStage
+    from platform_atlas.core.paths import REPORT_TEMPLATE
+    from platform_atlas.core.handlers.session import (
+        _load_extended_results,
+        _load_architecture_data,
+        _load_rbac_data,
+        _load_kubernetes_namespaces_data,
     )
-    from platform_atlas.reporting.report_renderer import (
-        render_html_report,
-        generate_log_sections_html,
-    )
-    from platform_atlas.reporting.operational_renderer import render_operational_report
+    from platform_atlas.reporting.webui_viewmodel import build_webui_viewmodel, write_webui_viewmodel
+    from platform_atlas.reporting.unified_renderer import render_unified_report
     from platform_atlas.reporting.operational_engine import OperationalReport
-    from platform_atlas.reporting.arch_renderer import render_arch_report
     import pandas as pd
 
     mgr = get_session_manager()
@@ -589,133 +589,89 @@ def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
 
     jlogger.phase(f"Report · session '{session_name}'")
     jlogger.info("Loading validation results from parquet…")
-    df = pd.read_parquet(session.validation_file)
+    df = pd.read_parquet(session.validation_file, engine="pyarrow")
+    rehydrate_validation_attrs(df, session)
     jlogger.info(f"Loaded {len(df)} rule results")
 
-    # Rehydrate metadata that doesn't survive parquet round-trip.
-    if session.capture_file.exists():
-        try:
-            with session.capture_file.open(encoding="utf-8") as f:
-                cap = json.load(f)
-            atlas_meta = (cap.get("_atlas") or {}).get("metadata") or {}
-            for key, val in atlas_meta.items():
-                df.attrs.setdefault(key, val)
-        except Exception as exc:  # noqa: BLE001
-            jlogger.warning(f"Could not rehydrate metadata: {exc}")
-
     organization_name = df.attrs.get("organization_name", "Unknown Organization")
-    ruleset_id = df.attrs.get("ruleset_id", "unknown")
-    ruleset_ver = df.attrs.get("ruleset_version", "unknown")
-    ruleset_profile = df.attrs.get("ruleset_profile", "")
-
     session_tier = getattr(session.metadata, "tier", None) or df.attrs.get("tier") or "extended"
 
-    # Architecture data loads up front — the SaaS merged report embeds it
-    # directly into 03_report.html (Standard/Extended render it into 05 below).
-    try:
-        from platform_atlas.core import architecture_store
-        arch_env = session.metadata.environment or ""
-        arch_record = architecture_store.load(arch_env)
-        architecture_data = arch_record.get("completed") or {}
-    except Exception:
-        architecture_data = {}
-    if not architecture_data and session.capture_file.exists():
-        try:
-            cap_raw = json.loads(session.capture_file.read_text(encoding="utf-8"))
-            architecture_data = cap_raw.get("checks", {}).get("architecture_validation") or {}
-        except Exception:
-            pass
+    extended_results = _load_extended_results(df, session)
+    architecture_data = _load_architecture_data(session.metadata.environment, session.capture_file)
+    rbac_data = _load_rbac_data(session.capture_file, extended_results, rbac_file=session.rbac_file)
+    kubernetes_namespaces_data = _load_kubernetes_namespaces_data(session)
 
-    p_count = int((df["status"].str.upper() == "PASS").sum()) if "status" in df else 0
-    f_count = int((df["status"].str.upper() == "FAIL").sum()) if "status" in df else 0
-    jlogger.info(f"Rendering compliance report — {p_count} pass · {f_count} fail · org: {organization_name}")
-    jlogger.info("Compiling rule rows, status pills, and remediation modals…")
-    render_html_report(
-        df,
-        REPORT_TEMPLATE,
-        output_path=session.report_file,
-        title="Gateway Health Report" if session_tier == "saas" else "Platform Health Report",
-        subtitle=session.name,
-        organization_name=organization_name,
-        ruleset_version=f"{ruleset_ver} ({ruleset_profile})" if ruleset_profile else ruleset_ver,
-        target_system=ruleset_id,
-        modules_ran=session.metadata.modules_ran,
-        architecture_data=architecture_data,
-        tier=session_tier,
-    )
-
-    # Try to load extended results + log sections; fall back to empty structures.
-    extended_results: list = df.attrs.get("extended_results") or []
-    log_html = generate_log_sections_html(extended_results)
-
-    try:
-        report_kb = session.report_file.stat().st_size // 1024
-        jlogger.success(f"Compliance report (03_report.html) ready — {report_kb} KB")
-    except OSError:
-        jlogger.success("Compliance report (03_report.html) ready")
-
+    mongo_report = None
     if session_tier == "standard":
-        jlogger.info("Operational report skipped — log analysis and MongoDB pipeline data require Extended tier.")
+        jlogger.info("Operational section not included — log analysis and MongoDB pipeline data require Extended tier.")
     elif session_tier == "saas":
-        jlogger.info("Operational report skipped — a SaaS gateway audit has no Platform/MongoDB data.")
-    else:
-        jlogger.info("Rendering operational report — includes log sections and MongoDB pipeline metrics…")
-        has_mongo = session.operational_data_file.exists()
-        mongo_report = (
-            OperationalReport.from_json(session.operational_data_file)
-            if has_mongo else OperationalReport(results=[])
-        )
-        render_operational_report(
-            mongo_report,
-            template_path=OPERATIONAL_TEMPLATE,
-            output_path=session.operational_file,
-            title="Operational Metrics Report",
-            subtitle=session.name,
-            organization_name=organization_name,
-            log_sections_html=log_html,
-            has_mongo_data=has_mongo,
-            tier=session_tier,
-        )
+        jlogger.info("Operational section not included — a SaaS gateway audit has no Platform/MongoDB data.")
+    elif session.operational_data_file.exists():
+        mongo_report = OperationalReport.from_json(session.operational_data_file)
 
-    if session_tier not in ("standard", "saas"):
-        try:
-            op_kb = session.operational_file.stat().st_size // 1024
-            jlogger.success(f"Operational report (04_operational.html) ready — {op_kb} KB")
-        except OSError:
-            jlogger.success("Operational report (04_operational.html) ready")
-
-    # Architecture data was loaded before the 03 render (see above).
-    if architecture_data:
+    if session_tier == "saas":
+        jlogger.info("Architecture Overview merged into the Compliance page — SaaS is a single-report audit.")
+    elif architecture_data:
         sections_found = [k for k in architecture_data if architecture_data[k]]
         jlogger.info(f"Architecture data found — {len(sections_found)} section(s): {', '.join(sections_found)}")
     else:
-        jlogger.info("No architecture data found for this environment — architecture report will show placeholder content")
+        jlogger.info("No architecture data found for this environment — Architecture page will show placeholder content.")
         jlogger.info("Fill in the Architecture form under the Audit menu to add this data.")
 
-    if session_tier == "saas":
-        jlogger.info("Architecture Overview merged into 03_report.html — no separate 05_arch.html in a SaaS audit.")
-        session.mark_stage_complete(SessionStage.REPORT)
-    else:
-        jlogger.info("Rendering architecture report (05_arch.html)…")
-        render_arch_report(
-            extended_results,
-            architecture_data,
-            template_path=ARCH_TEMPLATE,
-            output_path=session.arch_file,
-            title="Architecture & Maintenance",
-            subtitle=session.name,
-            organization_name=organization_name,
-            tier=session_tier,
-        )
+    p_count = int((df["status"].str.upper() == "PASS").sum()) if "status" in df else 0
+    f_count = int((df["status"].str.upper() == "FAIL").sum()) if "status" in df else 0
+    jlogger.info(f"Rendering report — {p_count} pass · {f_count} fail · org: {organization_name}")
 
-        session.mark_stage_complete(SessionStage.REPORT)
-        try:
-            arch_kb = session.arch_file.stat().st_size // 1024
-            jlogger.success(f"Architecture report (05_arch.html) ready — {arch_kb} KB")
-        except OSError:
-            jlogger.success("Architecture report (05_arch.html) ready")
-    jlogger.success(f"All reports generated — session: {session.name}")
-    jlogger.info(f"View reports from the Reports page or open {session.directory}")
+    from platform_atlas.core.context import ctx
+    config = ctx().config
+    try:
+        _topo = config.topology
+    except Exception:
+        _topo = None
+    _topo_mode = _topo.mode.value if _topo and getattr(_topo, "mode", None) else ""
+
+    viewmodel = build_webui_viewmodel(
+        df,
+        extended_results=extended_results,
+        architecture_data=architecture_data,
+        operational_report=mongo_report,
+        rbac_data=rbac_data,
+        kubernetes_namespaces_data=kubernetes_namespaces_data,
+        session_name=session.name,
+        modules_ran=session.metadata.modules_ran,
+        tier=session_tier,
+        platform_uri=config.platform_uri,
+        deployment_mode=_topo_mode,
+    )
+
+    render_unified_report(viewmodel, REPORT_TEMPLATE, output_path=session.report_file)
+    try:
+        report_kb = session.report_file.stat().st_size // 1024
+        jlogger.success(f"Report (report.html) ready — {report_kb} KB")
+    except OSError:
+        jlogger.success("Report (report.html) ready")
+
+    try:
+        write_webui_viewmodel(
+            session.webui_viewmodel_file,
+            df,
+            extended_results=extended_results,
+            architecture_data=architecture_data,
+            operational_report=mongo_report,
+            rbac_data=rbac_data,
+            kubernetes_namespaces_data=kubernetes_namespaces_data,
+            session_name=session.name,
+            modules_ran=session.metadata.modules_ran,
+            tier=session_tier,
+            platform_uri=config.platform_uri,
+            deployment_mode=_topo_mode,
+        )
+    except Exception as exc:  # noqa: BLE001 — never block reporting on viewmodel failure
+        jlogger.warning(f"WebUI viewmodel write failed: {exc}")
+
+    session.mark_stage_complete(SessionStage.REPORT)
+    jlogger.success(f"Report generated — session: {session.name}")
+    jlogger.info(f"View the report from the Reports page or open {session.directory}")
     return {"ok": True, "report_file": str(session.report_file)}
 
 
