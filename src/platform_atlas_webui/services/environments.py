@@ -544,28 +544,6 @@ def store_ssh_passphrase(env_name: str, backend: str, passphrase: str) -> None:
     substrate.set(scoped_service_name(env_name), CredentialKey.SSH_PASSPHRASE.value, passphrase)
 
 
-def active_env_allows_legacy() -> bool:
-    """Return True when the active environment has the legacy_profile field set.
-
-    When True, the WebUI shows 2023.x rulesets and profiles. When False (the
-    default for all new installs) those legacy options are hidden so users
-    are not confused by ruleset choices that don't apply to their deployment.
-    """
-    from platform_atlas.core.paths import ATLAS_CONFIG_FILE, ATLAS_ENVIRONMENTS_DIR
-    try:
-        cfg = json.loads(ATLAS_CONFIG_FILE.read_text(encoding="utf-8")) if ATLAS_CONFIG_FILE.is_file() else {}
-        env_name = cfg.get("active_environment") or ""
-        if not env_name:
-            return False
-        env_file = ATLAS_ENVIRONMENTS_DIR / f"{env_name}.json"
-        if not env_file.is_file():
-            return False
-        env_data = json.loads(env_file.read_text(encoding="utf-8"))
-        return bool(env_data.get("legacy_profile"))
-    except Exception:
-        return False
-
-
 def list_environments() -> list[dict[str, Any]]:
     """Return all environment definitions as a list of plain dicts."""
     if not ATLAS_ENVIRONMENTS_DIR.is_dir():
@@ -649,7 +627,7 @@ def save_environment(payload: dict[str, Any]) -> Environment:
         "name", "description", "platform_uri",
         "platform_client_id", "credential_backend", "vault_secret_store", "tier",
         "saas_gateway_kind", "gateway_kind",
-        "gateway4_uri", "gateway4_username", "legacy_profile",
+        "gateway4_uri", "gateway4_username",
         "ssh_key",
         "values_yaml_path", "iag5_values_yaml_path",
         "kubectl_context", "kubectl_namespace", "use_kubectl", "kubectl_binary_path",
@@ -698,13 +676,6 @@ def save_environment(payload: dict[str, Any]) -> Environment:
     # Strip empty gateway_kind (the "No Gateway" radio submits an empty string).
     if not base.get("gateway_kind"):
         base.pop("gateway_kind", None)
-
-    # Legacy (2023.x) is a Platform concept — a SaaS environment audits a
-    # standalone gateway and never carries the marker. Stripping it here
-    # (not just hiding the form control) also self-heals stale data and
-    # keeps the 2023 rulesets/profiles hidden for gateway-only envs.
-    if (base.get("tier") or "").strip().lower() == "saas":
-        base.pop("legacy_profile", None)
 
     # saas_gateway_kind only means something for SaaS envs — keep it out of
     # other tiers' overlays, and insist on it for SaaS (strictly one gateway

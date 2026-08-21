@@ -22,7 +22,7 @@ from platform_atlas_webui.dependencies import get_templates, template_context
 from platform_atlas_webui.security.paths import safe_under
 from platform_atlas_webui.services import sessions as session_svc
 from platform_atlas_webui.services import rulesets as ruleset_svc
-from platform_atlas_webui.services.environments import active_env_allows_legacy, get_environment
+from platform_atlas_webui.services.environments import get_environment
 from platform_atlas_webui.services.jobs import get_registry
 from platform_atlas_webui.services import runners
 
@@ -37,12 +37,6 @@ def _safe_unlink_tmp(p: _Path) -> None:
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 _templates = get_templates()
-
-
-def _filter_legacy(items: list, allow: bool) -> list:
-    if allow:
-        return items
-    return [item for item in items if not item.get("is_legacy")]
 
 
 _SESSIONS_PER_PAGE_OPTIONS = (20, 50, 100)
@@ -117,10 +111,9 @@ def _active_environment() -> str | None:
 
 @router.get("/new", response_class=HTMLResponse)
 async def new_session_form(request: Request) -> HTMLResponse:
-    allow_legacy = active_env_allows_legacy()
     try:
-        rulesets = _filter_legacy(await run_in_threadpool(ruleset_svc.list_rulesets), allow_legacy)
-        profiles = _filter_legacy(await run_in_threadpool(ruleset_svc.list_profiles), allow_legacy)
+        rulesets = await run_in_threadpool(ruleset_svc.list_rulesets)
+        profiles = await run_in_threadpool(ruleset_svc.list_profiles)
     except Exception:  # noqa: BLE001
         rulesets = []
         profiles = []
@@ -162,10 +155,9 @@ async def create_session(
     except SessionAlreadyExistsError:
         # Re-render the form with an inline error and the submitted values pre-filled
         # so the user can pick a different name without losing their other choices.
-        allow_legacy = active_env_allows_legacy()
         try:
-            rulesets = _filter_legacy(await run_in_threadpool(ruleset_svc.list_rulesets), allow_legacy)
-            profiles = _filter_legacy(await run_in_threadpool(ruleset_svc.list_profiles), allow_legacy)
+            rulesets = await run_in_threadpool(ruleset_svc.list_rulesets)
+            profiles = await run_in_threadpool(ruleset_svc.list_profiles)
         except Exception:  # noqa: BLE001
             rulesets = []
             profiles = []

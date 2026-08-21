@@ -153,11 +153,11 @@ def _resolve_settings(args: argparse.Namespace) -> WebUISettings:
 
 
 def _is_compatible_atlas(version: str) -> bool:
-    """Return True if *version* satisfies the >=2.0.0,<3.0 constraint."""
+    """Return True if *version* satisfies the >=3.0.0,<4.0 constraint."""
     try:
         parts = version.split(".")
         major, minor = int(parts[0]), int(parts[1])
-        return (major, minor) >= (2, 0) and major < 3
+        return (major, minor) >= (3, 0) and major < 4
     except (ValueError, IndexError):
         return True  # unparseable — don't block startup
 
@@ -205,7 +205,7 @@ def _run_server(args: argparse.Namespace) -> int:
     print(f"\nPlatform Atlas WebUI v{WEBUI_VERSION}\n", file=sys.stderr)
 
     # Verify the platform-atlas CLI library is present and version-compatible.
-    # The package declares platform-atlas >=2.0.0,<3.0 as a hard dependency, so
+    # The package declares platform-atlas >=3.0.0,<4.0 as a hard dependency, so
     # pip normally guarantees this — but an in-place upgrade or manual install
     # can leave a mismatched version behind. Showing it here also gives operators
     # an immediate sanity-check that the right library is backing the WebUI.
@@ -217,16 +217,16 @@ def _run_server(args: argparse.Namespace) -> int:
             print(f" v{ATLAS_VERSION}  ✓\n", file=sys.stderr)
         else:
             print(
-                f" v{ATLAS_VERSION}  ✗ (expected >=2.0.0,<3.0 — run: pip install "
-                f"\"platform-atlas>=2.0.0,<3.0\")\n",
+                f" v{ATLAS_VERSION}  ✗ (expected >=3.0.0,<4.0 — run: pip install "
+                f"\"platform-atlas>=3.0.0,<4.0\")\n",
                 file=sys.stderr,
             )
             return 1
     except ImportError:
         print(
             "\n\n  CLI  ERROR: platform-atlas library not found.\n"
-            "       The WebUI requires platform-atlas >=2.0.0,<3.0.\n"
-            "       Install it with: pip install \"platform-atlas>=2.0.0,<3.0\"\n",
+            "       The WebUI requires platform-atlas >=3.0.0,<4.0.\n"
+            "       Install it with: pip install \"platform-atlas>=3.0.0,<4.0\"\n",
             file=sys.stderr,
         )
         return 1

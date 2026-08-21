@@ -1194,24 +1194,10 @@
   </div>{# /step 3 #}
   {% endif %}{# /not is_standard #}
 
-  {# ── Review (Legacy + summary) ────────────────────────────────────────
+  {# ── Review (summary) ─────────────────────────────────────────────────
      Step number is dynamic — step 4 in Extended mode (after Topology),
      step 3 in Standard mode (Topology is skipped entirely). #}
   <div :data-wizard-step="total" x-show="!wizardOn || step === total" x-cloak>
-  {# Legacy (2023.x) is a Platform concept — a SaaS environment audits a
-     standalone gateway, so the whole fieldset disappears for SaaS (and the
-     select is disabled so it never submits; the server strips the field
-     from SaaS saves regardless). #}
-  <fieldset x-show="!saas">
-    <legend>Legacy</legend>
-    <div class="field">
-      <label for="legacy_profile">Legacy profile</label>
-      <select id="legacy_profile" name="legacy_profile" :disabled="saas">
-        <option value="" {% if not d.get('legacy_profile') %}selected{% endif %}>None (Platform 6+)</option>
-        <option value="2023" {% if d.get('legacy_profile') == '2023' %}selected{% endif %}>Platform 2023.x</option>
-      </select>
-    </div>
-  </fieldset>
 
   {# Read-only summary, only shown in the wizard (create flow). Pulls live
      values from the form's inputs so they reflect whatever the user typed

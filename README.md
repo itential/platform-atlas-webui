@@ -100,7 +100,7 @@ The CLI is unchanged — the WebUI is purely additive. Sessions, environments, a
 - **Python** `>=3.11,<4.0`
 - **OS** — Linux (RHEL/Rocky 8+9, Ubuntu) or macOS. Daemon mode is POSIX-only; on Windows, run the WebUI under your service supervisor of choice.
 - **Browser** — Any modern Chromium, Firefox, or Safari. The UI uses `EventSource`, `@property`, and View Transitions — release-channel browsers from 2024 onward work without polyfills.
-- **`platform-atlas` core** `>=2.0.0,<3.0` — installed alongside (Poetry pulls it automatically; pip install both wheels for production). The WebUI enforces this at startup.
+- **`platform-atlas` core** `>=3.0.0,<4.0` — installed alongside (Poetry pulls it automatically; pip install both wheels for production). The WebUI enforces this at startup.
 - **Optional** — `keyring` (included with `platform-atlas`) for OS-keyring credential storage, or `hvac` for HashiCorp Vault.
 
 ---
