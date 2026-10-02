@@ -74,12 +74,34 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* ── Onest — hero / large-header display face (variable 100–900). Self-hosted
+   to match the CLI report & guide embedded face. Applied at large sizes only
+   via --hero; smaller headings stay on --display (Sora). ── */
+/* latin-ext */
+@font-face {
+  font-family: 'Onest';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/static/fonts/onest-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Onest';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/static/fonts/onest-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* ───────────────────────────────────────────────────────────────
    Platform Atlas — Aurora & Horizon design system.
 
    Themes are switched by two attributes on <html>:
-     data-theme = aurora | horizon | obsidian | meadow |
-                  carbon | itential | dracula       (palette identity)
+     data-theme = modern | itential | obsidian | carbon
+                                                    (palette identity)
      data-mode  = light  | dark                     (light/dark variant)
 
    Each combination produces a coherent palette. Components reference
@@ -198,6 +220,7 @@
 :root[data-theme="horizon"] {
   --ui: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --hero: 'Onest', var(--display);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", monospace;
 }
 
@@ -517,6 +540,74 @@
   --bad-soft:  rgba(203, 58, 42, 0.10);
 }
 
+/* ── Modern — the 3.0 flagship. Built from the dashboard masthead's crystal:
+   brand navy (#101625 family) for structure, brass #E0A867 for action and
+   selection, Itential sky #4DB4EA for information and live state. Dark-first;
+   the light mode keeps the navy spine and masthead so both modes read as one
+   product. Display face is Sora (geometric) — no serif in this theme. ── */
+
+:root[data-theme="modern"][data-mode="dark"],
+:root[data-theme="modern"]:not([data-mode="light"]) {
+  --bg: #0A101E; --bg-2: #0D1424;
+  --surface: #111A2C; --surface-2: #16213A; --surface-3: #1D2A46;
+  --line: rgba(150, 172, 214, 0.10); --line-2: rgba(150, 172, 214, 0.19);
+  --text: #E9EDF5; --text-2: #AAB5CA; --text-3: #7B879F; --text-4: #56627B;
+  --accent: #E0A867; --accent-ink: #1C1206; --accent-soft: rgba(224, 168, 103, 0.14);
+  --accent-hover: #ECBC84; --accent-muted: #3A2D1D;
+  --ok: #5CCB8F; --warn: #F2B544; --bad: #F2737C; --info: #4DB4EA;
+  --ok-soft:   rgba(92, 203, 143, 0.13);
+  --warn-soft: rgba(242, 181, 68, 0.13);
+  --bad-soft:  rgba(242, 115, 124, 0.13);
+  --accent-2: #4DB4EA; --accent-2-soft: rgba(77, 180, 234, 0.14);
+}
+
+:root[data-theme="modern"][data-mode="light"] {
+  --bg: #F3F5F9; --bg-2: #0D1424;
+  --surface: #FFFFFF; --surface-2: #F1F4F9; --surface-3: #E5EAF2;
+  --line: rgba(15, 23, 42, 0.08); --line-2: rgba(15, 23, 42, 0.15);
+  --text: #0E1627; --text-2: #45506A; --text-3: #6A758C; --text-4: #9AA3B5;
+  --accent: #B5773A; --accent-ink: #1C1206; --accent-soft: rgba(224, 168, 103, 0.18);
+  --accent-hover: #9C6530; --accent-muted: #F6E7D3;
+  --ok: #1F9D5B; --warn: #B7800C; --bad: #D4455A; --info: #1B93D2;
+  --ok-soft:   rgba(31, 157, 91, 0.10);
+  --warn-soft: rgba(183, 128, 12, 0.11);
+  --bad-soft:  rgba(212, 69, 90, 0.09);
+  --accent-2: #1B93D2; --accent-2-soft: rgba(27, 147, 210, 0.10);
+}
+
+:root[data-theme="modern"] {
+  --status-info: var(--info);
+  --status-info-soft: var(--accent-2-soft);
+  --display: 'Sora', 'Hanken Grotesk', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --hero: 'Onest', var(--display);
+}
+/* Radius scale — one family, three steps (control < panel < shell). The
+   [data-radius] qualifier outranks the global pill preset below. */
+:root[data-theme="modern"][data-radius] { --r-sm: 8px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px; }
+
+/* The spine is navy in both modes (like the masthead), with dark tokens so
+   its content reads correctly on light-mode pages too. */
+:root[data-theme="modern"] .side,
+:root[data-theme="modern"] .brand-cell {
+  --bg-2: #0D1424;
+  --surface: #131C30;
+  --surface-2: #19243B;
+  --surface-3: #212E4A;
+  --line: rgba(150, 172, 214, 0.10);
+  --line-2: rgba(150, 172, 214, 0.19);
+  --text: #E9EDF5;
+  --text-2: #AAB5CA;
+  --text-3: #7B879F;
+  --text-4: #56627B;
+  --accent: #E0A867;
+  --accent-ink: #1C1206;
+  --accent-soft: rgba(224, 168, 103, 0.14);
+  color: var(--text);
+}
+:root[data-theme="modern"][data-mode] .brand-mark {
+  background-image: url("/static/img/itential-logo-dark.png");
+}
+
 /* ── Legacy data-theme="light"|"dark" — bridge for any cached cookie/cache.
    These resolve to Aurora in the matching mode so stale clients still render.
    New writes always use a named palette (aurora|horizon|obsidian|meadow|
@@ -549,8 +640,25 @@
 :root {
   --ui: 'Hanken Grotesk', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --display: 'Sora', 'Hanken Grotesk', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --hero: 'Onest', var(--display);
   --mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Consolas, monospace;
   --sidebar-w: 248px;
+
+  /* Type roles — five named sizes replace what used to be decided ad hoc
+     per template (page titles alone rendered at 28/32/36px depending on
+     which page you were on). Every heading/body/label in the templates
+     should reference one of these rather than a bracketed Tailwind size. */
+  --t-hero: 36px;  /* big KPI/ledger numerals */
+  --t-h1:   30px;  /* page title — the ONE size, via .page-header h1 */
+  --t-h3:   15px;  /* card-head title — unchanged, already consistent */
+  --t-body: 16px;  /* primary reading content, table/list rows */
+  --t-meta: 14px;  /* secondary/supporting text, hints, timestamps */
+  --t-label: 12px; /* uppercase field/table-header labels */
+
+  /* Spacing scale — reach for these instead of feeling out a margin.
+     Tight within a group, generous between groups. */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
 
   /* Motion tokens — reach for these instead of magic numbers. ``standard``
      is the workhorse for hover/focus and small state changes; ``emphasized``
@@ -591,7 +699,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--ui);
-  font-size: 15px;
+  font-size: var(--t-body);
   line-height: 1.5;
   font-feature-settings: 'cv11' 1, 'ss01' 1, 'ss03' 1;
   font-optical-sizing: auto;
@@ -1725,9 +1833,82 @@ body { zoom: var(--ui-scale, 1); }
 [data-pf-logs="hidden"] .stream-mode,
 [data-pf-logs="hidden"] .job-stream { display: none; }
 
+/* Failure/warning detail line — the "↳ {details}" leaf from the CLI tree,
+   appended right under its .pf-row. Full-width, wraps normally (unlike
+   .check-detail's truncated single-line tooltip in the generic stream). */
+.pf-detail {
+  font-family: var(--ui);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 1px 0 8px 17px;
+  color: var(--text-3);
+}
+.pf-row.fail + .pf-detail { color: oklch(72% .12 25); }
+.pf-row.warn + .pf-detail { color: oklch(75% .11 75); }
+
+/* ── Idle "what will run" preview ─────────────────────────────────
+   Shown in place of pf-list before the first run — a calm preview of the
+   phases this environment's tier/targets imply, so the panel is never an
+   empty gap while waiting for a run. */
+.pf-preview { display: flex; flex-direction: column; }
+.pf-preview-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.pf-preview-row:last-child { border-bottom: 0; }
+.pf-preview-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  background: var(--surface-2); border: 1px solid var(--line-2);
+  color: var(--text-3);
+}
+.pf-preview-label { font-size: 14px; font-weight: 500; color: var(--text-2); }
+.pf-preview-count {
+  margin-left: auto; font-size: 12px; color: var(--text-4);
+  font-family: var(--ui);
+}
+
+/* ── Completion hero (success / failure) ──────────────────────────
+   Revealed once, on the terminal SSE event. Same visual recipe as the
+   pipeline job page's pp2-hero (ring + title + sub), written fresh here
+   since those rules live inline in jobs/detail.html, not in this sheet. */
+.pf-hero {
+  display: flex; align-items: flex-start; gap: 16px;
+  margin-top: 16px; padding: 18px 20px;
+  border-radius: 10px;
+  animation: pf-hero-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.pf-hero--ok  { background: var(--ok-soft);  border: 1px solid oklch(80% .14 155 / .35); }
+.pf-hero--bad { background: var(--bad-soft); border: 1px solid oklch(72% .16 25 / .35); }
+@keyframes pf-hero-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.pf-hero-ring {
+  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.pf-hero-ring--ok  { background: var(--ok-soft);  border: 2px solid var(--ok);  color: var(--ok); }
+.pf-hero-ring--bad { background: var(--bad-soft); border: 2px solid var(--bad); color: var(--bad); }
+.pf-hero-body { flex: 1; min-width: 0; }
+.pf-hero-title { font-size: 16px; font-weight: 600; margin-bottom: 3px; }
+.pf-hero--ok .pf-hero-title  { color: var(--ok); }
+.pf-hero--bad .pf-hero-title { color: var(--bad); }
+.pf-hero-sub { font-size: 14px; color: var(--text-2); line-height: 1.5; }
+.pf-hero--ok .btn { flex-shrink: 0; align-self: center; }
+
+.pf-hint-block { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.pf-hint {
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--line-2);
+}
+.pf-hint-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.pf-hint-body { font-size: 13px; color: var(--text-3); line-height: 1.5; }
+.pf-hint-link { display: inline-block; margin-top: 5px; font-size: 13px; color: var(--accent); text-decoration: none; }
+.pf-hint-link:hover { text-decoration: underline; }
+
 @media (prefers-reduced-motion: reduce) {
   .pf-current::before { animation: none !important; }
   .pf-row { animation: none !important; }
+  .pf-hero { animation: none !important; }
 }
 
 /* ── Cascade reveal (Dashboard, Fleet) ────────────────────────────
@@ -2086,6 +2267,71 @@ body { zoom: var(--ui-scale, 1); }
   .mini-diff .md-arrow svg { transform: rotate(90deg) !important; }
 }
 
+/* ── Diff page baseline hero ────────────────────────────────────
+   "Compare against baseline" card: the pinned session's name/date, large,
+   on the left; the session-to-check picker on the right. One baseline
+   featured at a time (the active environment's) reads cleaner than a
+   cross-environment list. */
+.baseline-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+.baseline-hero-info { min-width: 220px; }
+.baseline-hero-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.baseline-hero-name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text);
+  word-break: break-word;
+}
+.baseline-hero-date {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 6px;
+}
+.baseline-hero-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 320px;
+  max-width: 420px;
+  padding-left: 32px;
+  border-left: 1px solid var(--line);
+}
+.baseline-hero-form label {
+  font-size: 13px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+.baseline-hero-controls { display: flex; gap: 8px; }
+.baseline-hero-controls select { flex: 1; min-width: 0; }
+.baseline-change-link {
+  font-size: 13px;
+  color: var(--text-3);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--line);
+  padding-bottom: 1px;
+}
+.baseline-change-link:hover { color: var(--text-2); border-color: var(--text-3); }
+@media (max-width: 720px) {
+  .baseline-hero { flex-direction: column; align-items: stretch; }
+  .baseline-hero-form { max-width: none; padding-left: 0; border-left: 0; }
+}
+
 /* ── Stream mode toggle (Human / Raw) ─────────────────────────────
    Sits above the job-stream and switches the verbosity of the live output.
    Per-job choice is stored in localStorage so a reload doesn't lose it. */
@@ -2379,15 +2625,68 @@ code, pre, kbd {
 .tile-value .num, .kpi-value, .kpi-num, .ring-num { font-family: var(--display); letter-spacing: -0.03em; }
 
 /* ── Page layout helpers ──────────────────────────────────────── */
-.page-header { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.page-header { margin-bottom: var(--sp-5); padding-bottom: var(--sp-5); border-bottom: 1px solid var(--line); }
 .page-header h1 {
   font-family: var(--display);
-  font-size: 28px; font-weight: 700;
+  font-size: var(--t-h1); font-weight: 700;
   letter-spacing: -0.038em;
-  margin: 8px 0 6px;
+  margin: 0;
   color: var(--text);
 }
-.page-header p { margin: 0; color: var(--text-2); font-size: 16px; max-width: 64ch; }
+.page-header p { margin: var(--sp-2) 0 0; color: var(--text-2); font-size: var(--t-body); max-width: 64ch; }
+
+/* Shared page-header layout — title/meta/subtitle on the left, actions
+   pinned right. Feeds templates/partials/_page_header.html, which every
+   page should call instead of hand-rolling its own eyebrow+h1 block. */
+.page-header-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-5); flex-wrap: wrap; }
+.page-header-text { min-width: 0; }
+.page-header-title-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.page-header-meta {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--t-meta); color: var(--text-3);
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 10px;
+  font-family: var(--ui); font-weight: 500; white-space: nowrap;
+}
+.page-header-meta .dot { width: 5px; height: 5px; border-radius: 999px; background: var(--ok); }
+.page-header-actions { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; }
+
+/* ── Stat strip ───────────────────────────────────────────────────
+   Generic light-surface KPI row — the fused-ledger pattern proven on
+   the dashboard masthead, minus the navy hero band, for use on any page
+   that needs 2-6 top-line numbers (fleet overview, continuous, etc).
+   No hover by default: these are read-only figures, not links. Wrap an
+   individual .stat-strip-item in an <a> and add .is-link for one that is. */
+.stat-strip {
+  display: flex; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+  overflow: hidden; margin-bottom: var(--sp-5);
+  box-shadow: 0 1px 2px rgba(16,22,37,0.04), 0 10px 30px -16px rgba(16,22,37,0.14);
+}
+.stat-strip-item {
+  flex: 1 1 160px; min-width: 160px;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: var(--sp-4) var(--sp-5);
+  border-left: 1px solid var(--line);
+  color: inherit; text-decoration: none;
+}
+.stat-strip-item:first-child { border-left: 0; }
+.stat-strip-item.is-link { transition: background-color 150ms ease-out; }
+.stat-strip-item.is-link:hover { background: var(--bg-2); }
+.stat-strip-icon { color: var(--text-4); }
+.stat-strip-num { font-family: var(--display); font-size: var(--t-hero); font-weight: 600; letter-spacing: -0.02em; line-height: 1; font-feature-settings: 'tnum'; }
+.stat-strip-label { font-size: var(--t-label); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); font-weight: 500; }
+.stat-strip-hint { font-size: 12px; color: var(--text-3); font-family: var(--mono); }
+@media (max-width: 720px) {
+  .stat-strip-item { flex-basis: 50%; }
+  .stat-strip-item:nth-child(2) { border-left: 0; }
+}
+
+/* ── Severity / status inline icon ────────────────────────────────
+   Pairs with templates/partials/_severity.html — severity and pass-rate
+   are never color alone; a shape rides along with the color. */
+.status-inline { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.status-inline svg { flex-shrink: 0; }
 
 hr.rule-line { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 
@@ -2413,29 +2712,12 @@ hr.rule-line { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   transition: opacity .15s;
 }
 
-/* Card & tile hover lift */
-.card {
-  transition: border-color .15s, box-shadow .15s;
-}
-.card:hover {
-  border-color: var(--line-2);
-  box-shadow: 0 4px 18px oklch(0% 0 0 / .12);
-}
-.tile {
-  transition: border-color .15s, box-shadow .15s, transform .15s;
-}
-.tile:hover {
-  border-color: var(--line-2);
-  box-shadow: 0 4px 18px oklch(0% 0 0 / .12);
-  transform: translateY(-1px);
-}
-.kpi {
-  transition: border-color .15s, box-shadow .15s;
-}
-.kpi:hover {
-  border-color: var(--line-2);
-  box-shadow: 0 2px 12px oklch(0% 0 0 / .1);
-}
+/* Card & tile hover lift — DELETED (was unconditional on bare .card /
+   .tile / .kpi, so every purely-informational container falsely invited
+   a click). Hover now only fires for elements that actually act as a
+   link/button: see ".card.is-clickable" and the ".card.is-link, a.card,
+   a.kpi, [data-card-link]" block further down, both already scoped
+   correctly and left as-is. */
 
 /* Button hover transitions */
 .btn {
@@ -2878,6 +3160,9 @@ tr.is-drifted {
   border-radius: 4px;
 }
 .target-card__transport {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -2889,6 +3174,7 @@ tr.is-drifted {
   border-radius: 4px;
   margin-left: auto;
 }
+.target-card__transport-icon { display: flex; opacity: 0.85; }
 .target-card__name {
   font-size: 16px;
   font-weight: 600;
@@ -3583,4 +3869,300 @@ textarea[aria-invalid="true"]:focus-visible {
   a.kpi:hover,
   [data-card-link]:hover { transform: none; }
   html { scroll-behavior: auto; }
+}
+
+/* ── Pipeline phase stepper (pp2) ──────────────────────────────────────
+   The calm, phase-based progress UI for a full audit pipeline run. Shared
+   by templates/partials/_pipeline_progress.html (used on both the standalone
+   /jobs/<id> view and inline on the session page). All colors read from the
+   theme tokens, so it themes with Modern/Itential/Obsidian/Carbon for
+   free. Driven by static/js/job-stream.js. Extracted here from
+   jobs/detail.html so both hosts share one definition. */
+.pp2-body { padding: 32px 28px 28px !important; }
+.pp2-stepper {
+  display: flex; align-items: flex-start;
+  max-width: 520px; width: 100%; margin: 0 auto 20px; padding: 4px 0;
+}
+.pp2-phase {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; flex-shrink: 0; min-width: 88px;
+}
+.pp2-dot {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .3s, border-color .3s, box-shadow .3s;
+}
+.pp2-dot[data-status="pending"] { background:var(--surface-3); border:2px solid var(--line-2); color:var(--text-4); }
+.pp2-dot[data-status="active"]  { background:var(--accent-soft); border:2px solid var(--accent); color:var(--accent); animation:pp2Pulse 2s ease-in-out infinite; }
+.pp2-dot[data-status="done"]    { background:var(--ok-soft); border:2px solid var(--ok); color:var(--ok); }
+.pp2-dot[data-status="error"]   { background:var(--bad-soft); border:2px solid var(--bad); color:var(--bad); }
+@keyframes pp2Pulse {
+  0%,100% { box-shadow:0 0 0 0 var(--accent-soft); opacity:1; }
+  50%     { box-shadow:0 0 0 8px var(--accent-soft); opacity:.85; }
+}
+.pp2-label {
+  font-size:13px; font-weight:500; color:var(--text-4);
+  text-align:center; line-height:1.3; letter-spacing:.01em; transition:color .2s;
+}
+.pp2-phase.is-active .pp2-label { color:var(--accent); }
+.pp2-phase.is-done   .pp2-label { color:var(--ok); }
+.pp2-phase.is-error  .pp2-label { color:var(--bad); }
+.pp2-conn {
+  flex:1; height:2px; background:var(--line-2);
+  margin-top:21px; min-width:24px; transition:background .4s;
+}
+.pp2-conn.done { background:var(--ok); }
+/* Stage info bar */
+.pp2-stage-bar {
+  display:flex; align-items:center; justify-content:space-between;
+  max-width:520px; width:100%; margin:0 auto 6px;
+}
+.pp2-stage-name { font-size:15px; font-weight:600; color:var(--text-2); }
+.pp2-elapsed { font-size:14px; font-family:var(--mono,"JetBrains Mono",monospace); color:var(--text-4); letter-spacing:.02em; }
+/* Status */
+.pp2-status {
+  text-align:center; font-size:15px; color:var(--text-2);
+  min-height:20px; line-height:1.5; padding:0 8px;
+  max-width:480px; margin:0 auto 18px; transition:opacity .15s;
+}
+/* Activity panel */
+.pp2-activity {
+  background:var(--surface-2); border:1px solid var(--line-2);
+  border-radius:10px; padding:14px 18px;
+  max-width:520px; width:100%; margin:0 auto 18px;
+}
+.pp2-activity-title {
+  font-size:12px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.08em; color:var(--text-4); margin-bottom:10px;
+}
+.pp2-act-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.pp2-tier-badge {
+  font-size:12px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; padding:2px 7px; border-radius:99px;
+}
+.pp2-tier-std { background:oklch(75% .10 260/.12); color:var(--accent); border:1px solid oklch(75% .10 260/.3); }
+.pp2-tier-ext { background:oklch(75% .15 155/.12); color:var(--ok);    border:1px solid oklch(75% .15 155/.3); }
+.pp2-activity-msg { display:flex; align-items:center; gap:8px; font-size:15px; color:var(--text-3); }
+.pp2-pulse-dot {
+  width:7px; height:7px; border-radius:50%; background:var(--accent);
+  flex-shrink:0; animation:pp2DotPulse 1.4s ease-in-out infinite;
+}
+@keyframes pp2DotPulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%     { opacity:.4; transform:scale(.7); }
+}
+.pp2-mod-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:6px 12px; }
+.pp2-mod-item { display:flex; align-items:center; gap:6px; font-size:14px; color:var(--text-4); }
+.pp2-mod-item.is-done { color:var(--ok); }
+/* Sub-label shown below "Collecting…" during the silent wait */
+.pp2-act-sub {
+  font-size:13px; color:var(--text-4); margin-top:5px; padding-left:15px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.4;
+}
+/* Validation running-totals summary header */
+.pp2-val-summary {
+  font-size:14px; color:var(--text-3); margin-bottom:8px;
+  display:flex; gap:4px; flex-wrap:wrap; align-items:center;
+}
+/* Aggregation list */
+.pp2-agg-list { display:flex; flex-direction:column; gap:5px; }
+.pp2-agg-row {
+  display:flex; align-items:center; gap:7px;
+  font-size:14px; font-family:var(--mono,"JetBrains Mono",monospace);
+  color:var(--text-3); padding:4px 6px; border-radius:5px;
+}
+.pp2-agg-row.is-running { background:oklch(from var(--accent) l c h/.07); color:var(--accent); }
+.pp2-agg-row.is-done  { color:var(--ok); }
+.pp2-agg-row.is-error { color:var(--bad); }
+.pp2-agg-icon { font-size:13px; width:14px; text-align:center; flex-shrink:0; }
+.pp2-agg-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pp2-agg-meta { font-size:13px; color:var(--text-4); white-space:nowrap; flex-shrink:0; }
+.pp2-agg-idx  { font-size:12px; color:var(--text-4); white-space:nowrap; flex-shrink:0; }
+.pp2-agg-empty { font-size:14px; color:var(--text-4); padding:4px 2px; }
+/* Validation categories */
+.pp2-cat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:5px 14px; }
+.pp2-cat-row { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:14px; padding:3px 0; }
+.pp2-cat-name { color:var(--text-2); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.pp2-cat-counts { font-size:13px; white-space:nowrap; }
+.pp2-cat-row.has-fail .pp2-cat-name { color:var(--bad); }
+.pp2-cat-row.all-pass .pp2-cat-name { color:var(--ok); }
+/* Report checklist */
+.pp2-report-list { display:flex; flex-direction:column; gap:8px; }
+.pp2-report-item { display:flex; align-items:center; gap:8px; font-size:15px; color:var(--text-3); transition:color .2s; }
+.pp2-report-item.is-done { color:var(--ok); }
+/* Collapsible log */
+.pp2-log-details { max-width:520px; width:100%; margin:6px auto 0; }
+.pp2-log-summary {
+  display:flex; align-items:center; gap:6px; cursor:pointer;
+  font-size:14px; color:var(--text-3); user-select:none;
+  list-style:none; padding:6px 2px;
+}
+.pp2-log-summary::-webkit-details-marker { display:none; }
+.pp2-log-arrow { font-size:10px; transition:transform .2s; color:var(--text-4); }
+.pp2-log-details[open] .pp2-log-arrow { transform:rotate(90deg); }
+/* Hero (success / error) */
+.pp2-hero {
+  display:flex; flex-direction:column; align-items:center;
+  text-align:center; padding:32px 20px 28px;
+  max-width:580px; margin:0 auto;
+}
+.pp2-hero-ring {
+  width:72px; height:72px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; margin-bottom:16px;
+}
+.pp2-hero-ring--ok  { background:var(--ok-soft);  border:2px solid var(--ok);  color:var(--ok);  animation:pp2RingIn .45s cubic-bezier(.34,1.56,.64,1) both; }
+.pp2-hero-ring--bad { background:var(--bad-soft); border:2px solid var(--bad); color:var(--bad); }
+@keyframes pp2RingIn {
+  from { transform:scale(.5); opacity:0; }
+  to   { transform:scale(1);  opacity:1; }
+}
+.pp2-hero-title { font-size:22px; font-weight:600; letter-spacing:-.025em; margin:0 0 6px; color:var(--ok); }
+.pp2-hero-sub   { font-size:15px; color:var(--text-2); margin:0 0 20px; max-width:46ch; line-height:1.5; }
+.pp2-score-card {
+  background:var(--surface-2); border:1px solid var(--line-2);
+  border-radius:12px; padding:20px 28px;
+  width:100%; max-width:420px; margin-bottom:20px;
+}
+.pp2-score-pct   { font-size:48px; font-weight:700; letter-spacing:-.045em; color:var(--ok); line-height:1; margin-bottom:3px; font-family:var(--mono,"JetBrains Mono",monospace); }
+.pp2-score-lbl   { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-4); margin-bottom:14px; }
+.pp2-score-counts { display:flex; justify-content:center; gap:20px; }
+.pp2-score-count  { font-size:15px; color:var(--text-3); }
+.pp2-score-count b { font-size:18px; font-weight:700; }
+.pp2-score-count.ok  b { color:var(--ok); }
+.pp2-score-count.bad b { color:var(--bad); }
+.pp2-score-count.dim b { color:var(--text-3); }
+.pp2-action-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center; margin-bottom:8px; }
+.pp2-alt-row { display:flex; align-items:center; gap:8px; font-size:14px; justify-content:center; flex-wrap:wrap; }
+.pp2-alt-row a { color:var(--accent); text-decoration:none; }
+.pp2-alt-row a:hover { text-decoration:underline; }
+.pp2-alt-row .sep { color:var(--text-4); }
+@media (prefers-reduced-motion: reduce) {
+  .pp2-dot[data-status="active"],
+  .pp2-pulse-dot,
+  .pp2-hero-ring--ok { animation: none; }
+}
+
+/* ── Shared credential editor (ce) ─────────────────────────────────────
+   ONE credential-status list + inline set/edit/remove editor, used by both
+   config/credentials.html and tier/extended_setup.html via
+   templates/partials/_cred_editor.html. Compact editorial rows: a required
+   dot, name + key + tags, a fixed-width status pill, and a single action
+   button that reveals the inline editor. All colors are theme tokens, so it
+   themes with Modern/Itential/Obsidian/Carbon for free. Moved here out of
+   the two pages' inline <style> blocks so there is a single definition. */
+.ce-row { border-bottom: 1px solid var(--line); }
+.ce-row:last-child { border-bottom: 0; }
+.ce-row.is-unavailable { opacity: .4; }
+.ce-row.is-open { background: var(--surface-2); }
+
+.ce-line { display: grid; grid-template-columns: 14px minmax(0,1fr) 104px 108px; gap: 14px; align-items: center; padding: 12px 16px; }
+.ce-dot { display: inline-flex; align-items: center; justify-content: center; }
+.ce-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ce-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ce-name-row .display { font-size: 16px; font-weight: 500; color: var(--text); }
+.ce-name-row .key { font-family: var(--mono); font-size: 13px; color: var(--text-4); }
+.ce-name .desc { font-size: 13px; color: var(--text-3); line-height: 1.45; }
+.ce-tags { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+.ce-tag {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  padding: 1px 7px; border-radius: 4px;
+  color: var(--text-3); background: var(--surface-2); border: 1px solid var(--line-2);
+}
+.ce-tag.is-extended { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+
+.ce-status {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; padding: 4px 10px; border-radius: 999px;
+  font-size: 13px; font-weight: 500;
+  border: 1px solid var(--line-2); color: var(--text-3); background: transparent;
+}
+.ce-status .dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; opacity: .55; }
+.ce-status.is-ok      { color: var(--ok);  background: var(--ok-soft);  border-color: oklch(from var(--ok) l c h / .35); }
+.ce-status.is-ok .dot { opacity: 1; }
+.ce-status.is-bad     { color: var(--bad); background: var(--bad-soft); border-color: oklch(from var(--bad) l c h / .35); }
+.ce-status.is-bad .dot { opacity: 1; }
+
+.ce-action-cell { display: flex; justify-content: flex-end; }
+.ce-action {
+  height: 30px; padding: 0 12px; min-width: 92px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 500; cursor: pointer;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+.ce-action:hover { background: var(--surface-2); border-color: var(--accent-soft); color: var(--accent); }
+.ce-action.is-primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.ce-action.is-primary:hover { filter: brightness(0.96); color: var(--accent-ink); }
+.ce-action svg { opacity: .7; }
+.ce-action:hover svg { opacity: 1; }
+.ce-action.is-primary svg { opacity: .9; }
+
+/* Editor panel — collapses by default, opens via the row's Edit/Set */
+.ce-edit { display: none; padding: 4px 16px 16px; }
+.ce-row.is-open .ce-edit { display: block; }
+.ce-form {
+  background: var(--bg); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.ce-input-wrap { position: relative; }
+.ce-input {
+  width: 100%; box-sizing: border-box;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 10px 40px 10px 12px;
+  font-family: var(--mono); font-size: 15px;
+  transition: border-color .12s, box-shadow .12s; outline: none;
+}
+.ce-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ce-reveal {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; padding: 4px; cursor: pointer;
+  color: var(--text-3); display: inline-flex;
+}
+.ce-reveal:hover { color: var(--text); }
+.ce-hint { font-size: 13px; color: var(--text-3); margin: 0; line-height: 1.5; }
+.ce-hint code { font-family: var(--mono); font-size: 12px; padding: 1px 5px; background: var(--surface); border: 1px solid var(--line); border-radius: 3px; color: var(--text-2); }
+
+/* Inline format-check result (no network — presence + shape only) */
+.ce-check-result { font-size: 13px; line-height: 1.5; min-height: 0; }
+.ce-check-result:empty { display: none; }
+.ce-check-result .ok  { color: var(--ok); }
+.ce-check-result .bad { color: var(--bad); }
+.ce-check-result .muted { color: var(--text-3); }
+.ce-check-result code { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+
+.ce-mongo-warn {
+  margin-top: 2px; padding: 8px 10px; border-radius: 6px;
+  background: var(--warn-soft); border: 1px solid oklch(from var(--warn) l c h / .4);
+  font-size: 14px; color: var(--text-2); line-height: 1.5;
+}
+.ce-mongo-warn strong { color: var(--warn); }
+
+.ce-form-actions { display: flex; align-items: center; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); margin-top: 2px; }
+.ce-form-actions .spacer { flex: 1; }
+.ce-form-actions .btn { height: 30px; padding: 0 14px; font-size: 14px; }
+.ce-remove {
+  background: none; border: none; padding: 0;
+  color: var(--bad); cursor: pointer;
+  font-size: 13px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 5px; text-decoration: none;
+}
+.ce-remove:hover { text-decoration: underline; }
+.ce-remove[disabled] { color: var(--text-4); cursor: not-allowed; text-decoration: none; }
+
+@media (max-width: 720px) {
+  .ce-line { grid-template-columns: 14px minmax(0,1fr) auto; row-gap: 8px; }
+  .ce-line .ce-status { grid-column: 2; justify-self: start; width: auto; }
+  .ce-line .ce-action-cell { grid-column: 3; grid-row: 1; }
+}
+
+/* Large / hero headers use Onest (via --hero); smaller headings, numbers,
+   body and mono stay on their existing faces. */
+.page-header h1,
+.baseline-hero-name,
+.pmr-title,
+.pp2-hero-title {
+  font-family: var(--hero) !important;
 }

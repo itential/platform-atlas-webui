@@ -21,6 +21,7 @@ Platform Atlas WebUI is an optional, separately-distributed wheel that adds a br
 - [Quick Start](#quick-start)
 - [CLI Reference](#cli-reference)
 - [Daemon Mode](#daemon-mode)
+- [Atlas MCP Server](#atlas-mcp-server)
 - [Configuration](#configuration)
 - [Security Model](#security-model)
 - [Themes](#themes)
@@ -151,8 +152,8 @@ That's it. The WebUI reads from the same `~/.atlas/` directory the CLI uses, so 
 ```text
 platform-atlas-webui [--host HOST] [--port PORT] [--reload]
                      [--allow-remote] [--log-level LEVEL]
-                     [--reset-tls] [--reset-token] [--no-browser]
-                     [--daemon]
+                     [--reset-tls] [--no-tls] [--no-auth] [--reset-token] [--no-browser]
+                     [--daemon] [--mcp-server] [--reset-mcp-token]
                      <action> ...
 ```
 
@@ -161,23 +162,28 @@ platform-atlas-webui [--host HOST] [--port PORT] [--reload]
 | Flag | Default | Effect |
 |---|---|---|
 | `--host` | `127.0.0.1` | Bind host. Loopback only unless `--allow-remote` is also passed. |
-| `--port` | `8765` | Bind port. |
-| `--reload` | off | Enable uvicorn hot-reload (development only). Cannot combine with `--daemon`. |
+| `--port` | `8765` (`8766` under `--mcp-server`) | Bind port. |
+| `--reload` | off | Enable uvicorn hot-reload (development only). Cannot combine with `--daemon`, and not supported under `--mcp-server`. |
 | `--allow-remote` | off | Allow binding to non-loopback interfaces. Required for `0.0.0.0` or `::`. |
 | `--log-level` | `info` | One of `debug`, `info`, `warning`, `error`, `critical`. |
-| `--reset-tls` | off | Regenerate the self-signed certificate and exit. |
+| `--reset-tls` | off | Regenerate the self-signed certificate and exit. Shared between the browser UI and MCP server (same host identity). |
+| `--no-tls` | off | **`--mcp-server` only.** Run over plain HTTP instead of HTTPS. The bearer token then travels unencrypted — see [Atlas MCP Server](#atlas-mcp-server) before using this. Rejected on the browser UI (its session cookies require HTTPS). |
+| `--no-auth` | off | **`--mcp-server` only.** Disable bearer-token auth entirely — every request is accepted unauthenticated, no token to generate or rotate. See [Atlas MCP Server](#atlas-mcp-server) before using this. Rejected on the browser UI (it uses session-cookie auth, not a bearer token). |
 | `--reset-token` | off | Regenerate the OS-user binding token (invalidates all existing browser sessions). |
 | `--no-browser` | off | Skip auto-opening the default browser on launch. |
-| `--daemon` | off | Detach to the background, write a PID file, log to `~/.atlas/webui.log`. |
+| `--daemon` | off | Detach to the background, write a PID file, log to `~/.atlas/webui.log` (or `~/.atlas/mcp-server.{pid,log}` under `--mcp-server`). |
+| `--mcp-server` | off | Run the [Atlas MCP server](#atlas-mcp-server) instead of the browser UI — a separate mode, process, and daemon. |
+| `--reset-mcp-token` | off | Regenerate the MCP server's bearer token. Only meaningful with `--mcp-server`. |
 
 ### Subcommands
 
 | Action | Purpose |
 |---|---|
-| `stop` | Stop the running daemon (SIGTERM via PID file). |
-| `status` | Report whether a daemon is running, its PID, and log path. |
-| `restart` | Stop the existing daemon and start a fresh one. Run flags accepted to change host/port. |
+| `stop [--mcp-server]` | Stop the running daemon (SIGTERM via PID file). `--mcp-server` targets the MCP daemon instead of the browser UI's. |
+| `status [--mcp-server]` | Report whether a daemon is running, its PID, and log path. |
+| `restart` | Stop the existing daemon and start a fresh one. Run flags accepted to change host/port/mode. |
 | `login-url` | Print a fresh single-use login URL (valid for 60 s). Handy after a daemon restart. |
+| `print-mcp-token` | Print the MCP server's bearer token — for `iagctl mcp server add --header`. |
 
 ### Examples
 
@@ -219,6 +225,110 @@ platform-atlas-webui stop           # graceful shutdown
 Daemon mode is POSIX-only (Linux and macOS). On Windows, run the WebUI under your service supervisor of choice.
 
 > `--reload` and `--daemon` cannot be combined. Use `--reload` during development; use `--daemon` when you want the server to stay running.
+
+---
+
+## Atlas MCP Server
+
+`platform-atlas-webui --mcp-server` runs a [Model Context Protocol](https://modelcontextprotocol.io) server exposing 16 read-only Atlas query tools — built for registering Atlas as an external tool in Itential's FlowMCP Gateway so FlowAI agents can query compliance data in natural language. It's a **separate mode, process, and daemon from the browser UI**: no browser routes, no session-cookie auth, its own bearer token, and (by default) its own port, so the two can run independently or side by side on one host.
+
+This is intentionally read-only in this release — it never triggers a capture/validate/report run. See `design/MCP/*.md` in the `platform-atlas` repo for the full research history and phasing rationale.
+
+### Available tools
+
+| Tool | Answers |
+|---|---|
+| `list_environments` | Every configured environment, its tier, and latest audit status. |
+| `list_sessions` | Recent sessions, newest first, optionally scoped to one environment. |
+| `get_compliance_summary` | One environment's latest compliance numbers (pass/fail/skip, pass rate). |
+| `fleet_top_fix` | Which rule failures recur across the most environments fleet-wide. |
+| `explain_rule` | Look up one rule by number/name/path and its status in one environment. |
+| `diff_sessions` | What changed (fixed/regressed/new/removed) between two sessions in one environment. |
+| `rule_fleet_distribution` | Same lookup as `explain_rule`, but across *every* environment — is this a systemic policy gap or a one-off? |
+| `fleet_severity_breakdown` | FAIL counts by severity, one environment or fleet-wide — what's most urgent right now. |
+| `rule_category_health` | Pass/fail/skip grouped by rule category (gateway4, mongo_conf, ...) — which subsystem is weakest. |
+| `stale_environments` | Environments that haven't been audited recently, or ever. |
+| `session_history_trend` | Is one environment's pass rate improving, degrading, or flat over its last N audits? |
+| `flaky_rules` | Rules that flip pass/fail repeatedly in one environment — instability, not a clean regression. |
+| `compare_environments` | Rules where two environments disagree (one passes, one fails) on the same check. |
+| `skip_reason_breakdown` | Why rules were skipped — a deliberate exception vs. "couldn't connect to collect this." |
+| `fleet_tier_coverage` | Environment counts and average pass rate by tier (standard/extended/saas). |
+| `fleet_regressions_since_last_audit` | What got worse, anywhere in the fleet, since each environment's last audit. |
+
+### Quick start
+
+```bash
+# Foreground, for a first look
+platform-atlas-webui --mcp-server
+
+# The bearer token is printed once, on first generation — save it, or
+# retrieve it again anytime:
+platform-atlas-webui print-mcp-token
+```
+
+Register with Gateway5 — recommended: store the token as a Gateway secret first
+(`--prompt-value` avoids it ever landing in shell history), then reference it
+by name so it's never passed as plaintext in the registration command itself:
+
+```bash
+iagctl create secret atlas-mcp-token --prompt-value
+# (paste the value from `platform-atlas-webui print-mcp-token` when prompted)
+
+iagctl mcp server add atlas "https://<host>:8766/mcp" \
+  --transport streamable-http \
+  --header "Authorization=Bearer {{ secret \"atlas-mcp-token\" }}" \
+  --description "Platform Atlas compliance audit tool-call API"
+```
+
+(Quicker, less secure alternative for a one-off local test: skip `create secret`
+and pass the raw token directly — `--header "Authorization=Bearer <token>"`.)
+
+Verify with `iagctl mcp server inspect atlas` and `iagctl mcp tool list atlas`.
+
+> Note the URL has **no trailing slash** (`/mcp`, not `/mcp/`) — that's the
+> canonical path; `/mcp/` 307-redirects to it. Also note `--header` takes
+> `Name=Value` (an `=`), not `Name: Value` — different from a raw HTTP header
+> line.
+
+### Running it as a background service
+
+Two independent ways to keep it running — pick one, don't combine them on the same instance:
+
+**Option A — Atlas's own `--daemon` mode** (no service supervisor required):
+
+```bash
+platform-atlas-webui --mcp-server --daemon --allow-remote
+platform-atlas-webui status --mcp-server
+platform-atlas-webui stop --mcp-server
+```
+
+**Option B — systemd** (Linux hosts that have it — recommended for production, since systemd supervises restarts on crash/reboot for you):
+
+A template unit is at `scripts/systemd/platform-atlas-mcp.service.example`. Copy it, fill in the paths/user, and enable it:
+
+```bash
+sudo cp scripts/systemd/platform-atlas-mcp.service.example /etc/systemd/system/platform-atlas-mcp.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now platform-atlas-mcp
+```
+
+Under systemd, run the MCP server in the **foreground** (`ExecStart=... --mcp-server --allow-remote`, no `--daemon`) — systemd is already the process supervisor, so Atlas's own self-fork would only get in the way.
+
+### Notes
+
+- Bind posture mirrors the browser UI: loopback-only unless `--allow-remote` is passed. Since the whole point is letting Gateway5 reach it over the LAN, most real deployments will need `--allow-remote`. A specific interface IP (e.g. `--host 192.168.2.104`) doesn't require `--allow-remote` — that flag only guards the `0.0.0.0`/`::` wildcards.
+- TLS uses the same self-signed certificate as the browser UI (same host identity), automatically regenerated to add whatever `--host` you bind to as a certificate SAN — no separate cert to manage, no manual `--reset-tls` needed when you change `--host`.
+- **Self-signed TLS and strict clients:** some MCP clients (Gateway5's own outbound connection, in particular) verify the certificate chain strictly and reject a self-signed cert with `x509: certificate signed by unknown authority`, even once the SAN matches. The fully correct fix is making the client trust Atlas's cert — for Gateway5 that's `GATEWAY_APPLICATION_CA_CERTIFICATE_FILE` / config file `[application]` → `ca_certificate_file`, pointed at `~/.atlas/.webui-cert.pem`, set **on the Gateway5 host**, not here. If that's more than you want to deal with for a trusted-network setup, `--no-tls` runs the MCP server over plain HTTP instead and sidesteps the whole problem — see below.
+- **`--no-tls`** disables TLS entirely for MCP mode (browser mode refuses it — its session cookies require HTTPS). The bearer token then travels in cleartext, so only use it on a network you trust, or behind something else terminating TLS in front of Atlas (a reverse proxy, an SSH tunnel, a VPN). Registration and calls just use `http://` instead of `https://` — everything else (auth, tools, audit log) is unchanged.
+- The bearer token lives at `~/.atlas/.mcp-token` (mode 0600), independent of the browser UI's login token — rotating one never logs out the other. **It's a static secret**: it's generated once and never changes on its own — only `--reset-mcp-token`, or losing the file (e.g. a wiped `~/.atlas`), produces a new one. Update the Gateway5 registration only after an actual rotation.
+- **`--no-auth`** disables bearer-token auth entirely for MCP mode (browser mode refuses it — it authenticates via session cookie, not a bearer token). Every request is accepted with no `Authorization` header at all — there's no token to generate, print, or register with `iagctl`. Registration drops the `--header` flag:
+
+  ```bash
+  iagctl mcp server add atlas "https://<host>:8766/mcp" --transport streamable-http
+  ```
+
+  Only use this on a network you trust, or behind something else terminating auth in front of Atlas. Combine with `--no-tls` for fully plaintext, unauthenticated access — appropriate for an isolated lab network, not a shared one. Tool calls are still written to the audit log either way (identified by the OS user running the Atlas process, since there's no per-client token to distinguish callers once auth is off).
+- Tool calls are logged to `~/.atlas/mcp-audit.log` (who, what tool, when, outcome — JSON lines, rotated).
 
 ---
 

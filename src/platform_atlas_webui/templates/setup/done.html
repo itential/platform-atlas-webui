@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 {% set _pref_mode = prefs.mode | default('dark') %}
-{% set _effective_mode = 'dark' if _pref_mode == 'auto' else _pref_mode %}
+{% set _effective_mode = 'light' if _pref_mode == 'auto' else _pref_mode %}
 <html lang="en"
-      data-theme="{{ prefs.theme | default('itential') }}"
+      data-theme="{{ prefs.theme | default('modern') }}"
       data-mode="{{ _effective_mode }}"
       data-mode-pref="{{ _pref_mode }}"
       data-radius="pill"
@@ -22,8 +22,14 @@
   </script>
   <title>You're ready — Platform Atlas</title>
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <link rel="stylesheet" href="{{ url_for('static', path='css/atlas.css') }}">
-  <script src="{{ url_for('static', path='js/atlas.js') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/atlas.css') }}?v={{ asset_version }}">
+  {# Studio design layer + motion (see base.html). This page has no app
+     shell, so atlas-motion.js falls back to the [data-motion-page]
+     entrance and [data-motion-step] step transitions. #}
+  <link rel="stylesheet" href="{{ url_for('static', path='css/atlas-studio.css') }}?v={{ asset_version }}">
+  <script src="{{ url_for('static', path='js/atlas.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='js/vendor/gsap/gsap.min.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='js/atlas-motion.js') }}?v={{ asset_version }}" defer></script>
   <style>
     body {
       min-height: 100vh;
@@ -387,6 +393,11 @@
 </head>
 <body>
 
+<!-- Ambient crystal background — theme-aware, matches the setup flow. -->
+<div class="ob-facets" data-atlas-facets data-facets-variant="ambient" aria-hidden="true">
+  <div class="facets-probe"><i data-c="a"></i><i data-c="b"></i><i data-c="lo"></i><i data-c="hi"></i></div>
+</div>
+
 <!-- D5 — Drifting particles (decoration) -->
 <span class="drift" style="--lx:14%; --dx:30px;  --delay:0s;"  aria-hidden="true"></span>
 <span class="drift" style="--lx:28%; --dx:-20px; --delay:2s;"  aria-hidden="true"></span>
@@ -395,7 +406,7 @@
 <span class="drift" style="--lx:74%; --dx:20px;  --delay:3s;"  aria-hidden="true"></span>
 <span class="drift" style="--lx:88%; --dx:-25px; --delay:5s;"  aria-hidden="true"></span>
 
-<div class="done-shell">
+<div class="done-shell" data-motion-page>
 
   <div class="done-hero">
     <div class="done-mark" aria-hidden="true">

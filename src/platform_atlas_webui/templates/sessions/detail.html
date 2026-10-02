@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}{{ session.name }} — Platform Atlas{% endblock %}
 {% block crumb %}<a href="/sessions" class="text-inherit hover:text-accent">Sessions</a> <span class="sep">›</span> {{ session.name }}{% endblock %}
 {% block content %}
@@ -8,32 +9,36 @@
 {% set _tlk = session.tier_lock | default({}) %}
 {% set _locked = _tlk.locked %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Session</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">{{ session.name }}</h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      {% if session.environment %}<b>{{ session.environment }}</b> environment · {% endif %}
-      <b>{{ tier_label }}</b> tier
-      {% if session.ruleset_id %} · ruleset <b>{{ session.ruleset_id }}</b>{% if session.ruleset_profile %} <small class="text-text-3">({{ session.ruleset_profile }})</small>{% endif %}{% endif %}
-    </p>
-  </div>
-  <div class="flex items-center gap-2">
-    {% if all_done %}
-      <a class="btn primary" href="/reports/{{ session.name }}" target="_blank" rel="noopener">View report ↗</a>
-    {% elif not _locked %}
-      <form id="hero-run-all" action="/sessions/{{ session.name }}/run/all" method="post"
-            class="flex flex-col items-end gap-1.5">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="btn primary" type="submit">Run full pipeline</button>
-      </form>
-    {% else %}
-      {# Tier-locked + incomplete shouldn't actually reach this page (route
-         redirects view_blocked sessions away) — but be defensive. #}
-      <a class="btn" href="/tier" title="{{ _tlk.fix }}">Switch tier →</a>
-    {% endif %}
-  </div>
-</header>
+{% call page_header(session.name,
+    subtitle=(('<b>' ~ session.environment ~ '</b> environment · ') if session.environment else '') ~ '<b>' ~ tier_label ~ '</b> tier' ~ ((' · ruleset <b>' ~ session.ruleset_id ~ '</b>' ~ (' <small class="text-text-3">(' ~ session.ruleset_profile ~ ')</small>' if session.ruleset_profile else '')) if session.ruleset_id else '')) %}
+  {% if active_job %}
+    <span class="chip run"><span class="dot"></span>Audit running…</span>
+  {% elif all_done %}
+    <a class="btn primary" href="/reports/{{ session.name }}" target="_blank" rel="noopener">View report ↗</a>
+  {% elif not _locked %}
+    <form id="hero-run-all" action="/sessions/{{ session.name }}/run/all" method="post"
+          class="flex flex-col items-end gap-1.5">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn primary" type="submit">Run full pipeline</button>
+    </form>
+  {% else %}
+    {# Tier-locked + incomplete shouldn't actually reach this page (route
+       redirects view_blocked sessions away) — but be defensive. #}
+    <a class="btn" href="/tier" title="{{ _tlk.fix }}">Switch tier →</a>
+  {% endif %}
+{% endcall %}
+
+{% if active_job %}
+  {# A full-pipeline run is streaming — show the calm inline progress view in
+     place of the run controls. On completion, pp2's success/error hero offers
+     "Back to session", which reloads /sessions/<name> (no ?job) to reveal the
+     freshly-generated results below. The stream replays history, so reloading
+     mid-run resumes the live view. #}
+  {% set job = active_job %}
+  {% include "partials/_pipeline_progress.html" %}
+  <script src="{{ url_for('static', path='js/anime.min.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='js/job-stream.js') }}?v={{ asset_version }}" defer></script>
+{% else %}
 
 {# Tier-lock banner — appears whenever the session's tier doesn't match the
    active tier. Reaching this page implies the session is complete (incomplete
@@ -464,11 +469,11 @@
           <span class="text-text-3">Tier</span>
           <span>
             {% if session.tier == 'standard' %}
-              <span class="font-medium" style="color:oklch(60% 0.18 220);">Standard</span>
+              <span class="font-medium" style="color:var(--tier-standard);">Standard</span>
             {% elif session.tier == 'saas' %}
-              <span class="font-medium" style="color:oklch(55% 0.2 340);">SaaS</span>
+              <span class="font-medium" style="color:var(--tier-saas);">SaaS</span>
             {% else %}
-              <span class="font-medium" style="color:oklch(70% 0.18 30);">Extended</span>
+              <span class="font-medium" style="color:var(--tier-extended);">Extended</span>
             {% endif %}
           </span>
         </div>
@@ -559,5 +564,6 @@
   }
 }());
 </script>
+{% endif %}{# /active_job #}
 
 {% endblock %}

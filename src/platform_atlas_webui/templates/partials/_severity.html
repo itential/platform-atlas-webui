@@ -1,0 +1,21 @@
+{# Shared severity / pass-rate rendering — icon + color, never color alone
+   (a colorblind viewer or anyone skimming in bright sunlight loses the
+   color-only signal fleet/landing.html used to rely on exclusively).
+
+   Usage: {% from "partials/_severity.html" import pass_rate, severity_chip %} #}
+
+{% macro pass_rate(pct) -%}
+  {% if pct is none %}<span style="color:var(--text-4);">—</span>
+  {% elif pct >= 95 %}<span class="status-inline" style="color:var(--ok);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.2 2.2 4.8-5"/></svg>{{ '%.1f' | format(pct) }}%</span>
+  {% elif pct >= 80 %}<span class="status-inline" style="color:var(--warn);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8.5v4.5M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></svg>{{ '%.1f' | format(pct) }}%</span>
+  {% else %}<span class="status-inline" style="color:var(--bad);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 16.5h.01"/><path d="M10.3 4.5L2.7 18a2 2 0 001.7 3h15.2a2 2 0 001.7-3L13.7 4.5a2 2 0 00-3.4 0z"/></svg>{{ '%.1f' | format(pct) }}%</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro severity_chip(sev) -%}
+  {% if not sev %}<span style="color:var(--text-4);">—</span>
+  {% elif sev == 'critical' or sev == 'high' %}<span class="chip" style="background: color-mix(in oklch, var(--bad) 14%, transparent); border-color: color-mix(in oklch, var(--bad) 40%, transparent); color:var(--text);"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--bad)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 16.5h.01"/><path d="M10.3 4.5L2.7 18a2 2 0 001.7 3h15.2a2 2 0 001.7-3L13.7 4.5a2 2 0 00-3.4 0z"/></svg>{{ sev }}</span>
+  {% elif sev == 'warning' or sev == 'medium' %}<span class="chip" style="background: color-mix(in oklch, var(--warn) 14%, transparent); border-color: color-mix(in oklch, var(--warn) 40%, transparent); color:var(--text);"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8.5v4.5M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></svg>{{ sev }}</span>
+  {% else %}<span class="chip"><span class="dot"></span>{{ sev }}</span>
+  {% endif %}
+{%- endmacro %}

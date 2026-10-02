@@ -3,39 +3,50 @@
 {% block crumb %}Continuous Audit / {{ run.run_id }}{% endblock %}
 {% block content %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Continuous run</div>
-    <h1 class="font-mono text-[20px] mt-2 mb-1.5">{{ run.run_id }}</h1>
-    <p class="font-mono text-[14px] text-text-3">
-      env={{ run.environment or '_default' }} ·
-      ruleset={{ run.ruleset.id }}@{{ run.ruleset.version }} ·
-      {{ run.duration_ms }} ms
-    </p>
+{# Bespoke header — reuses the shared .page-header/.page-header-top/
+   .page-header-text/.page-header-actions classes directly rather than the
+   page_header() macro, because both the title (a run ID) and the subtitle
+   (env=/ruleset=/duration) are mono technical identifiers, not prose. #}
+<header class="page-header">
+  {# Crystal watermark — a faint, slow crystal behind the title block.
+     Mounted by atlas-motion.js (atlas-facets.js, "watermark" variant);
+     decorative only, and inert without JS. See atlas-studio.css §16. #}
+  <div class="ph-watermark" data-atlas-facets data-facets-variant="watermark" aria-hidden="true">
+    <div class="facets-probe"><i data-c="a"></i><i data-c="b"></i><i data-c="lo"></i><i data-c="hi"></i></div>
   </div>
-  <div class="flex items-center gap-2">
-    <a class="btn" href="/continuous">← Back</a>
-    <a class="btn" href="/continuous/runs/{{ run.run_id }}/raw">Download JSON</a>
+  <div class="page-header-top">
+    <div class="page-header-text">
+      <h1 class="font-mono" style="font-size:20px;">{{ run.run_id }}</h1>
+      <p class="font-mono text-[14px] text-text-3">
+        env={{ run.environment or '_default' }} ·
+        ruleset={{ run.ruleset.id }}@{{ run.ruleset.version }} ·
+        {{ run.duration_ms }} ms
+      </p>
+    </div>
+    <div class="page-header-actions">
+      <a class="btn" href="/continuous">← Back</a>
+      <a class="btn" href="/continuous/runs/{{ run.run_id }}/raw">Download JSON</a>
+    </div>
   </div>
 </header>
 
 {% if run.capture_error %}
-  <section class="card card--error" style="margin-bottom:12px;">
+  <section class="card card--error mb-3">
     <div class="card-head">
-      <h3 style="color:var(--bad);">Capture error</h3>
+      <h3 class="text-bad">Capture error</h3>
     </div>
     <div class="card-body">
-      <pre style="margin:0; font-family:var(--mono); font-size:14px; white-space:pre-wrap; color:var(--text-2);">{{ run.capture_error }}</pre>
+      <pre class="m-0 font-mono text-[14px] whitespace-pre-wrap text-text-2">{{ run.capture_error }}</pre>
     </div>
   </section>
 {% endif %}
 
 {% if run.previous_unreadable %}
-  <section class="card card--warn" style="margin-bottom:12px;">
+  <section class="card card--warn mb-3">
     <div class="card-head">
-      <h3 style="color:var(--warn);">Drift detection skipped</h3>
+      <h3 class="text-warn">Drift detection skipped</h3>
     </div>
-    <div class="card-body" style="font-size:14px; color:var(--text-2);">
+    <div class="card-body text-[14px] text-text-2">
       The previous run report could not be read (corrupt JSON, broken symlink, or permissions).
       This run completed but its observed values were not diffed against the prior run.
       Drift detection will resume on the next successful cycle.
@@ -43,59 +54,59 @@
   </section>
 {% endif %}
 
-<section class="card" style="margin-bottom:12px;">
+<section class="card mb-3">
   <div class="card-head">
     <h3>Summary</h3>
   </div>
-  <div class="card-body" style="display:flex; gap:24px; flex-wrap:wrap;">
-    <div><span style="color:var(--ok); font-size:20px; font-weight:600;">{{ run.summary.pass_count }}</span> <span style="color:var(--text-3); font-size:13px;">PASS</span></div>
-    <div><span style="color:var(--bad); font-size:20px; font-weight:600;">{{ run.summary.fail_count }}</span> <span style="color:var(--text-3); font-size:13px;">FAIL</span></div>
-    <div><span style="color:var(--text-3); font-size:20px; font-weight:600;">{{ run.summary.skip_count }}</span> <span style="color:var(--text-3); font-size:13px;">SKIP</span></div>
-    <div><span style="color:var(--warn); font-size:20px; font-weight:600;">{{ run.summary.drifted_count }}</span> <span style="color:var(--text-3); font-size:13px;">DRIFT</span></div>
-    <div style="margin-left:auto; color:var(--text-4); font-size:13px;">{{ run.started_at }} → {{ run.finished_at }}</div>
+  <div class="card-body flex gap-6 flex-wrap items-baseline">
+    <div><span class="text-ok text-[20px] font-semibold font-mono">{{ run.summary.pass_count }}</span> <span class="text-text-3 text-[13px]">PASS</span></div>
+    <div><span class="text-bad text-[20px] font-semibold font-mono">{{ run.summary.fail_count }}</span> <span class="text-text-3 text-[13px]">FAIL</span></div>
+    <div><span class="text-text-3 text-[20px] font-semibold font-mono">{{ run.summary.skip_count }}</span> <span class="text-text-3 text-[13px]">SKIP</span></div>
+    <div><span class="text-warn text-[20px] font-semibold font-mono">{{ run.summary.drifted_count }}</span> <span class="text-text-3 text-[13px]">DRIFT</span></div>
+    <div class="ml-auto text-text-4 text-[13px]">{{ run.started_at }} → {{ run.finished_at }}</div>
   </div>
 </section>
 
-<section class="card" style="margin-bottom:12px;">
+<section class="card mb-3">
   <div class="card-head">
     <h3>Results</h3>
     <span class="sub">{{ run.results|length }} rules</span>
   </div>
-  <div style="overflow-x:auto;">
-    <table style="width:100%; border-collapse:collapse; font-size:14px;">
+  <div class="overflow-x-auto">
+    <table class="table-scroll w-full border-collapse text-[14px]">
       <thead>
-        <tr style="border-bottom:1px solid var(--line);">
-          <th style="text-align:left; padding:10px 14px; font-size:12px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">#</th>
-          <th style="text-align:left; padding:10px 14px; font-size:12px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Status</th>
-          <th style="text-align:left; padding:10px 14px; font-size:12px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Severity</th>
-          <th style="text-align:left; padding:10px 14px; font-size:12px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Rule</th>
-          <th style="text-align:left; padding:10px 14px; font-size:12px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Path</th>
-          <th style="text-align:left; padding:10px 14px; font-size:12px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Actual</th>
-          <th style="text-align:left; padding:10px 14px; font-size:12px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Expected</th>
-          <th style="text-align:left; padding:10px 14px; font-size:12px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Drift</th>
+        <tr class="border-b border-line">
+          <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">#</th>
+          <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Status</th>
+          <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Severity</th>
+          <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Rule</th>
+          <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Path</th>
+          <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Actual</th>
+          <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Expected</th>
+          <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Drift</th>
         </tr>
       </thead>
       <tbody>
         {% for r in run.results %}
           {% set st = r.status|upper %}
-          <tr class="{% if r.drift %}is-drifted{% endif %}" style="border-bottom:1px solid var(--line);">
-            <td style="padding:8px 14px; font-family:var(--mono); color:var(--text-3);">{{ r.rule_number }}</td>
-            <td style="padding:8px 14px;">
-              {% if st == 'PASS' %}<span class="chip ok" style="font-size:12px;"><span class="dot"></span>PASS</span>
-              {% elif st == 'FAIL' %}<span class="chip bad" style="font-size:12px;"><span class="dot"></span>FAIL</span>
-              {% elif st == 'SKIP' %}<span class="chip" style="font-size:12px;">SKIP</span>
-              {% else %}<span class="chip warn" style="font-size:12px;">{{ st }}</span>{% endif %}
+          <tr class="border-b border-line last:border-b-0 {% if r.drift %}is-drifted{% endif %}">
+            <td class="py-2 px-3.5 font-mono text-text-3">{{ r.rule_number }}</td>
+            <td class="py-2 px-3.5">
+              {% if st == 'PASS' %}<span class="chip ok text-[12px]"><span class="dot"></span>PASS</span>
+              {% elif st == 'FAIL' %}<span class="chip bad text-[12px]"><span class="dot"></span>FAIL</span>
+              {% elif st == 'SKIP' %}<span class="chip text-[12px]">SKIP</span>
+              {% else %}<span class="chip warn text-[12px]">{{ st }}</span>{% endif %}
             </td>
-            <td style="padding:8px 14px; font-family:var(--mono); color:var(--text-3);">{{ r.severity }}</td>
-            <td style="padding:8px 14px;">{{ r.name }}</td>
-            <td style="padding:8px 14px; font-family:var(--mono); color:var(--text-3); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ r.path }}">{{ r.path }}</td>
-            <td style="padding:8px 14px; font-family:var(--mono);">{{ r.actual if r.actual is not none else '—' }}</td>
-            <td style="padding:8px 14px; font-family:var(--mono); color:var(--text-3);">{{ r.expected if r.expected is not none else '—' }}</td>
-            <td style="padding:8px 14px; font-family:var(--mono);">
+            <td class="py-2 px-3.5 font-mono text-text-3">{{ r.severity }}</td>
+            <td class="py-2 px-3.5">{{ r.name }}</td>
+            <td class="py-2 px-3.5 font-mono text-text-3 max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap" title="{{ r.path }}">{{ r.path }}</td>
+            <td class="py-2 px-3.5 font-mono">{{ r.actual if r.actual is not none else '—' }}</td>
+            <td class="py-2 px-3.5 font-mono text-text-3">{{ r.expected if r.expected is not none else '—' }}</td>
+            <td class="py-2 px-3.5 font-mono">
               {% if r.drift %}
-                <span style="color:var(--warn);">{{ r.drift.previous }} → {{ r.drift.current }}</span>
+                <span class="text-warn">{{ r.drift.previous }} → {{ r.drift.current }}</span>
               {% else %}
-                <span style="color:var(--text-4);">—</span>
+                <span class="text-text-4">—</span>
               {% endif %}
             </td>
           </tr>
@@ -110,9 +121,9 @@
     <h3>Raw JSON</h3>
     <span class="sub">{{ run_pretty|length }} chars · click to expand</span>
   </div>
-  <details style="margin:0; padding:0;">
-    <summary style="padding:10px 16px; cursor:pointer; font-size:14px; color:var(--text-3);">Show payload</summary>
-    <pre style="margin:0; padding:14px 16px; max-height:520px; overflow:auto; font-family:var(--mono); font-size:13px; line-height:1.5; color:var(--text-2); border-top:1px solid var(--line); white-space:pre;">{{ run_pretty }}</pre>
+  <details class="m-0 p-0">
+    <summary class="py-2.5 px-4 cursor-pointer text-[14px] text-text-3">Show payload</summary>
+    <pre class="m-0 py-3.5 px-4 max-h-[520px] overflow-auto font-mono text-[13px] leading-relaxed text-text-2 border-t border-line whitespace-pre">{{ run_pretty }}</pre>
   </details>
 </section>
 

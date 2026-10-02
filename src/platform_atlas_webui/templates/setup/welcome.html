@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 {% set _pref_mode = prefs.mode | default('dark') %}
-{% set _effective_mode = 'dark' if _pref_mode == 'auto' else _pref_mode %}
+{% set _effective_mode = 'light' if _pref_mode == 'auto' else _pref_mode %}
 <html lang="en"
-      data-theme="{{ prefs.theme | default('itential') }}"
+      data-theme="{{ prefs.theme | default('modern') }}"
       data-mode="{{ _effective_mode }}"
       data-mode-pref="{{ _pref_mode }}"
       data-radius="pill"
@@ -22,8 +22,14 @@
   </script>
   <title>Welcome to Platform Atlas</title>
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <link rel="stylesheet" href="{{ url_for('static', path='css/atlas.css') }}">
-  <script src="{{ url_for('static', path='js/atlas.js') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/atlas.css') }}?v={{ asset_version }}">
+  {# Studio design layer + motion (see base.html). This page has no app
+     shell, so atlas-motion.js falls back to the [data-motion-page]
+     entrance and [data-motion-step] step transitions. #}
+  <link rel="stylesheet" href="{{ url_for('static', path='css/atlas-studio.css') }}?v={{ asset_version }}">
+  <script src="{{ url_for('static', path='js/atlas.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='js/vendor/gsap/gsap.min.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='js/atlas-motion.js') }}?v={{ asset_version }}" defer></script>
   <style>
     /* ───────── Onboarding-only layout ───────── */
     body {
@@ -402,13 +408,13 @@
 
     /* Inline theme palettes — these tiles render their own colors
        independent of the current root theme. */
-    .ob-theme[data-tile="itential"] { --ot-bg: #FFFFFF; --ot-surface: #101625; --ot-accent: #1B93D2; --ot-text: #101625; }
-    .ob-theme[data-tile="aurora"]   { --ot-bg: #0A1628; --ot-surface: #152944; --ot-accent: #4D9FFF; --ot-text: #E8EEF5; }
-    .ob-theme[data-tile="horizon"]  { --ot-bg: #0D1424; --ot-surface: #1C2942; --ot-accent: #C98847; --ot-text: #F3EFE3; }
-    .ob-theme[data-tile="obsidian"] { --ot-bg: #000000; --ot-surface: #161622; --ot-accent: #A78BFA; --ot-text: #ECEAFF; }
-    .ob-theme[data-tile="meadow"]   { --ot-bg: #0E1812; --ot-surface: #1B2A22; --ot-accent: #84A98C; --ot-text: #DCE8DD; }
-    .ob-theme[data-tile="carbon"]   { --ot-bg: #0F0F0F; --ot-surface: #1F1F1F; --ot-accent: #E0E0E0; --ot-text: #F0F0F0; }
-    .ob-theme[data-tile="dracula"]  { --ot-bg: #1E1F29; --ot-surface: #282A36; --ot-accent: #FF79C6; --ot-text: #F8F8F2; }
+    /* Curated 3.0 palette — Modern (flagship) first, then Itential, Obsidian,
+       Carbon. The retired tiles (editorial/aurora/horizon/meadow/dracula) are
+       gone; resolve_appearance() migrates any saved value to Modern. */
+    .ob-theme[data-tile="modern"]     { --ot-bg: #0A101E; --ot-surface: #16213A; --ot-accent: #E0A867; --ot-text: #E9EDF5; }
+    .ob-theme[data-tile="itential"]  { --ot-bg: #FFFFFF; --ot-surface: #101625; --ot-accent: #1B93D2; --ot-text: #101625; }
+    .ob-theme[data-tile="obsidian"]  { --ot-bg: #000000; --ot-surface: #161622; --ot-accent: #A78BFA; --ot-text: #ECEAFF; }
+    .ob-theme[data-tile="carbon"]    { --ot-bg: #0F0F0F; --ot-surface: #1F1F1F; --ot-accent: #E0E0E0; --ot-text: #F0F0F0; }
     .ob-theme .ob-theme-preview { background: var(--ot-bg); }
     .ob-theme .ob-theme-swatches span:nth-child(1) { background: var(--ot-bg); }
     .ob-theme .ob-theme-swatches span:nth-child(2) { background: var(--ot-surface); }
@@ -992,7 +998,11 @@
   </style>
 </head>
 <body>
-<div class="ob-shell">
+<!-- Ambient crystal background — theme-aware, recolours live as the theme is picked. -->
+<div class="ob-facets" data-atlas-facets data-facets-variant="ambient" aria-hidden="true">
+  <div class="facets-probe"><i data-c="a"></i><i data-c="b"></i><i data-c="lo"></i><i data-c="hi"></i></div>
+</div>
+<div class="ob-shell" data-motion-page>
 
   <div class="ob-top">
     <div class="ob-brand">
@@ -1018,11 +1028,11 @@
 
   <form class="ob-panel" method="post" action="/setup" id="atlas-setup-form" autocomplete="off" novalidate>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input type="hidden" name="webui_theme" value="{{ prefs.theme | default('itential') }}" data-ob-theme-input>
+    <input type="hidden" name="webui_theme" value="{{ prefs.theme | default('modern') }}" data-ob-theme-input>
     <input type="hidden" name="webui_mode"  value="{{ prefs.mode  | default('dark') }}"     data-ob-mode-input>
 
     <!-- ────────── Step 1 — Welcome ────────── -->
-    <section class="ob-step ob-hero" data-step="1">
+    <section data-motion-step class="ob-step ob-hero" data-step="1">
       <div class="ob-hero-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2 3 6v6c0 5 3.5 9 9 10 5.5-1 9-5 9-10V6l-9-4z"/>
@@ -1054,25 +1064,22 @@
     </section>
 
     <!-- ────────── Step 2 — Theme + Mode ────────── -->
-    <section class="ob-step" data-step="2" hidden>
+    <section data-motion-step class="ob-step" data-step="2" hidden>
       <p class="ob-eyebrow">Step 2 of 5</p>
       <h2 class="ob-title"><span class="word">Make</span> <span class="word">it</span> <span class="word"><em>yours</em>.</span></h2>
       <p class="ob-sub">Pick a palette. We'll apply it everywhere — including the reports you generate. You can change it any time in Settings.</p>
 
       <div class="ob-theme-grid" role="radiogroup" aria-label="Theme palette">
         {%- set themes = [
-          ('itential', 'Itential',  'Brand'),
-          ('aurora',   'Aurora',    'Operations blue'),
-          ('horizon',  'Horizon',   'Editorial terracotta'),
-          ('obsidian', 'Obsidian',  'High-contrast violet'),
-          ('meadow',   'Meadow',    'Calming sage'),
-          ('carbon',   'Carbon',    'True grayscale'),
-          ('dracula',  'Dracula',   'Pink & cyan'),
+          ('modern',     'Modern',     'Navy, brass & sky'),
+          ('itential',  'Itential',  'Brand'),
+          ('obsidian',  'Obsidian',  'High-contrast violet'),
+          ('carbon',    'Carbon',    'True grayscale'),
         ] -%}
         {% for slug, name, tag in themes %}
-        <label class="ob-theme {% if (prefs.theme | default('itential')) == slug %}is-active{% endif %}" data-tile="{{ slug }}">
+        <label class="ob-theme {% if (prefs.theme | default('modern')) == slug %}is-active{% endif %}" data-tile="{{ slug }}">
           <input type="radio" name="ob_theme_choice" value="{{ slug }}" data-ob-theme
-                 {% if (prefs.theme | default('itential')) == slug %}checked{% endif %}>
+                 {% if (prefs.theme | default('modern')) == slug %}checked{% endif %}>
           <div class="ob-theme-preview" aria-hidden="true"></div>
           <div class="ob-theme-row">
             <span class="ob-theme-name">{{ name }}</span>
@@ -1105,7 +1112,7 @@
     </section>
 
     <!-- ────────── Step 3 — Audit mode ────────── -->
-    <section class="ob-step" data-step="3" hidden>
+    <section data-motion-step class="ob-step" data-step="3" hidden>
       <p class="ob-eyebrow">Step 3 of 5</p>
       <h2 class="ob-title"><span class="word">What</span> <span class="word">do</span> <span class="word">you</span> <span class="word">want</span> <span class="word">to</span> <span class="word"><em>audit</em>?</span></h2>
       <p class="ob-sub">Atlas runs in three modes. Most teams start with Standard — you can switch to Extended any time once your SSH and database access is ready. Auditing a standalone gateway with no Platform? That's SaaS.</p>
@@ -1183,14 +1190,14 @@
 
         <label class="ob-tier {% if form.tier == 'saas' %}is-active{% endif %}">
           <input type="radio" name="tier" value="saas" data-ob-tier
-                 aria-label="SaaS — single gateway audit for standalone IAG4 or IAG5 with no Platform behind it"
+                 aria-label="SaaS — Platform-anchored audit with a limited read-only check set and an optional gateway"
                  {% if form.tier == 'saas' %}checked{% endif %}>
           <div class="ob-tier-mini" aria-hidden="true">
             <span class="ob-tier-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 1 0-1.04-8.88 6 6 0 1 0-11.2 2.4A3.5 3.5 0 0 0 6.5 19h11z"/></svg>
             </span>
             <span class="ob-tier-mini-name">SaaS</span>
-            <span class="ob-tier-mini-pitch">One standalone gateway — no Platform behind it.</span>
+            <span class="ob-tier-mini-pitch">Platform-anchored — a limited, read-only check set.</span>
             <span class="ob-tier-mini-cue">Select</span>
           </div>
           <div class="ob-tier-full" aria-hidden="true">
@@ -1200,15 +1207,15 @@
               </span>
               <div>
                 <h3 class="ob-tier-title">SaaS</h3>
-                <p class="ob-tier-best">Single Gateway audit — for standalone IAG4/IAG5 with no Platform behind it.</p>
+                <p class="ob-tier-best">Platform-anchored audit for SaaS deployments — a limited, read-only check set with an optional gateway.</p>
               </div>
             </div>
             <ul class="ob-tier-bullets">
-              <li>Audits one Gateway 4 <em>or</em> Gateway 5 — strictly one per environment</li>
-              <li>No Platform, MongoDB, or Redis anywhere in the flow</li>
-              <li>One merged report: compliance + Architecture Overview</li>
+              <li>Requires Platform OAuth; runs a small, read-only set of adapter &amp; application checks — no compliance rules</li>
+              <li>Optionally add one Gateway 4 <em>or</em> Gateway 5, or run Platform-only</li>
+              <li>One merged report: operational checks + Architecture Overview</li>
             </ul>
-            <p class="ob-tier-needs"><strong>Needs:</strong> GW4 API credentials (SSH optional), or GW5 SSH / a local Compose/Helm file.</p>
+            <p class="ob-tier-needs"><strong>Needs:</strong> Platform URL + read-only OAuth client. Optional gateway: GW4 (API + SSH), or GW5 (SSH or a local Compose/Helm file).</p>
           </div>
         </label>
       </div>
@@ -1216,15 +1223,15 @@
     </section>
 
     <!-- ────────── Step 4 — Connect ────────── -->
-    <section class="ob-step" data-step="4" hidden>
+    <section data-motion-step class="ob-step" data-step="4" hidden>
       <p class="ob-eyebrow">Step 4 of 5</p>
       <div data-ob-connect-head="platform">
         <h2 class="ob-title"><span class="word">Connect</span> <span class="word">to</span> <span class="word">your</span> <span class="word"><em>platform</em>.</span></h2>
         <p class="ob-sub">Atlas talks to your Itential platform with a read-only OAuth client. Secrets land in your OS keyring — never in a config file.</p>
       </div>
       <div data-ob-connect-head="saas" hidden>
-        <h2 class="ob-title"><span class="word">Connect</span> <span class="word">to</span> <span class="word">your</span> <span class="word"><em>gateway</em>.</span></h2>
-        <p class="ob-sub">A SaaS audit talks to one standalone gateway — no Platform, MongoDB, or Redis. Secrets land in your chosen credential store, never a config file.</p>
+        <h2 class="ob-title"><span class="word">Connect</span> <span class="word">to</span> <span class="word">your</span> <span class="word"><em>platform</em>.</span></h2>
+        <p class="ob-sub">SaaS audits are Platform-anchored — Platform OAuth is required, with an optional gateway. Gateway access is over SSH to the gateway server(s) only. Secrets land in your chosen credential store, never a config file.</p>
       </div>
 
       <div class="ob-form">
@@ -1273,12 +1280,12 @@
         {# ── SaaS variant — one gateway, no Platform (shown when tier=saas) ── #}
         <div data-ob-connect-saas style="display:none; flex-direction:column; gap:18px;">
           <div class="field">
-            <label>Which gateway(s) are you auditing?</label>
+            <label>Add a gateway? <span class="hint" style="font-weight:400;">— optional</span></label>
             <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
               <label class="field--row" style="font-weight:400;">
                 <input type="radio" name="saas_gateway_kind" value="gateway4" data-ob-saas-kind
                        {% if (form.saas_gateway_kind or 'gateway4') == 'gateway4' %}checked{% endif %}>
-                Gateway 4 (IAG4) — audited via its REST API, plus optional SSH
+                Gateway 4 (IAG4) — REST API plus SSH to the gateway server
               </label>
               <label class="field--row" style="font-weight:400;">
                 <input type="radio" name="saas_gateway_kind" value="gateway5" data-ob-saas-kind
@@ -1288,7 +1295,12 @@
               <label class="field--row" style="font-weight:400;">
                 <input type="radio" name="saas_gateway_kind" value="gw4-gw5" data-ob-saas-kind
                        {% if form.saas_gateway_kind == 'gw4-gw5' %}checked{% endif %}>
-                Both Gateway 4 + Gateway 5 — two gateways installed side-by-side
+                Both Gateway 4 + Gateway 5 — two gateways side-by-side
+              </label>
+              <label class="field--row" style="font-weight:400;">
+                <input type="radio" name="saas_gateway_kind" value="" data-ob-saas-kind
+                       {% if form.tier == 'saas' and form.saas_gateway_kind == '' %}checked{% endif %}>
+                Platform only — no gateway, Platform OAuth checks only
               </label>
             </div>
             <span class="hint">Fixed once the environment is created.</span>
@@ -1317,11 +1329,8 @@
             <div class="field" data-ob-vault-field hidden>
               <span class="hint">When using Vault, put the password under the <code>gateway4_password</code> key inside your KV path.</span>
             </div>
-            <div class="field field--row">
-              <input id="saas_gw4_ssh" name="saas_gw4_ssh" type="checkbox" value="1"
-                     {% if form.saas_gw4_ssh %}checked{% endif %}>
-              <label for="saas_gw4_ssh" style="font-weight:400;">Collect deeper config over SSH (properties.yml, venv Python, DB sizes, host facts)</label>
-            </div>
+            <input id="saas_gw4_ssh" name="saas_gw4_ssh" type="hidden" value="1">
+            <p class="hint">Gateway 4 is audited over its REST API <strong>and</strong> SSH to the gateway server — set the SSH host below.</p>
           </div>
 
           <div data-ob-saas-gw5 style="display:none; flex-direction:column; gap:18px;">
@@ -1386,7 +1395,7 @@
     </section>
 
     <!-- ────────── Step 5 — Optional + Submit ────────── -->
-    <section class="ob-step" data-step="5" hidden>
+    <section data-motion-step class="ob-step" data-step="5" hidden>
       <p class="ob-eyebrow">Step 5 of 5</p>
       <h2 class="ob-title"><span class="word">Anything</span> <span class="word"><em>else</em>?</span></h2>
       <p class="ob-sub">All optional. Skip whatever you're not using and add it later from Settings — Atlas will still work.</p>
@@ -1672,7 +1681,12 @@
     if (current === 2 && typeof moveModeIndicator === 'function') {
       requestAnimationFrame(function () { moveModeIndicator(false); });
     }
-    backBtn.hidden = current === activeSteps()[0] && true;  // hide on the very first active step
+    // Hide Back on the very first active step. (activeSteps() returns step
+    // elements, so compare against the first one's data-step number, not the
+    // element itself — the old element-vs-number check was always false, so
+    // Back showed on step 1 too.)
+    var firstActive = parseInt(activeSteps()[0].getAttribute('data-step'), 10);
+    backBtn.hidden = current === firstActive;
     var lastActive = parseInt(activeSteps()[activeSteps().length - 1].getAttribute('data-step'), 10);
     var atEnd = current === lastActive;
     nextBtn.hidden = atEnd;
@@ -1739,21 +1753,20 @@
     if (headS) headS.hidden = !saas;
 
     var platWrap = form.querySelector('[data-ob-connect-platform]');
-    if (platWrap) platWrap.style.display = saas ? 'none' : 'contents';
+    // Platform is the anchor for every tier now, SaaS included — always shown.
+    if (platWrap) platWrap.style.display = 'contents';
     var saasWrap = form.querySelector('[data-ob-connect-saas]');
     if (saasWrap) saasWrap.style.display = saas ? 'flex' : 'none';
 
     var platUri = document.getElementById('platform_uri');
     var platCid = document.getElementById('platform_client_id');
-    if (platUri) platUri.required = !saas;
-    if (platCid) platCid.required = !saas;
-    // The OAuth secret is required only in the platform tiers (and only for
-    // the local backends — applyBackendChoice() owns the Vault side). Without
-    // this, picking SaaS left the hidden secret required and validateStep(4)
-    // failed invisibly, so Continue appeared dead.
+    if (platUri) platUri.required = true;
+    if (platCid) platCid.required = true;
+    // The OAuth secret is required for every tier on the local backends
+    // (applyBackendChoice() owns the Vault side, where the secret lives in Vault).
     var useVaultEl = form.querySelector('[data-ob-use-vault]');
     var platSecret = document.getElementById('platform_client_secret');
-    if (platSecret) platSecret.required = !saas && !(useVaultEl && useVaultEl.checked);
+    if (platSecret) platSecret.required = !(useVaultEl && useVaultEl.checked);
 
     var hasGw4 = saas && (kind === 'gateway4' || kind === 'gw4-gw5');
     var hasGw5 = saas && (kind === 'gateway5' || kind === 'gw4-gw5');
@@ -1779,9 +1792,8 @@
     var confInput = document.getElementById('saas_gw5_conf_path');
     if (confInput) confInput.required = hasGw5 && confSrc;
 
-    var gw4SshChk = document.getElementById('saas_gw4_ssh');
-    var needsSsh = saas && ((hasGw4 && !!(gw4SshChk && gw4SshChk.checked))
-      || (hasGw5 && (srcVal === 'ssh' || srcVal === 'conf')));
+    // GW4 is always audited over SSH; GW5 needs SSH for its printenv/conf sources.
+    var needsSsh = saas && (hasGw4 || (hasGw5 && (srcVal === 'ssh' || srcVal === 'conf')));
     var sshBlock = form.querySelector('[data-ob-saas-ssh]');
     if (sshBlock) sshBlock.style.display = needsSsh ? 'flex' : 'none';
     var iagHost = document.getElementById('saas_iag_host');

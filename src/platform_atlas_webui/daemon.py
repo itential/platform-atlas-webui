@@ -36,6 +36,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_PID_FILE = ATLAS_HOME / "webui.pid"
 DEFAULT_LOG_FILE = ATLAS_HOME / "webui.log"
 
+# The Atlas MCP server (`--mcp-server`) runs as its own independent daemon —
+# separate PID/log files so it can be started, stopped, and restarted without
+# affecting (or requiring) the interactive browser UI daemon, and vice versa.
+MCP_PID_FILE = ATLAS_HOME / "mcp-server.pid"
+MCP_LOG_FILE = ATLAS_HOME / "mcp-server.log"
+
 
 def is_supported() -> bool:
     """True on POSIX systems. Windows lacks os.fork() so daemonization is N/A."""

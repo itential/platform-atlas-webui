@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -16,6 +17,52 @@ from platform_atlas_webui.services import runners
 
 router = APIRouter(prefix="/preflight", tags=["preflight"])
 _templates = get_templates()
+logger = logging.getLogger(__name__)
+
+# Modules that map to a Phase 3 "Service Connectors" check — mirrors
+# core.preflight._CONNECTOR_COLLECTORS without importing it (that constant is
+# private to the preflight runner module).
+_CONNECTOR_MODULES = {"mongo", "redis", "platform", "gateway4_api"}
+
+
+def _phase_preview(targets: list[dict], tier: str) -> list[dict]:
+    """What preflight WILL check, before any job has run.
+
+    Mirrors the phase gating in core.preflight.run_preflight() /
+    services.runners.run_preflight_job() so the idle state previews the real
+    shape of the run rather than a generic placeholder.
+    """
+    is_standard = tier == "standard"
+    ssh_targets = [t for t in targets if t.get("transport") in ("ssh", "control_master", "local")]
+    k8s_targets = [t for t in targets if t.get("transport") == "kubernetes"]
+    active_modules: set[str] = set()
+    for t in targets:
+        active_modules.update(t.get("modules") or [])
+    connector_modules = active_modules & _CONNECTOR_MODULES
+
+    preview = [
+        {"id": "credentials", "label": "Credential Store", "icon": "key", "count": 1},
+    ]
+    if not is_standard and ssh_targets:
+        preview.append({
+            "id": "ssh", "label": "Node Connectivity", "icon": "plug",
+            "count": len(ssh_targets),
+        })
+        preview.append({
+            "id": "node_services", "label": "Node Services", "icon": "server",
+            "count": len(ssh_targets),
+        })
+    if tier == "extended" and k8s_targets:
+        preview.append({
+            "id": "kubernetes", "label": "Kubernetes", "icon": "hexagon",
+            "count": len(k8s_targets),
+        })
+    if connector_modules:
+        preview.append({
+            "id": "connectors", "label": "Service Connectors", "icon": "cloud",
+            "count": len(connector_modules),
+        })
+    return preview
 
 
 @router.get("", response_class=HTMLResponse)
@@ -24,13 +71,26 @@ async def preflight_landing(request: Request, job: str = "") -> HTMLResponse:
     scope = ""
     active_env = ""
     tier = ""
+    # Distinct from "no active environment": set only when an environment IS
+    # active but computing its targets blew up (e.g. a Vault/credential
+    # lookup failure inside topology.capture_targets()). The two cases render
+    # very different messages — conflating them into a blanket except sent
+    # people chasing "reactivate your environment" for what was actually a
+    # backend error with the environment already active and fine.
+    targets_error = ""
     try:
         from platform_atlas.core.context import ctx
         atlas = ctx()
         active_env = getattr(atlas, "active_environment", "") or ""
         tier = (getattr(atlas.config, "tier", "") or "").lower()
         scope = getattr(atlas.config, "capture_scope", "") or ""
-        for t in atlas.config.targets:
+        try:
+            raw_targets = atlas.config.targets
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Failed to compute preflight targets for env '%s'", active_env)
+            targets_error = str(exc)
+            raw_targets = ()
+        for t in raw_targets:
             if not isinstance(t, dict):
                 continue
             targets.append({
@@ -69,11 +129,13 @@ async def preflight_landing(request: Request, job: str = "") -> HTMLResponse:
             request,
             atlas_version=ATLAS_VERSION,
             targets=targets,
+            targets_error=targets_error,
             scope=scope,
             active_env=active_env,
             tier=tier,
             job=job_record,
             job_started_at_epoch=started_at_epoch,
+            phase_preview=_phase_preview(targets, tier),
         ),
     )
 
@@ -169,7 +231,7 @@ def _run_target_check(target: dict) -> tuple[str, str, str]:
                 from platform_atlas.capture.collectors.platform import PlatformCollector
                 result = PlatformCollector.preflight()
             elif "gateway4_api" in modules or role == "iag":
-                from platform_atlas.capture.collectors.gateway4 import Gateway4ApiCollector
+                from platform_atlas.capture.collectors.gateway4_api import Gateway4ApiCollector
                 result = Gateway4ApiCollector.preflight()
             else:
                 return ("skip", "No API check", "")

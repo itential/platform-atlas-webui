@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}{{ environment.name }} — Platform Atlas{% endblock %}
 {% block crumb %}<a href="/environments" class="text-inherit hover:text-accent">Environments</a> <span class="sep">›</span> {{ environment.name }}{% endblock %}
 {% block content %}
@@ -12,22 +13,25 @@
    absent, since that's a real problem regardless of tier. #}
 {% set show_just_created = just_created and (environment.tier|lower != 'standard') %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Environment</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
-      {{ environment.name }}, <em class="not-italic text-accent">{{ 'SaaS' if environment.tier == 'saas' else environment.tier|capitalize }}</em>
-    </h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">{{ d.get('description') or 'No description.' }}</p>
-  </div>
-  <div class="flex items-center gap-2">
-    <a class="btn primary" href="/environments/{{ environment.name }}/edit">Edit</a>
+{# Meta pills: "Active environment" only appears when true (previously the
+   header always offered a "Set active" button even while viewing the
+   already-active environment, with no indication it already was one). #}
+{% set _meta = [] %}
+{% if environment.is_active %}
+  {% set _ = _meta.append('<span class="dot"></span>Active environment') %}
+{% endif %}
+{% set _ = _meta.append(('SaaS' if environment.tier == 'saas' else environment.tier|capitalize) ~ ' tier') %}
+{% call page_header(environment.name,
+    subtitle=d.get('description') or 'No description.',
+    meta=_meta) %}
+  <a class="btn primary" href="/environments/{{ environment.name }}/edit">Edit</a>
+  {% if not environment.is_active %}
     <form action="/environments/{{ environment.name }}/activate" method="post" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="btn" type="submit">Set active</button>
     </form>
-  </div>
-</header>
+  {% endif %}
+{% endcall %}
 
 {# ── Setup wizard ──────────────────────── #}
 {% if show_just_created or missing_creds %}
@@ -116,6 +120,76 @@
     <div class="card-body">
       <span class="chip"><span class="dot"></span>{{ d.get('credential_backend') or 'keyring' }}</span>
     </div>
+  </div>
+</section>
+
+<section class="card mb-[22px]" id="validation-baseline">
+  <div class="card-head">
+    <h3>Validation baseline</h3>
+    <span class="sub">
+      {% if baseline %}Pinned {{ baseline.set_at[:10] if baseline.set_at else '' }}{% else %}Not set{% endif %}
+    </span>
+    {% if baseline %}
+    <div class="right">
+      <form action="/environments/{{ environment.name }}/baseline/delete" method="post" class="inline"
+            data-confirm-action data-confirm-kind="danger"
+            data-confirm-title="Clear baseline?"
+            data-confirm-message="Clear the pinned baseline for '{{ environment.name }}'? The source session (if it still exists) won't be touched."
+            data-confirm-label="Clear">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn sm danger" type="submit">Clear</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if baseline %}
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div>
+          <div class="text-text-3 text-[12px]">Source session</div>
+          <div class="text-[15px] font-mono break-all">{{ baseline.source_session }}</div>
+        </div>
+        <div>
+          <div class="text-text-3 text-[12px]">Ruleset</div>
+          <div class="text-[15px]">{{ baseline.session_metadata.ruleset_id or '—' }} v{{ baseline.session_metadata.ruleset_version or '—' }}</div>
+        </div>
+        <div>
+          <div class="text-text-3 text-[12px]">Results</div>
+          <div class="text-[15px]">{{ baseline.pass_count }} pass · {{ baseline.fail_count }} fail · {{ baseline.total_count }} total</div>
+        </div>
+        <div>
+          <div class="text-text-3 text-[12px]">Pinned at</div>
+          <div class="text-[15px]">{{ baseline.set_at[:16].replace('T', ' ') if baseline.set_at else '—' }}</div>
+        </div>
+      </div>
+    {% else %}
+      <p class="text-text-2 text-[15px] mb-3">
+        No baseline pinned. Pin a validated session as this environment's reference point — its
+        results are copied, so later sessions can be checked against it (via the
+        <a href="/diff" class="text-accent hover:text-accent-hover">Diff page</a> or
+        <code>session diff --use-baseline</code>) even after this session is deleted or overwritten.
+      </p>
+    {% endif %}
+
+    {% if baseline_candidates %}
+      <form action="/environments/{{ environment.name }}/baseline" method="post" class="form flex gap-2 items-end flex-wrap">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field grow min-w-[240px]">
+          <label for="baseline-session">{{ 'Change baseline to' if baseline else 'Pin a session as the baseline' }}</label>
+          <select id="baseline-session" name="session_name" required>
+            <option value="" disabled selected>— Pick a validated session —</option>
+            {% for s in baseline_candidates %}
+              <option value="{{ s.name }}">
+                {{ s.name }} — {{ s.pass_count }} pass / {{ s.fail_count }} fail{{ ' (current baseline)' if baseline and s.name == baseline.source_session else '' }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn primary">{{ 'Update baseline' if baseline else 'Set baseline' }}</button>
+      </form>
+    {% elif not baseline %}
+      <p class="text-text-3 text-[14px]">No validated sessions yet in this environment — run capture + validate first.</p>
+    {% endif %}
   </div>
 </section>
 

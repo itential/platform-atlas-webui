@@ -230,6 +230,70 @@ def run_preflight_job(jlogger, *, scope_summary: str = "") -> dict[str, Any]:
     }
 
 
+def run_architecture_autofill_job(jlogger, *, environment: str = "") -> dict[str, Any]:
+    """Best-effort, read-only SSH auto-detect pass for the architecture form.
+
+    Stages results in ``architecture_store``'s "autofill" bucket (advisory
+    suggestions, never overwriting the user's own confirmed answers — see
+    ``platform_atlas.capture.collectors.architecture_autofill``). Extended
+    tier only.
+
+    Only ever runs against the *active* environment's SSH targets — building
+    a resolved target list (with credentials) for an arbitrary named
+    environment that isn't active is a separate, higher-risk change (credential
+    scoping) this doesn't take on. The route checks this before submitting the
+    job; this check is belt-and-suspenders in case that ever drifts.
+    """
+    from platform_atlas.core.context import ctx
+    from platform_atlas.core.exceptions import TierViolationError
+    from platform_atlas.capture.collectors import architecture_autofill
+    from platform_atlas.core import architecture_store
+
+    atlas = ctx()
+    active_env = atlas.active_environment or ""
+    target_env = environment or active_env
+    if target_env != active_env:
+        jlogger.error(
+            f"'{target_env}' is not the active environment (active: '{active_env or 'none'}'). "
+            "Auto-detect runs against the active environment's SSH targets — switch to "
+            f"'{target_env}' under Environments, then try again."
+        )
+        return {"ok": False, "reason": "not_active_environment"}
+
+    jlogger.phase(f"Architecture auto-detect · {target_env or '(default)'}")
+    jlogger.info(
+        "Running read-only checks over SSH: server specs, OS, container/VM/Kubernetes "
+        "signals, SELinux, FIPS, MTU, and monitoring/log/vulnerability-scanner services. "
+        "MongoDB/Redis topology is reused from the most recent capture instead of new SSH calls. "
+        "Nothing is written or changed on any node."
+    )
+
+    try:
+        result = architecture_autofill.probe_environment(target_env)
+    except TierViolationError as exc:
+        jlogger.error(f"Architecture auto-detect is available in the Extended tier only. ({exc})")
+        return {"ok": False, "reason": "not_extended"}
+    except Exception as exc:  # noqa: BLE001 — best-effort job, never let this 500 the request
+        jlogger.error(f"Auto-detect could not run: {exc}")
+        return {"ok": False, "reason": str(exc)}
+
+    for node in result.node_summaries:
+        detected = sum(1 for v in node.facts.values() if v)
+        status = "pass" if detected else ("warn" if node.notes else "skip")
+        label = node.node_name if node.display_role in ("", node.node_name) else f"{node.display_role} ({node.node_name})"
+        message = f"{detected} fact(s) detected" if detected else "Nothing detected"
+        jlogger.check(label, status, message, "; ".join(node.notes))
+
+    if result.used_capture_session:
+        jlogger.info(f"MongoDB/Redis topology reused from capture '{result.used_capture_session}'.")
+
+    architecture_store.save_autofill(target_env, result.completed)
+    section_count = len(result.completed)
+    jlogger.success(f"Auto-detect finished — suggestions saved for {section_count} section(s).")
+
+    return {"ok": True, "sections": section_count, "nodes": len(result.node_summaries), "environment": target_env}
+
+
 def run_capture_job(
     jlogger,
     *,
@@ -472,6 +536,7 @@ def run_validate_job(jlogger, *, session_name: str) -> dict[str, Any]:
     """Validate a session's capture against the active ruleset."""
     from platform_atlas.core.session_manager import get_session_manager, SessionStage
     from platform_atlas.validation.validation_engine import validate_from_files
+    from platform_atlas.validation.results import save_validation_results
 
     _restore_session_context(session_name, jlogger)
 
@@ -501,25 +566,29 @@ def run_validate_job(jlogger, *, session_name: str) -> dict[str, Any]:
     jlogger.info("Compiling rule paths and operator chain…")
     jlogger.info("Evaluating each rule against the captured data structure…")
 
-    df = validate_from_files(session.capture_file, headless=True)
-    jlogger.info(f"Engine returned a DataFrame with {len(df)} row(s)")
+    results = validate_from_files(session.capture_file, headless=True)
+    jlogger.info(f"Engine returned {len(results)} row(s)")
 
-    total = len(df)
-    p = int((df["status"].str.upper() == "PASS").sum()) if "status" in df else 0
-    f = int((df["status"].str.upper() == "FAIL").sum()) if "status" in df else 0
-    s = int((df["status"].str.upper().isin(["SKIP", "N/A", "-"])).sum()) if "status" in df else 0
+    statuses = [str(row.get("status", "")).upper() for row in results.rows]
+    total = len(results)
+    p = statuses.count("PASS")
+    f = statuses.count("FAIL")
+    s = sum(1 for st in statuses if st in ("SKIP", "N/A", "-"))
 
     jlogger.info(f"Evaluated {total} rules across all categories")
 
     # Per-category breakdown
     try:
-        if "category" in df.columns:
-            for cat, grp in df.groupby("category"):
-                cp = int((grp["status"].str.upper() == "PASS").sum())
-                cf = int((grp["status"].str.upper() == "FAIL").sum())
-                cs = int((grp["status"].str.upper().isin(["SKIP", "N/A", "-"])).sum())
-                icon = "✓" if cf == 0 else "✗"
-                jlogger.info(f"  {icon} {cat}: {cp} pass · {cf} fail · {cs} skip")
+        categories: dict[str, list[dict]] = {}
+        for row in results.rows:
+            categories.setdefault(row.get("category", ""), []).append(row)
+        for cat, rows in categories.items():
+            cat_statuses = [str(row.get("status", "")).upper() for row in rows]
+            cp = cat_statuses.count("PASS")
+            cf = cat_statuses.count("FAIL")
+            cs = sum(1 for st in cat_statuses if st in ("SKIP", "N/A", "-"))
+            icon = "✓" if cf == 0 else "✗"
+            jlogger.info(f"  {icon} {cat}: {cp} pass · {cf} fail · {cs} skip")
     except Exception:
         pass
 
@@ -529,8 +598,10 @@ def run_validate_job(jlogger, *, session_name: str) -> dict[str, Any]:
         jlogger.warning(f"Results: {p} pass · {f} fail · {s} skip ({total} total)")
         # List the failed rule IDs (up to 10)
         try:
-            failed_df = df[df["status"].str.upper() == "FAIL"]
-            failed_ids = list(failed_df["rule_id"].head(10)) if "rule_id" in failed_df else []
+            failed_ids = [
+                row.get("rule_id") for row in results.rows
+                if str(row.get("status", "")).upper() == "FAIL" and row.get("rule_id")
+            ][:10]
             if failed_ids:
                 more = f" …and {f - 10} more" if f > 10 else ""
                 jlogger.info(f"Failed rules: {', '.join(str(r) for r in failed_ids)}{more}")
@@ -540,24 +611,26 @@ def run_validate_job(jlogger, *, session_name: str) -> dict[str, Any]:
     out_path: Path = session.validation_file
     out_path.parent.mkdir(parents=True, exist_ok=True)
     jlogger.info(f"Persisting validation results → {out_path.name}")
-    df.to_parquet(out_path, index=False)
+    save_validation_results(out_path, results)
 
-    pass_count = int((df["status"].str.upper() == "PASS").sum()) if "status" in df else 0
-    fail_count = int((df["status"].str.upper() == "FAIL").sum()) if "status" in df else 0
-    skip_count = int((df["status"].str.upper().isin(["SKIP", "N/A", "-"])).sum()) if "status" in df else 0
-
-    session.metadata.pass_count = pass_count
-    session.metadata.fail_count = fail_count
-    session.metadata.skip_count = skip_count
-    session.metadata.total_rules = len(df)
+    session.metadata.pass_count = p
+    session.metadata.fail_count = f
+    session.metadata.skip_count = s
+    session.metadata.total_rules = total
+    # Persist the severity-weighted score alongside the raw counts — the CLI
+    # validate path does the same. Without this, WebUI-validated sessions
+    # carry weighted_score=None and every downstream surface (Fleet, dashboard)
+    # silently falls back to the plain pass rate, disagreeing with the report.
+    from platform_atlas.reporting.scoring import weighted_pass_percent
+    session.metadata.weighted_score = weighted_pass_percent(results.rows)
     session.save_metadata()
     session.mark_stage_complete(SessionStage.VALIDATE)
 
     jlogger.success(
-        f"Validation complete: {pass_count} pass · {fail_count} fail · {skip_count} skip "
-        f"({len(df)} rules)"
+        f"Validation complete: {p} pass · {f} fail · {s} skip "
+        f"({total} rules)"
     )
-    return {"ok": True, "pass": pass_count, "fail": fail_count, "skip": skip_count}
+    return {"ok": True, "pass": p, "fail": f, "skip": s}
 
 
 def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
@@ -567,18 +640,17 @@ def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
     ``handle_session_run_report`` so both surfaces stay in lock step."""
     _restore_session_context(session_name, jlogger)
 
-    from platform_atlas.core.session_manager import get_session_manager, rehydrate_validation_attrs, SessionStage
+    from platform_atlas.core.session_manager import get_session_manager, SessionStage
     from platform_atlas.core.paths import REPORT_TEMPLATE
     from platform_atlas.core.handlers.session import (
         _load_extended_results,
         _load_architecture_data,
         _load_rbac_data,
-        _load_kubernetes_namespaces_data,
     )
     from platform_atlas.reporting.webui_viewmodel import build_webui_viewmodel, write_webui_viewmodel
     from platform_atlas.reporting.unified_renderer import render_unified_report
     from platform_atlas.reporting.operational_engine import OperationalReport
-    import pandas as pd
+    from platform_atlas.validation.results import load_validation_results
 
     mgr = get_session_manager()
     session = mgr.get(session_name)
@@ -588,18 +660,17 @@ def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
         return {"ok": False, "error": "no validation file"}
 
     jlogger.phase(f"Report · session '{session_name}'")
-    jlogger.info("Loading validation results from parquet…")
-    df = pd.read_parquet(session.validation_file, engine="pyarrow")
-    rehydrate_validation_attrs(df, session)
-    jlogger.info(f"Loaded {len(df)} rule results")
+    jlogger.info("Loading validation results…")
+    results = load_validation_results(session.validation_file)
+    jlogger.info(f"Loaded {len(results)} rule results")
 
-    organization_name = df.attrs.get("organization_name", "Unknown Organization")
-    session_tier = getattr(session.metadata, "tier", None) or df.attrs.get("tier") or "extended"
+    organization_name = results.metadata.get("organization_name", "Unknown Organization")
+    session_tier = getattr(session.metadata, "tier", None) or results.metadata.get("tier") or "extended"
 
-    extended_results = _load_extended_results(df, session)
+    extended_results = _load_extended_results(results, session)
     architecture_data = _load_architecture_data(session.metadata.environment, session.capture_file)
     rbac_data = _load_rbac_data(session.capture_file, extended_results, rbac_file=session.rbac_file)
-    kubernetes_namespaces_data = _load_kubernetes_namespaces_data(session)
+    kubernetes_namespaces_data = results.metadata.get("kubernetes_namespaces", {})
 
     mongo_report = None
     if session_tier == "standard":
@@ -618,8 +689,9 @@ def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
         jlogger.info("No architecture data found for this environment — Architecture page will show placeholder content.")
         jlogger.info("Fill in the Architecture form under the Audit menu to add this data.")
 
-    p_count = int((df["status"].str.upper() == "PASS").sum()) if "status" in df else 0
-    f_count = int((df["status"].str.upper() == "FAIL").sum()) if "status" in df else 0
+    result_statuses = [str(row.get("status", "")).upper() for row in results.rows]
+    p_count = result_statuses.count("PASS")
+    f_count = result_statuses.count("FAIL")
     jlogger.info(f"Rendering report — {p_count} pass · {f_count} fail · org: {organization_name}")
 
     from platform_atlas.core.context import ctx
@@ -631,7 +703,7 @@ def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
     _topo_mode = _topo.mode.value if _topo and getattr(_topo, "mode", None) else ""
 
     viewmodel = build_webui_viewmodel(
-        df,
+        results,
         extended_results=extended_results,
         architecture_data=architecture_data,
         operational_report=mongo_report,
@@ -654,7 +726,7 @@ def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
     try:
         write_webui_viewmodel(
             session.webui_viewmodel_file,
-            df,
+            results,
             extended_results=extended_results,
             architecture_data=architecture_data,
             operational_report=mongo_report,

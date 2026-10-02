@@ -1,23 +1,16 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Tier — Platform Atlas{% endblock %}
 {% block crumb %}Tier{% endblock %}
 {% block content %}
 {% set is_std = active_tier == 'standard' %}
 {% set pending_extended = pending_extended | default(false) %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Configuration</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">Audit tier</h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      The tier controls how deeply Atlas audits your deployment.
-      Currently running in <strong>{% if is_std %}Standard{% elif active_tier == 'saas' %}SaaS{% else %}Extended{% endif %} mode</strong>.
-    </p>
-  </div>
-</header>
+{% set tier_label = 'Standard' if is_std else ('SaaS' if active_tier == 'saas' else 'Extended') %}
+{{ page_header("Audit tier",
+    subtitle="The tier controls how deeply Atlas audits your deployment. Currently running in <strong>" ~ tier_label ~ " mode</strong>.") }}
 
 {% if pending_extended %}
-{# ── Pending-upgrade banner — tier hasn't switched yet ── #}
 <div class="flash flash--warn mb-6 flex items-center gap-3">
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
   <span>
@@ -29,83 +22,79 @@
 
 {# ── Current tier banner ── #}
 <div class="flash flash--info mb-6 flex items-center gap-3">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
   {% if is_std %}
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
     <span>You are in <strong>Standard mode</strong> — Platform OAuth and optional IAG4 API only. No SSH, MongoDB, or Redis access.</span>
   {% elif active_tier == 'saas' %}
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
     <span>The active environment is a <strong>SaaS (single-gateway) audit</strong> — its tier is locked at create time and cannot be changed. To audit at a different tier, create a new environment.</span>
   {% else %}
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
     <span>You are in <strong>Extended mode</strong> — full infrastructure access including SSH, MongoDB, Redis, gateways, and system collectors.</span>
   {% endif %}
 </div>
 
 {% if active_tier == 'saas' %}
-{# ── SaaS-locked card (no tier switching available) ── #}
-<section style="margin-bottom:24px;">
-  <div class="card tier-card is-active" style="max-width:560px;">
+{# ── SaaS-locked card ── #}
+<section class="mb-6">
+  <div class="card tier-card is-active max-w-[560px]">
     <div class="card-head">
       <h3>SaaS</h3>
       <span class="sub">single-gateway audit</span>
-      <div class="right">
-        <span class="tier-card-status"><span class="dot"></span>Active</span>
-      </div>
+      <div class="right"><span class="tier-card-status"><span class="dot"></span>Active</span></div>
     </div>
-    <div class="card-body" style="display:flex; flex-direction:column; gap:10px;">
-      <p style="font-size:15px; color:var(--text-2); margin:0;">
+    <div class="card-body flex flex-col gap-2.5">
+      <p class="text-[15px] text-text-2 m-0">
         This environment audits a single Itential-managed SaaS gateway. Its tier is fixed
         when the environment is created and cannot be switched to Standard or Extended.
       </p>
-      <ul style="font-size:14px; color:var(--text-2); margin:0; padding-left:18px; line-height:1.7;">
+      <ul class="text-[14px] text-text-2 m-0 pl-4.5 leading-[1.7] list-disc">
         <li>Scoped to the gateway exposed by your Itential SaaS deployment</li>
         <li>No SSH, MongoDB, or Redis — infrastructure is managed by Itential</li>
         <li>Tier is locked for the lifetime of this environment</li>
       </ul>
-      <div style="margin-top:4px;">
-        <span style="font-size:14px; color:var(--text-3);">
-          Need Standard or Extended? Create a new environment with that tier.
-        </span>
-      </div>
+      <span class="text-[14px] text-text-3 mt-1">Need Standard or Extended? Create a new environment with that tier.</span>
     </div>
   </div>
 </section>
 {% else %}
 {# ── Tier comparison cards ── #}
-<section class="grid-2" style="grid-template-columns:1fr 1fr; margin-bottom:24px;">
+<section class="grid-2 mb-6" style="grid-template-columns:1fr 1fr;">
 
   {# Standard #}
   <div class="card tier-card{% if is_std %} is-active{% endif %}">
     <div class="card-head">
       <h3>Standard</h3>
       <span class="sub">application audit</span>
-      <div class="right">
-        <span class="tier-card-status">
-          {% if is_std %}<span class="dot"></span>Active{% else %}Available{% endif %}
-        </span>
-      </div>
+      <div class="right"><span class="tier-card-status">{% if is_std %}<span class="dot"></span>Active{% else %}Available{% endif %}</span></div>
     </div>
-    <div class="card-body" style="display:flex; flex-direction:column; gap:10px;">
-      <p style="font-size:15px; color:var(--text-2); margin:0;">
-        Connects via Platform OAuth and an optional IAG4 API token. No server credentials required.
-      </p>
-      <p style="font-size:14px; color:var(--text-3); margin:0; font-style:italic;">
-        Recommended for ongoing monitoring and locked-down environments where SSH/database access isn't permitted.
-      </p>
-      <ul style="font-size:14px; color:var(--text-2); margin:0; padding-left:18px; line-height:1.7;">
+    <div class="card-body flex flex-col gap-2.5">
+      <p class="text-[15px] text-text-2 m-0">Connects via Platform OAuth and an optional IAG4 API token. No server credentials required.</p>
+      <p class="text-[14px] text-text-3 m-0 italic">Recommended for ongoing monitoring and locked-down environments where SSH/database access isn't permitted.</p>
+      <ul class="text-[14px] text-text-2 m-0 pl-4.5 leading-[1.7] list-disc">
         <li><strong>~54 rules</strong> across <code>platform</code> and <code>gateway4</code> categories</li>
         <li>No SSH, no MongoDB, no Redis</li>
         <li>Works in strict or locked-down environments</li>
         <li>Fastest — no infrastructure collectors to run</li>
       </ul>
       {% if not is_std %}
-        <div style="margin-top:4px;">
-          <button class="btn sm" onclick="openTierModal('standard')">Switch to Standard</button>
-        </div>
+        <details class="tier-what mt-1">
+          <summary>What changes if I switch to Standard?</summary>
+          <div class="tier-what-body">
+            <p>Atlas will use only <strong>Platform OAuth</strong> (and an optional IAG4 token). MongoDB, Redis, SSH, and all infrastructure collectors go <strong>inactive</strong>; about <strong>54 rules</strong> are evaluated instead of ~107.</p>
+            <p class="mt-2"><strong class="text-text">What stays the same:</strong> existing captures and reports keep their original tier context. Extended-tier sessions become view-only until you switch back — no re-running capture, validate, or report on them.</p>
+            <p class="mt-2 text-text-3">Not sure which tier fits? Itential's Customer Success team can help — <a href="mailto:support@itential.com" class="text-accent">support@itential.com</a>.</p>
+          </div>
+        </details>
+        <form action="/tier/set" method="post" class="mt-1"
+              data-confirm-action data-confirm-kind="primary"
+              data-confirm-title="Switch to Standard mode?"
+              data-confirm-message="Atlas will collect via Platform OAuth only — MongoDB, Redis, and SSH go inactive (~54 rules instead of ~107). Existing captures keep their tier; Extended sessions become view-only until you switch back.&#10;&#10;Takes effect on the next CLI run or WebUI restart."
+              data-confirm-label="Switch to Standard">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="new_tier" value="standard">
+          <button class="btn sm" type="submit">Switch to Standard</button>
+        </form>
       {% else %}
-        <div style="margin-top:4px;">
-          <span style="font-size:14px; color:var(--text-3);">This is your current tier.</span>
-        </div>
+        <span class="text-[14px] text-text-3 mt-1">This is your current tier.</span>
       {% endif %}
     </div>
   </div>
@@ -115,40 +104,44 @@
     <div class="card-head">
       <h3>Extended</h3>
       <span class="sub">infrastructure audit</span>
-      <div class="right">
-        <span class="tier-card-status">
-          {% if not is_std %}<span class="dot"></span>Active{% else %}Available{% endif %}
-        </span>
-      </div>
+      <div class="right"><span class="tier-card-status">{% if not is_std %}<span class="dot"></span>Active{% else %}Available{% endif %}</span></div>
     </div>
-    <div class="card-body" style="display:flex; flex-direction:column; gap:10px;">
-      <p style="font-size:15px; color:var(--text-2); margin:0;">
-        Full infrastructure access — SSH into servers, query MongoDB and Redis directly, and inspect gateway configs.
-      </p>
-      <p style="font-size:14px; color:var(--text-3); margin:0; font-style:italic;">
-        Recommended for quarterly reviews and deep health audits where infrastructure-level visibility matters.
-      </p>
-      <ul style="font-size:14px; color:var(--text-2); margin:0; padding-left:18px; line-height:1.7;">
+    <div class="card-body flex flex-col gap-2.5">
+      <p class="text-[15px] text-text-2 m-0">Full infrastructure access — SSH into servers, query MongoDB and Redis directly, and inspect gateway configs.</p>
+      <p class="text-[14px] text-text-3 m-0 italic">Recommended for quarterly reviews and deep health audits where infrastructure-level visibility matters.</p>
+      <ul class="text-[14px] text-text-2 m-0 pl-4.5 leading-[1.7] list-disc">
         <li><strong>~107 rules</strong> — all Standard rules plus infrastructure checks</li>
         <li>SSH, MongoDB, Redis, IAG, system, filesystem, and Kubernetes collectors</li>
         <li>Requires SSH keys and database credentials to be configured</li>
       </ul>
       {% if pending_extended %}
-        <div style="margin-top:4px; display:flex; gap:8px; align-items:center;">
+        <div class="mt-1 flex gap-2 items-center">
           <a class="btn sm primary" href="/tier/extended/setup">Resume setup</a>
-          <form action="/tier/revert-to-standard" method="post" style="display:inline;">
+          <form action="/tier/revert-to-standard" method="post" class="inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button class="btn sm" type="submit">Cancel</button>
           </form>
         </div>
       {% elif is_std %}
-        <div style="margin-top:4px;">
-          <button class="btn sm" onclick="openTierModal('extended')">Switch to Extended</button>
-        </div>
+        <details class="tier-what mt-1">
+          <summary>What happens when I switch to Extended?</summary>
+          <div class="tier-what-body">
+            <p>Extended enables full infrastructure collectors — <strong>SSH, MongoDB, Redis, IAG, system, filesystem, and Kubernetes</strong>. All <strong>~107 rules</strong> are evaluated.</p>
+            <p class="mt-2"><strong class="text-text">Next you'll add the credentials Extended needs:</strong> SSH host(s) &amp; key path, MongoDB URI, Redis URI, and an IAG4 API token if applicable. With <strong>Vault</strong>, add the keys there and use <em>Re-check</em>; with the OS keyring or encrypted file, you'll enter them on the setup screen and Atlas verifies on the spot.</p>
+            <p class="mt-2 text-text-3">Need a hand getting set up? Itential's Customer Success team can help — <a href="mailto:support@itential.com" class="text-accent">support@itential.com</a>.</p>
+          </div>
+        </details>
+        <form action="/tier/set" method="post" class="mt-1"
+              data-confirm-action data-confirm-kind="primary"
+              data-confirm-title="Switch to Extended mode?"
+              data-confirm-message="Extended enables SSH, MongoDB, Redis, IAG, system, filesystem, and Kubernetes collectors (all ~107 rules). After confirming, you'll add the SSH/Mongo/Redis credentials Extended requires — the tier only flips once they're verified present."
+              data-confirm-label="Continue to setup">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="new_tier" value="extended">
+          <button class="btn sm" type="submit">Switch to Extended</button>
+        </form>
       {% else %}
-        <div style="margin-top:4px;">
-          <span style="font-size:14px; color:var(--text-3);">This is your current tier.</span>
-        </div>
+        <span class="text-[14px] text-text-3 mt-1">This is your current tier.</span>
       {% endif %}
     </div>
   </div>
@@ -158,145 +151,41 @@
 
 {# ── CLI tip ── #}
 {% if active_tier != 'saas' %}
-<div class="card" style="max-width:460px;">
+<div class="card max-w-[460px]">
   <div class="card-head">
     <h3>Terminal</h3>
     <span class="sub">same operation, scriptable for CI</span>
   </div>
-  <div class="card-body" style="display:flex; flex-direction:column; gap:6px;">
+  <div class="card-body flex flex-col gap-1.5">
     <div class="tip-cmd"><span class="prompt">▸</span><span class="cmd">platform-atlas tier set standard</span></div>
     <div class="tip-cmd"><span class="prompt">▸</span><span class="cmd">platform-atlas tier set extended</span></div>
     <div class="tip-cmd"><span class="prompt">▸</span><span class="cmd">platform-atlas --tier standard capture</span></div>
-    <p style="font-size:13px; color:var(--text-3); margin:6px 0 0;">
-      <code>--tier</code> on any command is a one-off override — it doesn't persist.
-    </p>
+    <p class="text-[13px] text-text-3 mt-1.5 mb-0"><code>--tier</code> on any command is a one-off override — it doesn't persist.</p>
   </div>
 </div>
 {% endif %}
 
-{% if active_tier != 'saas' %}
-{# ── Hidden form (submitted by modal OK button) ── #}
-<form id="tier-form" action="/tier/set" method="post" style="display:none;">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <input type="hidden" name="new_tier" id="tier-form-value">
-</form>
-
-{# ── Confirmation modal ── #}
-<dialog id="tier-modal" style="
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--line-2);
-  border-radius: 12px;
-  padding: 0;
-  width: min(480px, 92vw);
-  box-shadow: 0 20px 60px oklch(0% 0 0 / .35);
-  outline: none;
-">
-  <div style="padding:22px 24px 18px; border-bottom:1px solid var(--line);">
-    <h2 id="modal-title" style="margin:0 0 6px; font-size:18px; font-weight:600;"></h2>
-    <p id="modal-subtitle" style="margin:0; font-size:15px; color:var(--text-3);"></p>
-  </div>
-
-  <div style="padding:18px 24px;" id="modal-body"></div>
-
-  <div style="padding:14px 24px 18px; border-top:1px solid var(--line); display:flex; gap:10px; justify-content:flex-end;">
-    <button class="btn" onclick="document.getElementById('tier-modal').close()">Cancel</button>
-    <button class="btn primary" id="modal-confirm" onclick="confirmTierSwitch()">
-      <span id="modal-confirm-label">Confirm switch</span>
-      <span id="modal-confirm-spinner" hidden style="display:inline-flex; align-items:center; gap:6px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin 0.8s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-        Switching…
-      </span>
-    </button>
-  </div>
-</dialog>
-
-<style>
-  @keyframes spin { to { transform: rotate(360deg); } }
-  dialog::backdrop { background: oklch(0% 0 0 / .5); backdrop-filter: blur(2px); }
+<style nonce="{{ csp_nonce }}">
+  /* Progressive-disclosure "what changes" panel on each tier card — replaces
+     the old bespoke <dialog>; the final yes/no now uses the shared atlasConfirm. */
+  .tier-what > summary {
+    cursor: pointer; list-style: none; user-select: none;
+    font-size: 14px; font-weight: 500; color: var(--accent);
+    display: inline-flex; align-items: center; gap: 6px; padding: 2px 0;
+  }
+  .tier-what > summary::-webkit-details-marker { display: none; }
+  .tier-what > summary::before {
+    content: ""; width: 0; height: 0; border-left: 5px solid currentColor;
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform .15s ease;
+  }
+  .tier-what[open] > summary::before { transform: rotate(90deg); }
+  .tier-what-body {
+    margin-top: 8px; padding: 12px 14px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); font-size: 14px; color: var(--text-2); line-height: 1.6;
+  }
+  .tier-what-body p { margin: 0; }
 </style>
-
-<script nonce="{{ csp_nonce }}">
-  var _pendingTier = null;
-
-  var TIER_CONTENT = {
-    standard: {
-      title: "Switch to Standard mode?",
-      subtitle: "This change takes effect on the next CLI invocation or WebUI restart.",
-      body: [
-        "<p style='font-size:15px; color:var(--text-2); margin:0 0 12px;'>",
-        "Switching to <strong>Standard</strong> means Atlas will only use <strong>Platform OAuth</strong> (and an optional IAG4 token) to collect data.",
-        " MongoDB, Redis, SSH, and all infrastructure collectors will be <strong>inactive</strong>.",
-        " Approximately <strong>54 rules</strong> will be evaluated (instead of ~107).",
-        "</p>",
-        "<div style='background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:14px; font-size:14px; color:var(--text-2); line-height:1.6;'>",
-        "<strong style='display:block; margin-bottom:6px; color:var(--text);'>What stays the same</strong>",
-        "Existing captures and reports are not affected — they keep their original tier context.",
-        " Any Extended-tier sessions will become view-only until you switch back — you won't be able to re-run capture, validate, or report on them.",
-        "</div>",
-        "<div style='margin-top:14px; padding:12px 14px; background:oklch(60% 0.18 220/.07); border:1px solid oklch(60% 0.18 220/.25); border-radius:8px; font-size:14px; color:var(--text-2); line-height:1.6;'>",
-        "<strong style='display:block; margin-bottom:4px; color:oklch(60% 0.18 220);'>Need help deciding?</strong>",
-        "Itential's Customer Success team will work with you to determine which tier is right for your environment. Contact your Itential representative or reach out at <a href='mailto:support@itential.com' style='color:var(--accent);'>support@itential.com</a>.",
-        "</div>"
-      ].join("")
-    },
-    extended: {
-      title: "Switch to Extended mode?",
-      subtitle: "You'll be taken to your environment settings to add SSH, MongoDB, and Redis credentials.",
-      body: [
-        "<p style='font-size:15px; color:var(--text-2); margin:0 0 12px;'>",
-        "Switching to <strong>Extended</strong> enables full infrastructure collectors — <strong>SSH, MongoDB, Redis, IAG, system, filesystem, and Kubernetes</strong>.",
-        " All <strong>~107 rules</strong> will be evaluated.",
-        "</p>",
-        "<div style='background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:14px; font-size:14px; color:var(--text-2); line-height:1.6;'>",
-        "<strong style='display:block; margin-bottom:6px; color:var(--text);'>What happens next</strong>",
-        "After confirming, you'll be taken to your environment settings to supply the additional credentials Extended requires:",
-        "<ul style='margin:8px 0 0; padding-left:18px; line-height:1.8;'>",
-        "<li>SSH host(s) and key path</li>",
-        "<li>MongoDB URI</li>",
-        "<li>Redis URI</li>",
-        "<li>IAG4 API token (if applicable)</li>",
-        "</ul>",
-        "If you use <strong>HashiCorp Vault</strong>, add the new keys there and use the <em>Re-check credentials</em> button in your environment.",
-        " If you use the <strong>OS keyring</strong>, you'll enter the credentials on the next screen — Atlas writes them to your keyring and verifies on the spot.",
-        "</div>",
-        "<div style='margin-top:14px; padding:12px 14px; background:oklch(70% 0.18 30/.07); border:1px solid oklch(70% 0.18 30/.25); border-radius:8px; font-size:14px; color:var(--text-2); line-height:1.6;'>",
-        "<strong style='display:block; margin-bottom:4px; color:oklch(70% 0.18 30);'>Need help getting set up?</strong>",
-        "Itential's Customer Success team will work with you to configure your Extended environment. Contact your Itential representative or reach out at <a href='mailto:support@itential.com' style='color:var(--accent);'>support@itential.com</a>.",
-        "</div>"
-      ].join("")
-    }
-  };
-
-  function openTierModal(tier) {
-    _pendingTier = tier;
-    var c = TIER_CONTENT[tier];
-    document.getElementById("modal-title").textContent = c.title;
-    document.getElementById("modal-subtitle").textContent = c.subtitle;
-    document.getElementById("modal-body").innerHTML = c.body;
-    document.getElementById("modal-confirm-label").hidden = false;
-    document.getElementById("modal-confirm-spinner").hidden = true;
-    document.getElementById("modal-confirm").disabled = false;
-    document.getElementById("tier-modal").showModal();
-  }
-
-  function confirmTierSwitch() {
-    if (!_pendingTier) return;
-    // Show loading feedback
-    document.getElementById("modal-confirm-label").hidden = true;
-    document.getElementById("modal-confirm-spinner").hidden = false;
-    document.getElementById("modal-confirm-spinner").style.display = "inline-flex";
-    document.getElementById("modal-confirm").disabled = true;
-    // Submit the form
-    document.getElementById("tier-form-value").value = _pendingTier;
-    document.getElementById("tier-form").submit();
-  }
-
-  // Close on backdrop click
-  document.getElementById("tier-modal").addEventListener("click", function(e) {
-    if (e.target === this) this.close();
-  });
-</script>
-{% endif %}
 
 {% endblock %}

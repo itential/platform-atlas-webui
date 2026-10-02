@@ -58,18 +58,34 @@ EDITABLE_FIELDS: tuple[str, ...] = (
 
 
 # Theme identities (palette). Light/dark is a separate axis (the mode).
-_VALID_WEBUI_THEMES = {"aurora", "horizon", "obsidian", "meadow", "carbon", "itential", "dracula"}
+# 3.0 curated the set to four: Modern (flagship default), Itential
+# (brand-true), Obsidian (true dark), Carbon (neutral grayscale).
+_VALID_WEBUI_THEMES = {"modern", "itential", "obsidian", "carbon"}
 # "auto" follows OS prefers-color-scheme; resolved to light/dark on the client.
 _VALID_WEBUI_MODES = {"light", "dark", "auto"}
 
-# Mapping from the legacy 1.7.0 accent picker → new theme identity. Cyan/violet/mono
-# read as cool/technical → Aurora; amber/lime read as warm → Horizon.
+# Themes retired or renamed in 3.0 → migrate to their successor on read so an
+# existing config never lands on a missing theme. Modern is the flagship, so
+# every retired palette folds into it. "facet" was the pre-release id of the
+# Modern theme, and "editorial" was removed before release.
+_RETIRED_THEME_TO_THEME = {
+    "facet": "modern",
+    "editorial": "modern",
+    "aurora": "modern",
+    "horizon": "modern",
+    "meadow": "modern",
+    "dracula": "modern",
+}
+
+# Mapping from the legacy 1.7.0 accent picker → current theme identity.
+# Cyan/violet/mono read as cool/technical → Itential; amber/lime read as
+# warm → Modern (brass accent).
 _LEGACY_ACCENT_TO_THEME = {
-    "cyan": "aurora",
-    "violet": "aurora",
-    "mono": "aurora",
-    "amber": "horizon",
-    "lime": "horizon",
+    "cyan": "itential",
+    "violet": "itential",
+    "mono": "itential",
+    "amber": "modern",
+    "lime": "modern",
 }
 
 
@@ -81,29 +97,34 @@ def resolve_appearance(cfg: dict[str, Any]) -> tuple[str, str]:
       * ``webui_accent = "cyan|amber|violet|lime|mono"`` → maps to a new theme
 
     New values:
-      * ``webui_theme = "aurora" | "horizon"``
+      * ``webui_theme = "modern" | "itential" | "obsidian" | "carbon"``
       * ``webui_mode  = "light"  | "dark"``
     """
     raw_theme = (cfg.get("webui_theme") or "").strip().lower()
     raw_mode = (cfg.get("webui_mode") or "").strip().lower()
     raw_accent = (cfg.get("webui_accent") or "").strip().lower()
 
-    # Mode resolution.
+    # Theme resolution. A currently-valid theme wins; a theme retired in 3.0
+    # migrates to its successor; a legacy 1.7.0 accent maps to a theme;
+    # everything else falls back to the 3.0 flagship, Modern.
+    if raw_theme in _VALID_WEBUI_THEMES:
+        theme = raw_theme
+    elif raw_theme in _RETIRED_THEME_TO_THEME:
+        theme = _RETIRED_THEME_TO_THEME[raw_theme]
+    elif raw_accent in _LEGACY_ACCENT_TO_THEME:
+        theme = _LEGACY_ACCENT_TO_THEME[raw_accent]
+    else:
+        theme = "modern"
+
+    # Mode resolution. An explicit mode wins. Otherwise the default follows
+    # the theme: Modern is dark-first, the rest light-first.
     if raw_mode in _VALID_WEBUI_MODES:
         mode = raw_mode
     elif raw_theme in _VALID_WEBUI_MODES:
         # Legacy: webui_theme used to hold the mode.
         mode = raw_theme
     else:
-        mode = "dark"
-
-    # Theme resolution.
-    if raw_theme in _VALID_WEBUI_THEMES:
-        theme = raw_theme
-    elif raw_accent in _LEGACY_ACCENT_TO_THEME:
-        theme = _LEGACY_ACCENT_TO_THEME[raw_accent]
-    else:
-        theme = "itential"
+        mode = "dark" if theme == "modern" else "light"
 
     return theme, mode
 

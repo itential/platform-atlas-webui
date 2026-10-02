@@ -4,141 +4,119 @@
 {% block content %}
 
 {# Per-card visibility lives in localStorage (key
-   `atlas-dashboard-visibility-v3`). v3 supersedes v1/v2 which carried
-   gridstack layout data — cleared automatically on first load.
-   The drag/resize editor was removed in favor of a simpler
-   show/hide-only model; revisit if/when free-form layout becomes a
-   real product need. #}
+   `atlas-dashboard-visibility-v4`). Older v1-v3 keys carried gridstack
+   layout data or a different default set — cleared automatically on
+   first load of a stale key.
+
+   STRUCTURE (major revision — see [[project_webui_3_0_modernization]]):
+   this used to be a stack of ~8 independent bordered cards (hero, 4 KPI
+   tiles, active-session, calendar, recent-jobs, active-env). It now reads
+   as three "dossier" units instead: (1) the masthead — welcome copy fused
+   with a stat LEDGER strip in the same navy panel, replacing 4 separate
+   white KPI cards, (2) an "Activity" dossier card holding the calendar and
+   recent-jobs as two zones divided by a hairline instead of two cards,
+   (3) a "Status" dossier card holding active-session and active-environment
+   the same way. All 8 `data-widget-id`s and the `dashboardEditor` Alpine
+   contract are unchanged — only their visual container changed, so the
+   customize panel's show/hide + localStorage shape didn't need to move. #}
 
 <style>
-  /* Capture-running pulse — a crisp THEME-ACCENT ring that breathes while a
-     capture is live. Zero blur (flat highlight): the ring opacity pulses at a
-     fixed 1.5px width so it reads clean and modern on every theme. */
+  /* Capture-running pulse — the ONE ambient motion cue on the status
+     card. A crisp theme-accent ring that breathes while a capture is live. */
   @keyframes sc-capture-pulse {
     0%, 100% { box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--accent) 30%, transparent); }
     50%      { box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--accent) 72%, transparent); }
   }
-  .sc-capture-pulse { animation: sc-capture-pulse 2.6s ease-in-out infinite; }
+  .sc-capture-pulse { animation: sc-capture-pulse 2.6s ease-in-out infinite; border-radius: var(--r-md); }
 
-  /* Hover-target glow — applied to the live card while the user
-     mouses over its label in the customize panel, so they can visually
-     confirm WHICH card is about to be hidden. Theme-aware via
-     var(--accent) + color-mix; layered ring + soft halo + far-out wash
-     so it's unmistakable on dark and light themes alike.
+  /* Hover-target highlight from the Customize panel (ledger stat on navy vs
+     a zone inside a light dossier card get different treatments). */
+  [data-widget-id] { transition: background-color 200ms ease-out, box-shadow 200ms ease-out; }
+  .ledger-stat.sc-hover-glow { background: rgba(255,255,255,0.09); }
+  .dossier-zone.sc-hover-glow { background: var(--accent-soft); border-radius: var(--r-md); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent); }
 
-     Scoped only to currently-visible widgets — Alpine doesn't apply this
-     class when the card is in `hidden` state, since glowing an invisible
-     element is pointless. */
-  [data-widget-id] { transition: box-shadow 220ms ease-out; }
-  .sc-hover-glow {
-    /* Flat accent ring (zero blur) so the "which card?" highlight reads as a
-       crisp outline rather than a soft halo. */
-    box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 60%, transparent) !important;
-    border-color: color-mix(in oklab, var(--accent) 45%, var(--line)) !important;
-    position: relative;
-    z-index: 5;
-  }
-
-  /* Flatter, friendlier hover on the dashboard's cards — a crisp accent edge
-     instead of a soft blurred drop shadow. Scoped to this page only. */
-  .kpi:hover, .tile:hover {
-    box-shadow: none;
-    transform: none;
-    border-color: color-mix(in oklab, var(--accent) 38%, var(--line));
-  }
-
-  /* ── KPI tile resting depth ────────────────────────────────────────
-     Very gentle lift so the tiles read as interactive cards rather than
-     flat labels. Hover clears this (see above) in favor of a crisp
-     accent border, keeping the interaction story clean. */
-  [data-widget-id^="kpi-"] {
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 2px 5px rgba(0,0,0,0.03);
-  }
-
-  /* ── KPI card footer separator ─────────────────────────────────────
-     A hairline rule above the action row keeps the stat and navigation
-     visually distinct without adding weight. */
-  .kpi-footer {
-    margin-top: auto;
-    padding-top: 11px;
-    border-top: 1px solid var(--line);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 13px;
-  }
-  .kpi-footer-link { color: var(--accent); font-weight: 500; }
-  .kpi-footer-path { font-family: var(--mono); font-size: 13px; opacity: 0.6; }
-
-  /* ── Report-style cover-band hero ──────────────────────────────────
-     Self-contained to the dashboard: a navy band using the standalone
-     report's exact cover palette, carrying the welcome line. Navy
-     regardless of theme (just like the report), so it never depends on or
-     disturbs any of the seven theme palettes. Same literal gradient as
-     the Horizon theme's sidebar override (atlas.css) and the report's
-     own .rpt-side, so the hero, the report sidebar, and Horizon's
-     sidebar all read as the same material. */
-  .dash-hero {
-    position: relative; overflow: hidden;
-    border-radius: var(--r-lg);
-    background: linear-gradient(175deg, #1C2942, #121A2C 60%);
-    color: #fff;
-    padding: 30px 32px;
-    margin-bottom: 20px;
-    display: flex; align-items: flex-start; justify-content: space-between; gap: 24px;
-  }
-  .dash-hero::before {
-    content: ""; position: absolute; right: -100px; top: -170px;
-    width: 460px; height: 460px; pointer-events: none;
-    background: radial-gradient(circle, rgba(197,37,143,0.38), transparent 62%);
-  }
-  .dash-hero::after {
-    content: ""; position: absolute; inset: 0; pointer-events: none;
-    background: url("data:image/svg+xml,%3Csvg width='64' height='64' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M32 0L64 32L32 64L0 32z' fill='none' stroke='%23ffffff' stroke-width='0.5' opacity='0.045'/%3E%3C/svg%3E") repeat;
-  }
-  .dash-hero-inner { position: relative; z-index: 1; min-width: 0; }
-  .dash-hero-eyebrow { color: #6dc5f0; }
-  .dash-hero-eyebrow .dot { background: #6dc5f0; box-shadow: 0 0 0 3px rgba(109,197,240,0.20); }
-  .dash-hero-title {
-    font-family: var(--display); font-weight: 700;
-    font-size: 34px; line-height: 1.06; letter-spacing: -0.035em;
-    margin: 12px 0 9px; color: #fff;
-  }
-  .dash-hero-title em { color: #6dc5f0; }
-  .dash-hero-sub { color: rgba(255,255,255,0.74); font-size: 16px; line-height: 1.55; max-width: 64ch; }
-  .dash-hero-sub b { color: #fff; font-weight: 600; }
-  .dash-hero-code {
-    font-family: var(--mono); font-size: 14px;
-    color: #cfe6f7; background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.16); border-radius: 5px; padding: 1px 6px;
-  }
-  .dash-hero-actions { position: relative; z-index: 1; display: flex; gap: 10px; flex-shrink: 0; }
-  .dash-hero-btn-ghost { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.20); color: #fff; }
-  .dash-hero-btn-ghost:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.32); }
-  @media (max-width: 720px) { .dash-hero { flex-direction: column; } }
+  /* Dossier zones — related information divided by a hairline rather than
+     split into separate cards. Shell + head styles live in atlas-studio.css. */
+  .dossier-zone--divided { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 18px; }
 </style>
 
-{# ── Hero — report-style navy cover band ──────────────────────────── #}
-<header class="dash-hero">
-  <div class="dash-hero-inner">
-    <div class="eyebrow dash-hero-eyebrow"><span class="dot"></span> Welcome back</div>
-    <h1 class="dash-hero-title">
-      {{ organization_name or 'Workspace' }},
-      <em class="not-italic">at a glance</em>
-    </h1>
-    <p class="dash-hero-sub">
-      Running in <b>{{ 'SaaS' if tier == 'saas' else tier|capitalize }} mode</b>{% if tier == 'standard' %}, audit via Platform OAuth{% elif tier == 'saas' %}, single-gateway audit{% else %}, full infrastructure audit{% endif %}.
-      {% if active_env and active_env.platform_uri %}
-        Targeting <code class="dash-hero-code">{{ active_env.platform_uri }}</code>.
-      {% endif %}
-      {% if active_session %}<b>1 session</b> is currently active.{% else %}No live sessions.{% endif %}
-    </p>
+{# ── Masthead — navy cover + fused stat ledger ─────────────────────── #}
+{# Single shared Alpine scope for the whole page below — the ledger stats
+   AND the dossier-card zones both read `hidden`/`hoveredId` from this one
+   instance, so toggling a card in the customize panel (which lives inside
+   the Activity dossier card) updates the ledger live too. Two separate
+   x-data="dashboardEditor" instances would NOT share state — Alpine.data
+   creates an independent reactive object per invocation. #}
+<div x-data="dashboardEditor" x-init="init()">
+<header class="dash-mast" data-facets-host>
+  {# Crystal facets — an atmospheric backdrop, not a chart. A low-poly
+     surface lit by a slowly orbiting light; it does not react to the
+     pointer. Rendered by static/js/atlas-facets.js (Canvas 2D),
+     mounted lazily by atlas-motion.js. Without JS the navy mast shows alone.
+     The probes expose the theme's highlight colours to the canvas. #}
+  <div class="dash-facets" data-atlas-facets aria-hidden="true">
+    <div class="facets-probe"><i data-c="a"></i><i data-c="b"></i></div>
   </div>
-  <div class="dash-hero-actions">
-    <a class="btn dash-hero-btn-ghost" href="/reports">Reports</a>
-    <a class="btn primary" href="/sessions/new">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-      Start session
+
+  <div class="dash-mast-stage">
+    <div class="dash-mast-top">
+      <div class="dash-mast-inner">
+        <div class="dash-mast-eyebrow"><span class="dot"></span> Welcome back</div>
+        <h1 class="dash-mast-title">
+          {{ organization_name or 'Workspace' }}, <em>at a glance</em>
+        </h1>
+        <p class="dash-mast-sub">
+          Running in <b>{{ 'SaaS' if tier == 'saas' else tier|capitalize }} mode</b>{% if tier == 'standard' %}, audit via Platform OAuth{% elif tier == 'saas' %}, single-gateway audit{% else %}, full infrastructure audit{% endif %}.
+          {% if active_env and active_env.platform_uri %}
+            Targeting <code class="dash-mast-code">{{ active_env.platform_uri }}</code>.
+          {% endif %}
+        </p>
+        <div class="dash-mast-actions">
+          <a class="btn primary" href="/sessions/new" data-magnetic>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+            Start session
+          </a>
+          <a class="btn dash-mast-btn-ghost" href="/reports">Open reports</a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="dash-ledger">
+    {% macro _arrow() %}<svg class="ledger-stat-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg>{% endmacro %}
+
+    <a href="/sessions" class="ledger-stat" data-widget-id="kpi-sessions" data-spotlight
+       :class="{ 'hidden': hidden.includes('kpi-sessions'), 'sc-hover-glow': hoveredId === 'kpi-sessions' }">
+      {{ _arrow() }}
+      <svg class="ledger-stat-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+      <span class="ledger-stat-num">{{ kpis.session_count }}</span>
+      <span class="ledger-stat-label">Sessions{% if active_session %} · <span style="color:#9FE3B0;">live</span>{% endif %}</span>
+    </a>
+
+    <a href="/environments" class="ledger-stat" data-widget-id="kpi-environments" data-spotlight
+       :class="{ 'hidden': hidden.includes('kpi-environments'), 'sc-hover-glow': hoveredId === 'kpi-environments' }">
+      {{ _arrow() }}
+      <svg class="ledger-stat-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="1.5"/><rect x="2" y="14" width="20" height="7" rx="1.5"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></svg>
+      <span class="ledger-stat-num">{{ kpis.env_count }}</span>
+      <span class="ledger-stat-label">Environments</span>
+    </a>
+
+    <a href="/rulesets" class="ledger-stat" data-widget-id="kpi-rules" data-spotlight
+       :class="{ 'hidden': hidden.includes('kpi-rules'), 'sc-hover-glow': hoveredId === 'kpi-rules' }">
+      {{ _arrow() }}
+      <svg class="ledger-stat-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+      <span class="ledger-stat-num">{{ kpis.rule_count }}</span>
+      <span class="ledger-stat-label">Active rules</span>
+      {% if ruleset and ruleset.name %}<span class="ledger-stat-hint">{{ ruleset.name }}</span>{% endif %}
+    </a>
+
+    <a href="/jobs" class="ledger-stat" data-widget-id="kpi-jobs" data-spotlight
+       :class="{ 'hidden': hidden.includes('kpi-jobs'), 'sc-hover-glow': hoveredId === 'kpi-jobs' }">
+      {{ _arrow() }}
+      <svg class="ledger-stat-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span class="ledger-stat-num">{{ kpis.running_jobs }}</span>
+      <span class="ledger-stat-label">Running jobs</span>
     </a>
   </div>
 </header>
@@ -196,261 +174,126 @@
 </div>
 {% endif %}
 
-{# ── Customize toolbar + cards ────────────────────────────────────── #}
-<div x-data="dashboardEditor" x-init="init()">
+{# ── Two dossier cards: Activity (calendar + recent jobs) / Status (session + env) ── #}
+<div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-5 items-start">
 
-  <div class="flex items-center gap-2 flex-wrap mb-3">
-    <button type="button" @click="customizing = !customizing"
-            class="btn"
-            :class="customizing && 'primary'">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5">
-        <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
-      <span x-show="!customizing">Customize cards</span>
-      <span x-show="customizing" x-cloak>Done customizing</span>
-    </button>
+  <section class="dossier-card min-w-0">
+    <div class="dossier-head">
+      <h2 class="dossier-title">Activity</h2>
+      <div class="relative">
+        <button type="button" @click="customizing = !customizing" @click.outside="customizing = false"
+                class="icon-btn relative" :class="customizing && 'text-accent'"
+                title="Customize dashboard cards" aria-label="Customize dashboard cards">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span x-show="!customizing && hidden.length > 0" x-cloak x-text="hidden.length"
+                class="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-accent text-accent-ink text-[10px] font-semibold leading-[16px] text-center"></span>
+        </button>
 
-    <div x-show="customizing" x-cloak
-         @mouseleave="hoveredId = null"
-         class="flex items-center gap-2 flex-wrap">
-      <span class="text-[13px] text-text-3 ml-1 mr-1">Show:</span>
-      <template x-for="w in widgets" :key="w.id">
-        <label class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-2 border border-line cursor-pointer hover:bg-bg-2 text-[14px] transition-colors"
-               x-show="!w.conditional || w.present"
-               @mouseenter="hoverEnter(w.id)">
-          <input type="checkbox"
-                 :checked="!hidden.includes(w.id)"
-                 @change="toggle(w.id)"
-                 class="accent-accent">
-          <span x-text="w.label"></span>
-        </label>
-      </template>
-      <button type="button" @click="resetVisibility()"
-              class="btn sm ml-2"
-              title="Show all cards again">
-        Reset
-      </button>
+        <div x-show="customizing" x-cloak
+             @mouseleave="hoveredId = null"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 -translate-y-2 scale-95"
+             x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+             class="st-menu w-64" style="min-width: 256px;">
+          <div class="st-menu-head">Show cards</div>
+          <div class="p-2 flex flex-col gap-0.5">
+            <template x-for="w in widgets" :key="w.id">
+              <label x-show="!w.conditional || w.present"
+                     @mouseenter="hoverEnter(w.id)"
+                     class="flex items-center gap-2 px-2 py-1.5 rounded-md text-[14px] cursor-pointer hover:bg-surface-2">
+                <input type="checkbox"
+                       :checked="!hidden.includes(w.id)"
+                       @change="toggle(w.id)"
+                       class="accent-accent">
+                <span x-text="w.label"></span>
+              </label>
+            </template>
+          </div>
+          <div class="px-2 py-2 border-t border-line">
+            <button type="button" @click="resetVisibility()" class="btn sm w-full justify-center">
+              Reset to defaults
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <span x-show="!customizing && hidden.length > 0" x-cloak
-          class="ml-auto text-[13px] text-text-3 italic"
-          x-text="hidden.length + ' card' + (hidden.length === 1 ? '' : 's') + ' hidden'"></span>
-  </div>
-
-  {# ── KPI tiles row ──────────────────────────────────────────────── #}
-  {# 4 individual cards in a responsive grid. Hiding one removes it from
-     the grid; CSS Grid auto-reflows the remaining tiles into the freed
-     columns at the current breakpoint. #}
-  <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-
-    <a href="/sessions"
-       data-widget-id="kpi-sessions"
-       :class="{ 'hidden': hidden.includes('kpi-sessions'), 'sc-hover-glow': hoveredId === 'kpi-sessions' }"
-       class="group flex flex-col h-full rounded-lg bg-surface border border-line p-3.5
-              transition-colors hover:border-line-2 hover:bg-surface-2 text-text">
-      <div class="flex items-center justify-between text-[12px] uppercase tracking-[0.1em] font-medium text-text-3">
-        <span>Sessions</span>
-        <span class="inline-block w-[18px] h-[18px] rounded-[4px] shrink-0" style="background: rgba(27,147,210,0.18);"></span>
-      </div>
-      <div class="flex items-baseline gap-2 mt-3.5 mb-1.5">
-        <span class="text-[34px] leading-none font-medium tracking-[-0.03em] tabular-nums">{{ kpis.session_count }}</span>
-        {% if active_session %}<span class="font-mono text-[13px] text-ok">1 live</span>{% endif %}
-      </div>
-      {% if not kpis.session_count %}
-        <span class="text-[13px] text-text-3 leading-snug">Each session captures, validates, and reports against one environment.</span>
-      {% endif %}
-      <div class="kpi-footer">
-        <span class="kpi-footer-link">Manage</span>
-        <span class="kpi-footer-path">audit/sessions</span>
-      </div>
-    </a>
-
-    <a href="/environments"
-       data-widget-id="kpi-environments"
-       :class="{ 'hidden': hidden.includes('kpi-environments'), 'sc-hover-glow': hoveredId === 'kpi-environments' }"
-       class="group flex flex-col h-full rounded-lg bg-surface border border-line p-3.5
-              transition-colors hover:border-line-2 hover:bg-surface-2 text-text">
-      <div class="flex items-center justify-between text-[12px] uppercase tracking-[0.1em] font-medium text-text-3">
-        <span>Environments</span>
-        <span class="inline-block w-[18px] h-[18px] rounded-[4px] shrink-0" style="background: rgba(255,102,51,0.16);"></span>
-      </div>
-      <div class="flex items-baseline gap-2 mt-3.5 mb-1.5">
-        <span class="text-[34px] leading-none font-medium tracking-[-0.03em] tabular-nums">{{ kpis.env_count }}</span>
-      </div>
-      {% if not kpis.env_count %}
-        <span class="text-[13px] text-text-3 leading-snug">Environments hold one Platform's connection and credentials.</span>
-      {% endif %}
-      <div class="kpi-footer">
-        <span class="kpi-footer-link">Manage</span>
-        <span class="kpi-footer-path">config/environments</span>
-      </div>
-    </a>
-
-    <a href="/rulesets"
-       data-widget-id="kpi-rules"
-       :class="{ 'hidden': hidden.includes('kpi-rules'), 'sc-hover-glow': hoveredId === 'kpi-rules' }"
-       class="group flex flex-col h-full rounded-lg bg-surface border border-line p-3.5
-              transition-colors hover:border-line-2 hover:bg-surface-2 text-text">
-      <div class="flex items-center justify-between text-[12px] uppercase tracking-[0.1em] font-medium text-text-3">
-        <span>Active rules</span>
-        <span class="inline-block w-[18px] h-[18px] rounded-[4px] shrink-0" style="background: rgba(153,202,60,0.22);"></span>
-      </div>
-      <div class="flex items-baseline gap-2 mt-3.5 mb-1.5">
-        <span class="text-[34px] leading-none font-medium tracking-[-0.03em] tabular-nums">{{ kpis.rule_count }}</span>
-        {% if ruleset and ruleset.name %}
-          <span class="font-mono text-[13px] text-text-3 truncate">{{ ruleset.name }}</span>
+    {# ── Zone: activity calendar ───────────────────────────────────── #}
+    <div data-widget-id="calendar" class="dossier-zone"
+         :class="{ 'hidden': hidden.includes('calendar'), 'sc-hover-glow': hoveredId === 'calendar' }">
+      <div class="flex justify-between items-center mb-3">
+        <span class="dossier-subhead m-0">
+          Audit activity
+          <span class="footnote normal-case tracking-normal ml-1 font-normal">
+            · trailing 12 months
+            {% if calendar.total %}· {{ calendar.total }} session{{ '' if calendar.total == 1 else 's' }}{% endif %}
+          </span>
+        </span>
+        {% if calendar.total %}
+          <div class="flex flex-wrap gap-1.5 items-center text-text-3 text-[13px]">
+            <span class="inline-flex items-center gap-1.5">less</span>
+            <i class="w-[11px] h-[11px] rounded-xs inline-block bg-surface-2 border border-line"></i>
+            <i class="w-[11px] h-[11px] rounded-xs inline-block border-0" style="background:oklch(from var(--accent) l c h / .18);"></i>
+            <i class="w-[11px] h-[11px] rounded-xs inline-block border-0" style="background:oklch(from var(--accent) l c h / .42);"></i>
+            <i class="w-[11px] h-[11px] rounded-xs inline-block border-0" style="background:oklch(from var(--accent) l c h / .65);"></i>
+            <i class="w-[11px] h-[11px] rounded-xs inline-block bg-accent"></i>
+            <span class="inline-flex items-center gap-1.5">more</span>
+            <i class="w-[11px] h-[11px] rounded-xs inline-block bg-bad ml-2.5" style="box-shadow:0 0 4px color-mix(in oklch, var(--bad) 50%, transparent);"></i>
+            <span class="inline-flex items-center gap-1.5">failure</span>
+          </div>
         {% endif %}
       </div>
-      {% if not kpis.rule_count %}
-        <span class="text-[13px] text-text-3 leading-snug">No ruleset loaded — rule profiles enable or disable groups of checks.</span>
-      {% endif %}
-      <div class="kpi-footer">
-        <span class="kpi-footer-link">Inspect</span>
-        <span class="kpi-footer-path">config/rulesets</span>
-      </div>
-    </a>
 
-    <a href="/jobs"
-       data-widget-id="kpi-jobs"
-       :class="{ 'hidden': hidden.includes('kpi-jobs'), 'sc-hover-glow': hoveredId === 'kpi-jobs' }"
-       class="group flex flex-col h-full rounded-lg bg-surface border border-line p-3.5
-              transition-colors hover:border-line-2 hover:bg-surface-2 text-text">
-      <div class="flex items-center justify-between text-[12px] uppercase tracking-[0.1em] font-medium text-text-3">
-        <span>Running jobs</span>
-        <span class="inline-block w-[18px] h-[18px] rounded-[4px] shrink-0" style="background: rgba(197,37,143,0.16);"></span>
-      </div>
-      <div class="flex items-baseline gap-2 mt-3.5 mb-1.5">
-        <span class="text-[34px] leading-none font-medium tracking-[-0.03em] tabular-nums">{{ kpis.running_jobs }}</span>
-      </div>
-      {% if not kpis.running_jobs %}
-        <span class="text-[13px] text-text-3 leading-snug">No captures or diffs underway. Long-running tasks show up here.</span>
-      {% endif %}
-      <div class="kpi-footer">
-        <span class="kpi-footer-link">Open queue</span>
-        <span class="kpi-footer-path">system/jobs</span>
-      </div>
-    </a>
-
-  </section>
-
-  {# ── Active session card (conditional) ───────────────────────────── #}
-  {% if active_session %}
-  {% set _capturing = active_session.status == 'running' or (active_session.capture_completed is sameas false) %}
-  {# Flat "active session" emphasis — a subtle accent-tinted border plus an
-     inside accent wash (no blurred glow). Inline so it tracks --accent per
-     theme without a Tailwind recompile. The capture pulse, when live, is a
-     crisp accent ring (see <style> above). #}
-  <section data-widget-id="active-session"
-           :class="{ 'hidden': hidden.includes('active-session'), 'sc-hover-glow': hoveredId === 'active-session' }"
-           class="grid grid-cols-[auto_1fr_auto] gap-5 items-center bg-surface border border-line rounded-lg px-5 py-4 mb-3{% if _capturing %} sc-capture-pulse{% endif %}"
-           style="border-color: color-mix(in oklab, var(--accent) 34%, var(--line)); background-image: radial-gradient(135% 125% at 0% 0%, var(--accent-soft) 0%, transparent 60%);">
-    <div class="relative w-[52px] h-[52px] rounded-lg bg-surface-2 border border-line grid place-items-center text-accent">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-      <span class="absolute -inset-1 rounded-[14px] border border-dashed border-line opacity-60"
-            style="animation: rotate 30s linear infinite;"></span>
-    </div>
-    <div>
-      <div class="text-[12px] uppercase tracking-[0.14em] text-accent font-semibold">Active session</div>
-      <div class="text-[17px] font-medium tracking-[-0.01em] my-1 flex items-center gap-2.5">
-        {{ active_session.name or 'unnamed' }}
-        <span class="font-mono text-[15px] text-text-2 bg-bg-2 border border-line rounded-md px-2 py-0.5">{{ active_session.name }}</span>
-        <span class="chip run"><span class="dot"></span>Live</span>
-      </div>
-      <div class="flex flex-wrap gap-x-[18px] gap-y-1.5 text-text-3 text-[14px]">
-        {% for key, val in [('env', active_session.environment), ('ruleset', active_session.ruleset), ('tier', active_session.tier)] %}
-          {% if val %}
-            <span><span class="text-text-4 mr-1">{{ key }}</span><span class="font-mono text-text-2">{{ val }}</span></span>
-          {% endif %}
-        {% endfor %}
-      </div>
-    </div>
-    <div class="flex gap-2">
-      <a class="btn primary" href="/sessions/{{ active_session.name }}">Open</a>
-    </div>
-  </section>
-  {% endif %}
-
-  {# ── Activity calendar ───────────────────────────────────────────── #}
-  <section data-widget-id="calendar"
-           :class="{ 'hidden': hidden.includes('calendar'), 'sc-hover-glow': hoveredId === 'calendar' }"
-           class="bg-surface border border-line rounded-lg p-4 mb-3">
-    <div class="flex justify-between items-center mb-3">
-      <h3 class="m-0 text-[15px] font-semibold">
-        Audit activity
-        <span class="footnote ml-2">
-          trailing 12 months · local time
-          {% if calendar.total %}· {{ calendar.total }} session{{ '' if calendar.total == 1 else 's' }}{% endif %}
-        </span>
-      </h3>
       {% if calendar.total %}
-        <div class="flex flex-wrap gap-1.5 items-center text-text-3 text-[13px]">
-          <span class="inline-flex items-center gap-1.5">less</span>
-          <i class="w-[11px] h-[11px] rounded-xs inline-block bg-surface-2 border border-line"></i>
-          <i class="w-[11px] h-[11px] rounded-xs inline-block border-0" style="background:oklch(from var(--accent) l c h / .18);"></i>
-          <i class="w-[11px] h-[11px] rounded-xs inline-block border-0" style="background:oklch(from var(--accent) l c h / .42);"></i>
-          <i class="w-[11px] h-[11px] rounded-xs inline-block border-0" style="background:oklch(from var(--accent) l c h / .65);"></i>
-          <i class="w-[11px] h-[11px] rounded-xs inline-block bg-accent"></i>
-          <span class="inline-flex items-center gap-1.5">more</span>
-          <i class="w-[11px] h-[11px] rounded-xs inline-block bg-bad ml-2.5" style="box-shadow:0 0 4px color-mix(in oklch, var(--bad) 50%, transparent);"></i>
-          <span class="inline-flex items-center gap-1.5">failure</span>
+        <div class="calendar">
+          <div class="calendar-grid">
+            <div class="calendar-days">
+              <span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>
+            </div>
+            <div>
+              <div class="calendar-months">
+                {% for m in calendar.months %}<span>{{ m }}</span>{% endfor %}
+              </div>
+              <div class="calendar-cells" id="atlas-calendar">
+                {% for cell in calendar.cells %}
+                  <div
+                    class="cell{% if cell.level %} {{ cell.level }}{% endif %}{% if cell.fail %} fail{% endif %}{% if cell.future %} future{% endif %}"
+                    title="{{ cell.date }}{% if cell.count %} · {{ cell.count }} session{{ '' if cell.count == 1 else 's' }}{% endif %}{% if cell.fail %} · failure{% endif %}"
+                  ></div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-x-5 gap-y-2 mt-3 text-[14px] text-text-3">
+            <div><b class="text-text font-semibold mr-1">{{ calendar.total }}</b>session{{ '' if calendar.total == 1 else 's' }} this year</div>
+            <div><b class="text-bad font-semibold mr-1">{{ calendar.fail_days }}</b>day{{ '' if calendar.fail_days == 1 else 's' }} with failures</div>
+            <div><b class="text-text font-semibold mr-1">{{ calendar.longest_gap }}</b>longest gap (days)</div>
+            <div>
+              <b class="text-text font-semibold mr-1">{% if calendar.days_since_last is not none %}{{ calendar.days_since_last }}{% else %}—{% endif %}</b>
+              day{{ '' if calendar.days_since_last == 1 else 's' }} since last audit
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <div class="text-center py-8 text-text-3 text-[15px]">
+          No captures in the last 12&nbsp;months.
+          <a href="/sessions/new" class="text-accent hover:text-accent-hover">Start a session</a>
+          or
+          <a href="/preflight" class="text-accent hover:text-accent-hover">run preflight</a>
+          to populate this view.
         </div>
       {% endif %}
     </div>
 
-    {% if calendar.total %}
-      <div class="calendar">
-        <div class="calendar-grid">
-          <div class="calendar-days">
-            <span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>
-          </div>
-          <div>
-            <div class="calendar-months">
-              {% for m in calendar.months %}<span>{{ m }}</span>{% endfor %}
-            </div>
-            <div class="calendar-cells" id="atlas-calendar">
-              {% for cell in calendar.cells %}
-                <div
-                  class="cell{% if cell.level %} {{ cell.level }}{% endif %}{% if cell.fail %} fail{% endif %}{% if cell.future %} future{% endif %}"
-                  title="{{ cell.date }}{% if cell.count %} · {{ cell.count }} session{{ '' if cell.count == 1 else 's' }}{% endif %}{% if cell.fail %} · failure{% endif %}"
-                ></div>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-        <div class="flex flex-wrap gap-x-5 gap-y-2 mt-3 text-[14px] text-text-3">
-          <div><b class="text-text font-semibold mr-1">{{ calendar.total }}</b>session{{ '' if calendar.total == 1 else 's' }} this year</div>
-          <div><b class="text-bad font-semibold mr-1">{{ calendar.fail_days }}</b>day{{ '' if calendar.fail_days == 1 else 's' }} with failures</div>
-          <div><b class="text-text font-semibold mr-1">{{ calendar.longest_gap }}</b>longest gap (days)</div>
-          <div>
-            <b class="text-text font-semibold mr-1">{% if calendar.days_since_last is not none %}{{ calendar.days_since_last }}{% else %}—{% endif %}</b>
-            day{{ '' if calendar.days_since_last == 1 else 's' }} since last audit
-          </div>
-        </div>
-      </div>
-    {% else %}
-      <div class="text-center py-8 text-text-3 text-[15px]">
-        No captures in the last 12&nbsp;months.
-        <a href="/sessions/new" class="text-accent hover:text-accent-hover">Start a session</a>
-        or
-        <a href="/preflight" class="text-accent hover:text-accent-hover">run preflight</a>
-        to populate this view.
-      </div>
-    {% endif %}
-  </section>
-
-  {# ── Bottom pair: recent jobs + active env ───────────────────────── #}
-  {# Flexbox so when one is hidden the other naturally grows to fill
-     the row. CSS grid with fixed columns leaves an awkward empty gap;
-     flex with flex-grow does the right thing. #}
-  <section class="flex flex-col lg:flex-row gap-3">
-
-    <div data-widget-id="recent-jobs"
-         :class="{ 'hidden': hidden.includes('recent-jobs'), 'sc-hover-glow': hoveredId === 'recent-jobs' }"
-         class="flex-[1.6_1.6_0] min-w-0 bg-surface border border-line rounded-lg overflow-hidden">
-      <div class="flex items-center px-4 py-3 border-b border-line">
-        <h3 class="m-0 text-[15px] font-semibold">Recent jobs</h3>
-        <span class="text-text-3 text-[14px] ml-1.5">last 24h</span>
+    {# ── Zone: recent jobs ────────────────────────────────────────── #}
+    <div data-widget-id="recent-jobs" class="dossier-zone"
+         :class="{ 'hidden': hidden.includes('recent-jobs'), 'sc-hover-glow': hoveredId === 'recent-jobs', 'dossier-zone--divided': !hidden.includes('calendar') }">
+      <div class="flex items-center mb-2.5">
+        <span class="dossier-subhead m-0">Recent jobs</span>
+        <span class="text-text-3 text-[13px] ml-1.5">last 24h</span>
         <div class="ml-auto inline-flex gap-1.5 items-center">
           {% if kpis.running_jobs %}
             <span class="chip run"><span class="dot"></span> {{ kpis.running_jobs }} running</span>
@@ -458,10 +301,10 @@
           <a class="btn sm" href="/jobs">View all</a>
         </div>
       </div>
-      <div>
+      <div class="rounded-md border border-line overflow-hidden">
         {% if recent_jobs %}
           {% for job in recent_jobs %}
-            <div class="flex items-center gap-3 px-4 py-2.5 text-[15px] border-b border-line last:border-b-0 hover:bg-surface-2">
+            <div class="row-lite flex items-center gap-3 px-3.5 py-2.5 text-[15px] border-b border-line last:border-b-0 hover:bg-surface-2">
               {% set dot_color = 'bg-accent' if job.status == 'running' else
                                 ('bg-ok'    if job.status == 'succeeded' else
                                 ('bg-bad'   if job.status == 'failed' else 'bg-text-4')) %}
@@ -469,11 +312,10 @@
               <span class="font-medium truncate">{{ job.name }}</span>
               <span class="font-mono text-[13px] text-text-3 truncate">{{ job.id }}</span>
               <span class="ml-auto text-text-3">{{ job.status }}</span>
-              <span class="text-text-3 w-6 text-right">—</span>
             </div>
           {% endfor %}
         {% else %}
-          <div class="px-4 py-8 text-center text-text-3 text-[15px]">
+          <div class="px-4 py-7 text-center text-text-3 text-[15px]">
             <strong class="block text-text font-semibold mb-1">No recent jobs</strong>
             Start a session, run preflight, or fire a diff to see job activity here.
           </div>
@@ -481,54 +323,77 @@
       </div>
     </div>
 
-    <div data-widget-id="active-env"
-         :class="{ 'hidden': hidden.includes('active-env'), 'sc-hover-glow': hoveredId === 'active-env' }"
-         class="flex-[1_1_0] min-w-0 bg-surface border border-line rounded-lg overflow-hidden">
-      <div class="flex items-center px-4 py-3 border-b border-line">
-        <h3 class="m-0 text-[15px] font-semibold">Active environment</h3>
-        <div class="ml-auto inline-flex gap-1.5 items-center">
-          {% if active_env %}<span class="chip ok"><span class="dot"></span> Active</span>{% endif %}
-        </div>
-      </div>
-      <div class="px-4 py-3.5">
-        {% if active_env %}
-          <div class="flex items-center gap-2.5 text-[16px] font-medium mb-2">
-            <span class="inline-grid place-items-center w-7 h-7 rounded-md bg-accent-soft text-accent border border-line text-[14px] font-semibold">
-              {{ active_env.name[0]|upper if active_env.name else '?' }}
-            </span>
-            <span>{{ active_env.name }}</span>
-          </div>
-          {% if active_env.platform_uri %}
-            <div class="flex items-center gap-1.5 text-text-2 text-[14px] font-mono mb-2.5">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="shrink-0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <span class="truncate">{{ active_env.platform_uri }}</span>
-            </div>
-          {% endif %}
-          <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-[14px] text-text-3 mb-3.5">
-            <span><span class="text-text-4 mr-1">tier</span><span class="font-mono text-text-2">{{ active_env.tier or tier }}</span></span>
-            {% if active_env.deployment_mode %}
-              <span><span class="text-text-4 mr-1">mode</span><span class="font-mono text-text-2">{{ active_env.deployment_mode }}</span></span>
-            {% endif %}
-            <span><span class="text-text-4 mr-1">cred</span><span class="font-mono text-text-2">{{ active_env.credential_backend or 'keyring' }}</span></span>
-          </div>
-          <div class="flex gap-1.5">
-            <a class="btn sm" href="/environments/{{ active_env.name }}">Inspect</a>
-            <a class="btn sm" href="/environments">Switch</a>
-          </div>
-        {% else %}
-          <div class="py-4 text-center text-text-3 text-[15px]">
-            <strong class="block text-text font-semibold mb-1">No active environment</strong>
-            <a href="/environments" class="text-accent hover:text-accent-hover">Create one →</a>
-          </div>
-        {% endif %}
-      </div>
+  </section>
+
+  <aside class="dossier-card min-w-0">
+    <div class="dossier-head">
+      <h2 class="dossier-title">Status</h2>
     </div>
 
-  </section>
+    {% if active_session %}
+    {% set _capturing = active_session.status == 'running' or (active_session.capture_completed is sameas false) %}
+    <div data-widget-id="active-session" class="dossier-zone{% if _capturing %} sc-capture-pulse{% endif %}"
+         :class="{ 'hidden': hidden.includes('active-session'), 'sc-hover-glow': hoveredId === 'active-session' }">
+      <div class="dossier-subhead m-0" style="color: var(--accent);">Active session</div>
+      <div class="flex items-center gap-2 mb-2.5">
+        <span class="text-[16px] font-medium tracking-[-0.01em] truncate">{{ active_session.name or 'unnamed' }}</span>
+        <span class="chip run shrink-0"><span class="dot"></span>Live</span>
+      </div>
+      <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-text-3 text-[13px] mb-3.5">
+        {% for key, val in [('env', active_session.environment), ('ruleset', active_session.ruleset), ('tier', active_session.tier)] %}
+          {% if val %}
+            <span><span class="text-text-4 mr-1">{{ key }}</span><span class="font-mono text-text-2">{{ val }}</span></span>
+          {% endif %}
+        {% endfor %}
+      </div>
+      <a class="btn primary w-full justify-center" href="/sessions/{{ active_session.name }}">Open session</a>
+    </div>
+    {% endif %}
+
+    <div data-widget-id="active-env" class="dossier-zone"
+         :class="{ 'hidden': hidden.includes('active-env'), 'sc-hover-glow': hoveredId === 'active-env'{% if active_session %}, 'dossier-zone--divided': !hidden.includes('active-session'){% endif %} }">
+      <div class="flex items-center mb-2.5">
+        <span class="dossier-subhead m-0">Active environment</span>
+        {% if active_env %}<span class="chip ok ml-auto"><span class="dot"></span> Active</span>{% endif %}
+      </div>
+      {% if active_env %}
+        <div class="flex items-center gap-2.5 text-[16px] font-medium mb-2">
+          <span class="inline-grid place-items-center w-7 h-7 rounded-md bg-accent-soft text-accent border border-line text-[14px] font-semibold">
+            {{ active_env.name[0]|upper if active_env.name else '?' }}
+          </span>
+          <span>{{ active_env.name }}</span>
+        </div>
+        {% if active_env.platform_uri %}
+          <div class="flex items-center gap-1.5 text-text-2 text-[14px] font-mono mb-2.5">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="shrink-0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span class="truncate">{{ active_env.platform_uri }}</span>
+          </div>
+        {% endif %}
+        <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-[14px] text-text-3 mb-3.5">
+          <span><span class="text-text-4 mr-1">tier</span><span class="font-mono text-text-2">{{ active_env.tier or tier }}</span></span>
+          {% if active_env.deployment_mode %}
+            <span><span class="text-text-4 mr-1">mode</span><span class="font-mono text-text-2">{{ active_env.deployment_mode }}</span></span>
+          {% endif %}
+          <span><span class="text-text-4 mr-1">cred</span><span class="font-mono text-text-2">{{ active_env.credential_backend or 'keyring' }}</span></span>
+        </div>
+        <div class="flex gap-1.5">
+          <a class="btn sm" href="/environments/{{ active_env.name }}">Inspect</a>
+          <a class="btn sm" href="/environments">Switch</a>
+        </div>
+      {% else %}
+        <div class="py-4 text-center text-text-3 text-[15px]">
+          <strong class="block text-text font-semibold mb-1">No active environment</strong>
+          <a href="/environments" class="text-accent hover:text-accent-hover">Create one →</a>
+        </div>
+      {% endif %}
+    </div>
+
+  </aside>
+
+</div>
 
 </div> {# /x-data="dashboardEditor" #}
 
-<div class="footnote mt-3">platform-atlas · webui · htmx · fastapi</div>
 
 <script>
   // ── Dashboard customization — show/hide cards only ────────────────
@@ -539,8 +404,16 @@
   // v4: "Recent jobs" and "Active environment" are hidden by default —
   //     the power-user bottom pair; users can re-enable them via the
   //     Customize panel. Reset restores the defaults (not "show all").
-  const ATLAS_DASH_KEY = 'atlas-dashboard-visibility-v4';
-  const ATLAS_DASH_DEFAULT_HIDDEN = ['recent-jobs', 'active-env'];
+  //
+  // One `x-data="dashboardEditor"` wraps the whole page body (masthead
+  // ledger + both dossier cards) — see the comment above the masthead.
+  // Do not split it across multiple x-data scopes: Alpine.data() creates
+  // an independent reactive object per invocation, so `hidden` wouldn't
+  // stay in sync between them.
+  // `var`, not `const`: hx-boost re-executes this inline script on every
+  // visit to the dashboard, and a top-level `const` redeclaration throws.
+  var ATLAS_DASH_KEY = 'atlas-dashboard-visibility-v4';
+  var ATLAS_DASH_DEFAULT_HIDDEN = ['recent-jobs', 'active-env'];
 
   function _atlasRegisterDashboard() {
     if (!window.Alpine || typeof window.Alpine.data !== 'function') return;
@@ -552,11 +425,11 @@
       // for already-hidden widgets so we don't try to glow nothing.
       hoveredId: null,
       widgets: [
-        { id: 'kpi-sessions',     label: 'Sessions tile',         present: true,                                                conditional: false },
-        { id: 'kpi-environments', label: 'Environments tile',     present: true,                                                conditional: false },
-        { id: 'kpi-rules',        label: 'Active rules tile',     present: true,                                                conditional: false },
-        { id: 'kpi-jobs',         label: 'Running jobs tile',     present: true,                                                conditional: false },
-        { id: 'active-session',   label: 'Active session card',   present: {% if active_session %}true{% else %}false{% endif %}, conditional: true  },
+        { id: 'kpi-sessions',     label: 'Sessions stat',         present: true,                                                conditional: false },
+        { id: 'kpi-environments', label: 'Environments stat',     present: true,                                                conditional: false },
+        { id: 'kpi-rules',        label: 'Active rules stat',     present: true,                                                conditional: false },
+        { id: 'kpi-jobs',         label: 'Running jobs stat',     present: true,                                                conditional: false },
+        { id: 'active-session',   label: 'Active session',        present: {% if active_session %}true{% else %}false{% endif %}, conditional: true  },
         { id: 'calendar',         label: 'Activity calendar',     present: true,                                                conditional: false },
         { id: 'recent-jobs',      label: 'Recent jobs',           present: true,                                                conditional: false },
         { id: 'active-env',       label: 'Active environment',    present: true,                                                conditional: false },

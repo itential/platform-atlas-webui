@@ -1,22 +1,17 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}New session — Platform Atlas{% endblock %}
 {% block crumb %}<a href="/sessions" class="text-inherit hover:text-accent">Sessions</a> <span class="sep">›</span> New{% endblock %}
 {% block content %}
 {% set is_std = active_tier == 'standard' %}
 {% set has_rulesets = rulesets | length > 0 %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6 pl-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Create</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">New session</h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Sessions bind an environment, ruleset, profile, and tier at creation time — these cannot be changed after the session is created.
-    </p>
-  </div>
-  <div class="flex items-center gap-2">
+<div class="pl-6">
+  {% call page_header("New session",
+      subtitle="Sessions bind an environment, ruleset, profile, and tier at creation time — these cannot be changed after the session is created.") %}
     <a class="btn" href="/sessions">Cancel</a>
-  </div>
-</header>
+  {% endcall %}
+</div>
 
 {% if not has_rulesets %}
 <div class="ml-6 mb-[18px] px-4 py-3 bg-surface-2 border rounded-lg text-[15px] text-text-2"
@@ -109,16 +104,16 @@
           <label>Tier</label>
           <div class="flex items-center gap-2.5 px-2.5 py-1.5 bg-surface-2 border border-line rounded-md">
             {% if is_std %}
-              <span class="w-2 h-2 rounded-full shrink-0" style="background:oklch(60% 0.18 220);"></span>
-              <span class="text-[15px] font-medium" style="color:oklch(60% 0.18 220);">Standard</span>
+              <span class="w-2 h-2 rounded-full shrink-0" style="background:var(--tier-standard);"></span>
+              <span class="text-[15px] font-medium" style="color:var(--tier-standard);">Standard</span>
               <span class="text-[14px] text-text-3">— application audit (Platform OAuth + IAG4)</span>
             {% elif active_tier == 'saas' %}
-              <span class="w-2 h-2 rounded-full shrink-0" style="background:oklch(55% 0.2 340);"></span>
-              <span class="text-[15px] font-medium" style="color:oklch(55% 0.2 340);">SaaS</span>
+              <span class="w-2 h-2 rounded-full shrink-0" style="background:var(--tier-saas);"></span>
+              <span class="text-[15px] font-medium" style="color:var(--tier-saas);">SaaS</span>
               <span class="text-[14px] text-text-3">— single Gateway audit (no Platform/MongoDB/Redis)</span>
             {% else %}
-              <span class="w-2 h-2 rounded-full shrink-0" style="background:oklch(70% 0.18 30);"></span>
-              <span class="text-[15px] font-medium" style="color:oklch(70% 0.18 30);">Extended</span>
+              <span class="w-2 h-2 rounded-full shrink-0" style="background:var(--tier-extended);"></span>
+              <span class="text-[15px] font-medium" style="color:var(--tier-extended);">Extended</span>
               <span class="text-[14px] text-text-3">— full infrastructure (SSH / MongoDB / Redis)</span>
             {% endif %}
             <a href="/tier" class="ml-auto text-[13px] text-accent no-underline whitespace-nowrap hover:text-accent-hover">Change ↗</a>

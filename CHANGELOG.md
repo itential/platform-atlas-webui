@@ -5,13 +5,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [3.0.0] - 2026-08-21
+## [3.0.0] - 2026-10-02
 
 Requires `platform-atlas >=3.0.0,<4.0`.
 
+### Added
+
+- **New Atlas MCP server for read-only, AI-assistant access to your audit data.** `platform-atlas-webui --mcp-server` starts a standalone server with its own port and start/stop/status. An MCP client such as Claude can ask about compliance, fleet-wide fixes, trends, regressions, and environment comparisons.
+- **The MCP server is read-only and secured.** Access needs a bearer token (`print-mcp-token` / `--reset-mcp-token`), captured credentials are stripped from responses, and every tool call is audit-logged. It can run as a daemon or under systemd.
+- **Architecture page auto-detect (Extended tier only).** A new "Run auto-detect" button pre-fills server specs, OS, container/VM/Kubernetes signals, SELinux, FIPS, MTU, monitoring agents, and instance counts using the CLI's read-only SSH checks. Detected values show an "Auto-detected" badge and never overwrite your answers. It works for the active environment only.
+- **New Modern theme, now the default look.** It is a dark-first navy, brass, and sky-blue palette. Fresh installs open on it, and you can change it in Settings.
+- **Pin a validation baseline from an environment's page.** A new Validation baseline card pins, changes, or clears the reference session, and the Diff page can compare any session against it. This matches the CLI's `env baseline` commands.
+- **Per-credential format check on the Credentials page.** "Check format" confirms a secret's shape (for example, a parseable URI) locally, without connecting to your infrastructure.
+
+### Changed
+
+- **SaaS environments now require Platform access, in a limited, read-only way.** The environment form and first-run setup collect Platform OAuth, with an optional gateway (Gateway 4, Gateway 5, both, or Platform-only). This matches the CLI's new SaaS audit.
+- **Redesigned the dashboard.** The welcome banner, stats, activity, and status are grouped into a few panels instead of many boxes.
+- **Reduced the theme list to four: Modern, Itential, Obsidian, and Carbon.** Settings that used Aurora, Horizon, Meadow, or Dracula now open on Modern.
+- **The Credentials page and the Extended-tier setup walkthrough now share one secret editor.** Setting, editing, and removing credentials works the same on both, with one shared Vault form.
+- **The Credentials page now says where each backend is chosen.** It links to the environment form and names the active store (OS keyring or encrypted file).
+- **Tier switching uses the standard confirmation.** Each tier card has an inline "what changes" explainer.
+- **First-run onboarding opens on the Modern theme in dark mode.**
+
+### Fixed
+
+- **Validate, Report, Diff, and JSON export now work with the CLI's JSON validation storage.** Without this, they would fail against a 3.0.0 CLI.
+- **Viewing a report for a pre-3.0.0 session now explains what to do.** It tells you to re-run validate and report, instead of showing a bare 404.
+- **The Credentials page no longer shows every secret as "missing" when the OS keyring is locked.** It reports the keyring as locked and lets you unlock it.
+- **First-run `/setup` and the Vault check now require the launch login link.** `--allow-remote` is refused until setup is complete.
+- **"Clean stale sockets" now removes only real sockets**, not any file at the socket path.
+- **The audit log now redacts secret-looking fields** instead of storing SSH, Vault, and Gateway4 secrets in plaintext.
+- **Saved architecture answers can no longer break out of the page's script block.**
+- **The credential format check now escapes parts of stored URIs.**
+- **A non-ASCII MCP bearer token now returns 401 instead of 500.**
+- **A timed-out job no longer keeps running while showing as failed.** Only one job runs at a time, and a second submit gets a 409.
+
 ### Removed
 
-- **Dropped support for legacy IAP 2023.x deployments.** Itential's support window for 2023.x closes in the coming weeks and no Atlas environments run against it today, so the "Legacy" field on the environment form and all 2023.x-aware ruleset/profile filtering are gone.
+- **Dropped support for legacy IAP 2023.x deployments.** The "Legacy" environment field and 2023.x ruleset/profile filtering are gone.
 
 ---
 

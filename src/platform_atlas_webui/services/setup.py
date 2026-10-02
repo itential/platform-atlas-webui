@@ -76,13 +76,14 @@ def required_keys_for_tier(
     from platform_atlas.core.credentials import CredentialKey
 
     items: list[dict[str, Any]] = []
-    if (tier or "").lower() != "saas":
-        items.append({
-            "key": CredentialKey.PLATFORM_SECRET.value,
-            "label": CredentialKey.PLATFORM_SECRET.display_name,
-            "required": True,
-            "tier": "both",
-        })
+    # Every tier now anchors on the Platform, including SaaS (Platform OAuth is
+    # required; SaaS just uses it for a limited adapter/application check set).
+    items.append({
+        "key": CredentialKey.PLATFORM_SECRET.value,
+        "label": CredentialKey.PLATFORM_SECRET.display_name,
+        "required": True,
+        "tier": "both",
+    })
     if has_gateway4:
         items.append({
             "key": CredentialKey.GATEWAY4_PASSWORD.value,
@@ -269,7 +270,8 @@ def verify_vault_connection(
 # Bootstrap
 # ─────────────────────────────────────────────────────────────────────
 
-_VALID_WEBUI_THEMES = {"aurora", "horizon", "obsidian", "meadow", "carbon", "itential", "dracula"}
+# 3.0 curated theme set — Modern (default), Itential, Obsidian, Carbon.
+_VALID_WEBUI_THEMES = {"modern", "itential", "obsidian", "carbon"}
 _VALID_WEBUI_MODES = {"light", "dark"}
 
 
@@ -341,25 +343,22 @@ def bootstrap(
             "to use as a file name (slashes or null bytes)."
         )
     if is_saas:
-        # A SaaS audit has no Platform anchor — it needs a gateway instead.
-        if saas_kind not in ("gateway4", "gateway5", "gw4-gw5"):
-            raise ValueError("A SaaS environment needs a gateway kind — Gateway 4, Gateway 5, or both.")
+        # SaaS is Platform-anchored now: Platform OAuth is required and a gateway
+        # is optional (Gateway 4, Gateway 5, both, or Platform-only). The gateway
+        # SSH/source specifics are validated by _build_saas_topology below.
+        if saas_kind and saas_kind not in ("gateway4", "gateway5", "gw4-gw5"):
+            raise ValueError(
+                "Invalid SaaS gateway choice — pick Gateway 4, Gateway 5, both, or Platform-only.")
         if saas_kind in ("gateway4", "gw4-gw5") and not gateway4_uri.strip():
             raise ValueError("A SaaS Gateway 4 environment needs the Gateway 4 API URL.")
-        if saas_kind in ("gateway5", "gw4-gw5") and (saas_gw5_source or "").strip().lower() in ("", "ssh", "conf") \
-                and not saas_iag_host.strip():
-            raise ValueError(
-                "A SaaS Gateway 5 environment needs a source — an SSH host (for printenv "
-                "or the server gateway.conf), or a Docker Compose / Helm values file path."
-            )
-    else:
-        if not platform_uri.strip():
-            raise ValueError("Platform URI is required")
-        if not platform_client_id.strip():
-            raise ValueError("Platform OAuth client ID is required")
+    # Platform OAuth is the anchor for every tier, SaaS included.
+    if not platform_uri.strip():
+        raise ValueError("Platform URI is required")
+    if not platform_client_id.strip():
+        raise ValueError("Platform OAuth client ID is required")
 
     if backend_choice in ("keyring", "file"):
-        if not is_saas and not platform_client_secret:
+        if not platform_client_secret:
             raise ValueError(
                 "Platform OAuth client secret is required for the "
                 f"{'encrypted file' if backend_choice == 'file' else 'OS keyring'} backend")
@@ -434,28 +433,34 @@ def bootstrap(
     if gateway4_username.strip():
         env_data["gateway4_username"] = gateway4_username.strip()
     if is_saas:
+        # SaaS is Platform-anchored — the Platform fields stay in the overlay.
+        # The gateway is optional; saas_gateway_kind is "" for a Platform-only
+        # audit (no gateway, no deployment topology).
         env_data["saas_gateway_kind"] = saas_kind
-        # SaaS envs have no Platform fields at all — keep them out of the overlay.
-        env_data.pop("platform_uri", None)
-        env_data.pop("platform_client_id", None)
-        # gateway_only topology (None for an API-only GW4 audit — its single
-        # ipsdk target is synthesized from gateway4_uri at capture time).
-        from platform_atlas_webui.services.environments import _build_saas_topology
-        saas_topology = _build_saas_topology({
-            "saas_gateway_kind": saas_kind,
-            "saas_gw4_ssh": "1" if saas_gw4_ssh else "",
-            "iag_host": saas_iag_host,
-            "ssh_user": saas_ssh_user,
-            "ssh_port": saas_ssh_port,
-            "ssh_key": saas_ssh_key,
-            "gateway5_source": saas_gw5_source,
-            "gateway5_source_path": saas_gw5_source_path,
-            "gateway5_conf_path": saas_gw5_conf_path,
-        })
-        if saas_topology is not None:
-            env_data["deployment"] = saas_topology
-        if saas_ssh_key.strip():
-            env_data["ssh_key"] = saas_ssh_key.strip()
+        if saas_kind in ("gateway4", "gateway5", "gw4-gw5"):
+            # Gateway SSH only ever targets the gateway server(s). GW4 is always
+            # audited over SSH in addition to its REST API; GW5 over SSH or a
+            # local Compose/Helm file.
+            from platform_atlas_webui.services.environments import _build_saas_topology
+            saas_topology = _build_saas_topology({
+                "saas_gateway_kind": saas_kind,
+                "saas_gw4_ssh": "1" if saas_gw4_ssh else "",
+                "iag_host": saas_iag_host,
+                "ssh_user": saas_ssh_user,
+                "ssh_port": saas_ssh_port,
+                "ssh_key": saas_ssh_key,
+                "gateway5_source": saas_gw5_source,
+                "gateway5_source_path": saas_gw5_source_path,
+                "gateway5_conf_path": saas_gw5_conf_path,
+                # The first-run wizard collects a single gateway SSH host, so for
+                # a GW4+GW5 pair the GW5 server reuses it. Separate hosts can be
+                # set later on the environment edit page.
+                "saas_gw5_same_host": "1",
+            })
+            if saas_topology is not None:
+                env_data["deployment"] = saas_topology
+            if saas_ssh_key.strip():
+                env_data["ssh_key"] = saas_ssh_key.strip()
 
     # Extended-tier topology (deployment / SSH / Mongo / Redis / IAG5)
     # is owned by /environments/{name}/edit. The wizard hands Extended
@@ -484,9 +489,9 @@ def bootstrap(
             # the current config). No auto-anything.
             substrate = FileSecretStore() if backend_choice == "file" else KeyringSecretStore()
             svc = scoped_service_name(environment.name)
-            if not is_saas:
-                substrate.set(svc, CredentialKey.PLATFORM_SECRET.value, platform_client_secret)
-                cred_summary["platform_secret"] = "stored"
+            # Platform secret is stored for every tier now — SaaS included.
+            substrate.set(svc, CredentialKey.PLATFORM_SECRET.value, platform_client_secret)
+            cred_summary["platform_secret"] = "stored"
             if gateway4_password:
                 substrate.set(svc, CredentialKey.GATEWAY4_PASSWORD.value, gateway4_password)
                 cred_summary["gateway4_password"] = "stored"

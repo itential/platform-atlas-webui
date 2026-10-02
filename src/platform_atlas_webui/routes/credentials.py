@@ -77,14 +77,28 @@ def _secret_store_info() -> dict:
     ``health`` is ``"ok" | "empty" | "unreadable"`` for the file store, else
     ``None``.
     """
-    info: dict = {"is_file": False, "label": "OS Keyring", "health": None}
+    info: dict = {"is_file": False, "label": "OS Keyring", "health": None, "locked": False}
     try:
-        from platform_atlas.core.credentials import active_secret_store, FileSecretStore
+        from platform_atlas.core.credentials import (
+            KeyringSecretStore,
+            active_secret_store,
+            keyring_is_locked,
+            FileSecretStore,
+        )
         store = active_secret_store()
         info["label"] = store.display_name
         info["is_file"] = bool(getattr(store, "is_file", False))
         if isinstance(store, FileSecretStore):
             info["health"] = store.health().value
+        elif isinstance(store, KeyringSecretStore):
+            # A password-protected file keyring (e.g. the documented
+            # keyrings.alt.file.EncryptedKeyring headless workaround) needs
+            # its password before ANYTHING can be read from it — including
+            # Vault's own connection settings, when Vault's local substrate
+            # is the OS keyring. The WebUI has no TTY, so this can only be
+            # unlocked through the explicit /unlock endpoint below; never
+            # silently treated as "missing."
+            info["locked"] = keyring_is_locked()
     except Exception:  # noqa: BLE001 — a display helper must never break the page
         pass
     return info
@@ -131,6 +145,7 @@ def _load_credential_status() -> dict:
     result["store_is_file"] = _ss["is_file"]
     result["store_label"] = _ss["label"]
     result["store_health"] = _ss["health"]
+    result["keyring_locked"] = _ss["locked"]
 
     # Ordered list of all credentials with their metadata
     _required_now = required_keys(tier)
@@ -138,7 +153,7 @@ def _load_credential_status() -> dict:
         {
             "key": CredentialKey.PLATFORM_SECRET,
             "required": CredentialKey.PLATFORM_SECRET in _required_now,
-            "tier_note": "Standard & Extended — never used in SaaS",
+            "tier_note": "all tiers — required (Platform OAuth)",
             "extended_only": False,
             "description": "OAuth client secret for authenticating with IAP.",
         },
@@ -171,6 +186,27 @@ def _load_credential_status() -> dict:
             "description": "Passphrase for the SSH private key used in SSH captures.",
         },
     ]
+
+    if result["keyring_locked"]:
+        # The OS keyring needs its password before ANYTHING can be read from
+        # it — including Vault's own connection settings, when Vault's local
+        # substrate is the keyring. Constructing CredentialStore below would
+        # otherwise surface a confusing "Vault URL not found" (Layer B reads
+        # through the same locked store). Report the honest state instead;
+        # the unlock endpoint is what actually resolves this.
+        for m in key_meta:
+            unavailable = m["key"] not in applicable_keys(tier)
+            result["credentials"].append({
+                "key": m["key"].value,
+                "display": m["key"].display_name,
+                "present": None,
+                "required": m["required"],
+                "extended_only": m["extended_only"],
+                "unavailable": unavailable,
+                "tier_note": m["tier_note"],
+                "description": m["description"],
+            })
+        return result
 
     try:
         bt = CredentialBackendType(backend_type)
@@ -294,6 +330,36 @@ async def view_credentials(
     return response
 
 
+@router.post("/unlock")
+async def unlock_keyring(password: str = Form(...)):
+    """Unlock a password-protected file keyring (e.g. keyrings.alt.file.
+
+    EncryptedKeyring) with a password submitted from the browser.
+
+    The WebUI has no TTY, so it can never call ``getpass()`` — this is the
+    only way it can supply the keyring's password. On success the backend
+    stays unlocked in-process (same in-memory caching the library already
+    does after a correct interactive password) until this server process
+    restarts; every request after this one reuses it with no further prompt.
+    """
+    from urllib.parse import quote
+    from platform_atlas.core.credentials import unlock_keyring as _unlock
+
+    if not password:
+        return RedirectResponse(
+            url="/config/credentials?error=Enter+the+keyring+password",
+            status_code=303,
+        )
+
+    if _unlock(password):
+        return RedirectResponse(url="/config/credentials?saved=Keyring+unlocked", status_code=303)
+
+    return RedirectResponse(
+        url=f"/config/credentials?error={quote('Incorrect keyring password.')}",
+        status_code=303,
+    )
+
+
 @router.post("/set")
 async def set_credential(
     key: str = Form(...),
@@ -339,6 +405,81 @@ async def set_credential(
         url=f"/config/credentials?saved={quote(ck.display_name)}",
         status_code=303,
     )
+
+
+def _format_check(key: str, value: str) -> tuple[bool, str]:
+    """Validate a credential's *shape* only — never opens a network connection.
+
+    Returns ``(ok, message_html)``. The message is a tiny HTML fragment safe to
+    swap into the row's ``.ce-check-result`` div. We deliberately never echo the
+    secret itself: for URIs we surface host + query facts; for opaque secrets we
+    surface only a character count.
+    """
+    from urllib.parse import urlsplit, parse_qs
+
+    from markupsafe import escape as _esc
+
+    v = (value or "").strip()
+    if not v:
+        return False, '<span class="muted">Nothing stored for this key.</span>'
+
+    if key in ("mongo_uri", "redis_uri"):
+        try:
+            parts = urlsplit(v)
+        except Exception:  # noqa: BLE001
+            return False, '<span class="bad">✗ Not a parseable URI.</span>'
+        expected_schemes = (
+            ("mongodb", "mongodb+srv") if key == "mongo_uri" else ("redis", "rediss")
+        )
+        if parts.scheme not in expected_schemes:
+            want = " or ".join(expected_schemes)
+            return False, (
+                f'<span class="bad">✗ Scheme <code>{_esc(parts.scheme) if parts.scheme else "—"}</code> '
+                f'is not {want}.</span>'
+            )
+        if not parts.hostname:
+            return False, '<span class="bad">✗ No host in the URI.</span>'
+        bits = ['<span class="ok">✓ valid URI</span>',
+                f'host <code>{_esc(parts.hostname)}</code>']
+        if key == "mongo_uri":
+            qs = parse_qs(parts.query)
+            has_creds = bool(parts.username)
+            if has_creds and "authSource" not in qs:
+                return False, (
+                    '<span class="bad">✗ credentials present but no '
+                    '<code>authSource</code></span> — MongoDB may reject the '
+                    'login. Append <code>?authSource=admin</code>.'
+                )
+            if "authSource" in qs:
+                bits.append(f'authSource <code>{_esc(qs["authSource"][0])}</code>')
+        return True, " · ".join(bits)
+
+    # Opaque secrets — presence + a character count, never the value.
+    return True, f'<span class="ok">✓ stored</span> <span class="muted">({len(v)} chars)</span>'
+
+
+@router.post("/check-format", response_class=HTMLResponse)
+async def check_credential_format(key: str = Form(...)):
+    """Format/presence check of a *stored* credential. No network connection.
+
+    Reads the value straight from the active backend and validates its shape,
+    returning a small HTML fragment for an htmx swap. Purely local — this never
+    connects to MongoDB, Redis, Vault targets, or the Platform.
+    """
+    from platform_atlas.core.credentials import CredentialKey
+
+    valid_keys = {ck.value: ck for ck in CredentialKey}
+    if key not in valid_keys:
+        return HTMLResponse('<span class="bad">✗ Unknown credential key.</span>')
+    try:
+        store = _make_fresh_store()
+        value = store._backend.get(key)  # noqa: SLF001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Credential format-check failed for %s: %s", key, exc)
+        return HTMLResponse('<span class="muted">Could not read the stored value.</span>')
+
+    _ok, msg = _format_check(key, value or "")
+    return HTMLResponse(msg)
 
 
 @router.post("/delete")

@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
+{% from "partials/_severity.html" import severity_chip %}
 {% block title %}Fleet — Platform Atlas{% endblock %}
 {% block crumb %}Fleet{% endblock %}
 {% block content %}
@@ -12,114 +14,63 @@
   {% endif %}
 {%- endmacro %}
 
-{% macro pass_rate(pct) -%}
-  {% if pct is none %}<span style="color:var(--text-4);">—</span>
-  {% elif pct >= 95 %}<span style="color:var(--ok); font-weight:600;">{{ '%.1f' | format(pct) }}%</span>
-  {% elif pct >= 80 %}<span style="color:var(--warn); font-weight:600;">{{ '%.1f' | format(pct) }}%</span>
-  {% else %}<span style="color:var(--bad); font-weight:600;">{{ '%.1f' | format(pct) }}%</span>
-  {% endif %}
-{%- endmacro %}
-
-{% macro severity_chip(sev) -%}
-  {% if not sev %}<span style="color:var(--text-4);">—</span>
-  {% elif sev == 'critical' or sev == 'high' %}<span class="chip" style="background: color-mix(in oklch, var(--bad) 14%, transparent); border-color: color-mix(in oklch, var(--bad) 40%, transparent); color:var(--text);"><span class="dot" style="background:var(--bad);"></span>{{ sev }}</span>
-  {% elif sev == 'warning' or sev == 'medium' %}<span class="chip" style="background: color-mix(in oklch, var(--warn) 14%, transparent); border-color: color-mix(in oklch, var(--warn) 40%, transparent); color:var(--text);"><span class="dot" style="background:var(--warn);"></span>{{ sev }}</span>
-  {% else %}<span class="chip"><span class="dot"></span>{{ sev }}</span>
-  {% endif %}
-{%- endmacro %}
-
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Fleet overview</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">Compliance at a glance</h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Local-cache snapshot of every configured environment — last session age, pass rate, continuous-audit
-      state, and unacked alerts. Read-only; this page never triggers a capture.
-    </p>
-  </div>
-  <div class="flex items-center gap-2">
-    <a class="btn" href="/fleet/data.json">JSON</a>
-    <a class="btn primary" href="/environments">Manage environments →</a>
-  </div>
-</header>
+{% call page_header("Compliance at a glance",
+    subtitle="Local-cache snapshot of every configured environment — last session age, pass rate, continuous-audit state, and unacked alerts. Read-only; this page never triggers a capture.",
+    meta=[(fleet|default([])|length) ~ ' environments']) %}
+  <a class="btn" href="/fleet/data.json">JSON</a>
+  <a class="btn primary" href="/environments">Manage environments →</a>
+{% endcall %}
 
 {% if not fleet %}
-  <section class="card">
-    <div class="card-body">
-      <div class="empty" style="border:0; padding:32px 24px;">
-        <strong>No environments configured</strong>
-        <span style="color:var(--text-3);">
-          The fleet view aggregates per-environment local state. Create an environment to see it here.
-        </span>
-        <div style="margin-top:12px;"><a class="btn primary" href="/environments/new">Create environment</a></div>
-      </div>
-    </div>
+  <section class="flex flex-col items-center justify-center py-12 px-6 text-center bg-surface border border-line rounded-lg">
+    <strong class="mb-1.5">No environments configured</strong>
+    <span class="text-text-3 max-w-[440px]">
+      The fleet view aggregates per-environment local state. Create an environment to see it here.
+    </span>
+    <div class="mt-4"><a class="btn primary" href="/environments/new">Create environment</a></div>
   </section>
 {% else %}
 
-<section class="metrics" data-cascade>
-  <div class="tile-wrap">
-    <div class="tile">
-      <div class="tile-head"><span>Environments</span></div>
-      <div class="tile-value">
-        <span class="num">{{ fleet_summary.total_envs }}</span>
-        <span class="delta">{{ fleet_summary.envs_with_sessions }} audited</span>
-      </div>
-      <div class="tile-foot">
-        <span style="color:var(--text-3);">Across all configured</span>
-      </div>
-    </div>
+<div class="stat-strip">
+  <div class="stat-strip-item">
+    <svg class="stat-strip-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="1.5"/><rect x="2" y="14" width="20" height="7" rx="1.5"/></svg>
+    <span class="stat-strip-num">{{ fleet_summary.total_envs }}</span>
+    <span class="stat-strip-label">Environments</span>
+    <span class="stat-strip-hint">{{ fleet_summary.envs_with_sessions }} audited</span>
   </div>
 
-  <div class="tile-wrap">
-    <div class="tile">
-      <div class="tile-head"><span>Continuous audit</span></div>
-      <div class="tile-value">
-        <span class="num">{{ fleet_summary.continuous_enabled_envs }}</span>
-        <span class="delta">/ {{ fleet_summary.total_envs }}</span>
-      </div>
-      <div class="tile-foot">
-        <span style="color:var(--text-3);">Enabled environments</span>
-      </div>
-    </div>
+  <div class="stat-strip-item">
+    <svg class="stat-strip-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    <span class="stat-strip-num">{{ fleet_summary.continuous_enabled_envs }}<span style="font-size:.5em; color:var(--text-3);"> / {{ fleet_summary.total_envs }}</span></span>
+    <span class="stat-strip-label">Continuous audit</span>
+    <span class="stat-strip-hint">Enabled environments</span>
   </div>
 
-  <div class="tile-wrap">
-    <div class="tile">
-      <div class="tile-head"><span>Fleet pass rate</span></div>
-      <div class="tile-value">
-        <span class="num">
-          {% if fleet_summary.fleet_pass_rate_pct is not none %}
-            {{ '%.1f' | format(fleet_summary.fleet_pass_rate_pct) }}<span style="font-size:.5em; color:var(--text-3); margin-left:2px;">%</span>
-          {% else %}—{% endif %}
-        </span>
-      </div>
-      <div class="tile-foot">
-        <span style="color:var(--text-3);">Weighted across validated sessions</span>
-      </div>
-    </div>
+  <div class="stat-strip-item">
+    <svg class="stat-strip-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+    <span class="stat-strip-num">
+      {% if fleet_summary.fleet_pass_rate_pct is not none %}
+        {{ '%.1f' | format(fleet_summary.fleet_pass_rate_pct) }}<span style="font-size:.5em; color:var(--text-3);">%</span>
+      {% else %}—{% endif %}
+    </span>
+    <span class="stat-strip-label">Fleet pass rate</span>
+    <span class="stat-strip-hint">Weighted across validated sessions</span>
   </div>
 
-  <div class="tile-wrap">
-    <div class="tile">
-      <div class="tile-head"><span>Unacked drift</span></div>
-      <div class="tile-value">
-        <span class="num">{{ fleet_summary.total_unacked_alerts }}</span>
-        {% if fleet_summary.worst_unacked_severity %}
-          <span class="delta">worst: {{ fleet_summary.worst_unacked_severity }}</span>
-        {% endif %}
-      </div>
-      <div class="tile-foot">
-        <span style="color:var(--text-3);">Across the fleet</span>
-      </div>
-    </div>
+  <div class="stat-strip-item">
+    <svg class="stat-strip-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 16.5h.01"/><path d="M10.3 4.5L2.7 18a2 2 0 001.7 3h15.2a2 2 0 001.7-3L13.7 4.5a2 2 0 00-3.4 0z"/></svg>
+    <span class="stat-strip-num">{{ fleet_summary.total_unacked_alerts }}</span>
+    <span class="stat-strip-label">Unacked drift</span>
+    {% if fleet_summary.worst_unacked_severity %}
+      <span class="stat-strip-hint">worst: {{ fleet_summary.worst_unacked_severity }}</span>
+    {% endif %}
   </div>
-</section>
+</div>
 
-<section style="margin-top:18px;">
-  <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px;">
-    <h3 style="margin:0; font-size:17px; font-weight:700;">Environments</h3>
-    <span class="footnote" style="margin:0;">Sorted: stale + critical first · click a tile to drill in</span>
+<section class="mt-6">
+  <div class="flex items-baseline justify-between mb-3.5">
+    <h3 class="text-[15px] font-semibold m-0">Environments</h3>
+    <span class="footnote m-0">Sorted: stale + critical first · click a tile to drill in</span>
   </div>
   <div class="fleet-wall">
     {% for entry in fleet %}
@@ -182,7 +133,7 @@
   </div>
 </section>
 
-<p style="color:var(--text-4); font-size:13px; margin-top:14px; text-align:center;">
+<p class="text-text-4 text-[13px] mt-3.5 text-center">
   Snapshot · {{ fleet_summary.last_activity_at or 'no activity yet' }}
 </p>
 

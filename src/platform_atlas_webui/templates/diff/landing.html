@@ -1,20 +1,11 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Diff — Platform Atlas{% endblock %}
 {% block crumb %}Diff{% endblock %}
 {% block content %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Audit</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
-      Compare sessions, <em class="not-italic text-accent">side-by-side</em>
-    </h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Pick a baseline and a latest session. Both must have completed validation. The diff
-      classifies changes (added / removed / changed) and flags cross-tier comparisons.
-    </p>
-  </div>
-</header>
+{{ page_header("Compare sessions",
+    subtitle="Pick a baseline and a latest session. Both must have completed validation. The diff classifies changes (added / removed / changed) and flags cross-tier comparisons.") }}
 
 {% if not sessions %}
   <section class="flex flex-col items-center justify-center py-12 px-6 text-center bg-surface border border-line rounded-lg">
@@ -28,6 +19,40 @@
     </div>
   </section>
 {% else %}
+  {% if active_baseline %}
+  <section class="card mb-[22px]">
+    <div class="card-head">
+      <h3>Compare against baseline</h3>
+      <span class="sub">{{ active_env }}</span>
+      <div class="right">
+        <a class="baseline-change-link" href="/environments/{{ active_env }}#validation-baseline">Change baseline</a>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="baseline-hero">
+        <div class="baseline-hero-info">
+          <div class="baseline-hero-label">Baseline</div>
+          <div class="baseline-hero-name">{{ active_baseline.source_session }}</div>
+          <div class="baseline-hero-date">Pinned {{ active_baseline.set_at[:10] if active_baseline.set_at else '—' }}</div>
+        </div>
+        <form class="baseline-hero-form" method="get" action="/diff/render" target="_blank">
+          <input type="hidden" name="use_baseline" value="1">
+          <label for="baseline-latest">Compare against</label>
+          <div class="baseline-hero-controls">
+            <select id="baseline-latest" name="latest" required>
+              <option value="" disabled selected>— Pick a session —</option>
+              {% for s in active_env_sessions %}
+                <option value="{{ s.name }}">{{ s.name }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn primary">Compare ↗</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
   <section class="card">
     <div class="card-head">
       <h3>Pick two sessions</h3>

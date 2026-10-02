@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import ipaddress
 import os
 import socket
 import stat
@@ -26,8 +27,15 @@ def _enforce_600(path: Path) -> None:
         path.chmod(0o600)
 
 
-def _generate_cert() -> None:
-    """Generate a self-signed RSA-2048 cert+key and write them to ~/.atlas/."""
+def _generate_cert(extra_sans: set[str] | None = None) -> None:
+    """Generate a self-signed RSA-2048 cert+key and write them to ~/.atlas/.
+
+    ``extra_sans`` adds hostnames/IPs beyond the always-included loopback
+    set — needed because the same cert is shared between the browser UI
+    (loopback by default) and the MCP server (routinely bound to a LAN IP
+    for Gateway5 to reach). Each value is tried as an IP literal first,
+    falling back to a DNS name.
+    """
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
@@ -41,9 +49,20 @@ def _generate_cert() -> None:
 
     san_entries: list[x509.GeneralName] = [
         x509.DNSName("localhost"),
-        x509.IPAddress(__import__("ipaddress").ip_address("127.0.0.1")),
-        x509.IPAddress(__import__("ipaddress").ip_address("::1")),
+        x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
+        x509.IPAddress(ipaddress.ip_address("::1")),
     ]
+    # Callers may pass a superset that already includes the base loopback
+    # set (e.g. ensure_cert() unions in whatever the current cert already
+    # covers) — skip those here so the cert doesn't carry duplicate entries.
+    already_covered = {"localhost", "127.0.0.1", "::1"}
+    for value in sorted(extra_sans or ()):
+        if value in already_covered:
+            continue
+        try:
+            san_entries.append(x509.IPAddress(ipaddress.ip_address(value)))
+        except ValueError:
+            san_entries.append(x509.DNSName(value))
 
     now = datetime.datetime.now(datetime.timezone.utc)
     cert = (
@@ -104,6 +123,23 @@ def _cert_expiry() -> datetime.datetime | None:
         return None
 
 
+def _existing_sans() -> set[str]:
+    """Return the SAN entries (as plain strings) baked into the on-disk cert."""
+    try:
+        from cryptography import x509
+        cert = x509.load_pem_x509_certificate(CERT_FILE.read_bytes())
+        san_ext = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        values: set[str] = set()
+        for entry in san_ext:
+            if isinstance(entry, x509.DNSName):
+                values.add(entry.value)
+            elif isinstance(entry, x509.IPAddress):
+                values.add(str(entry.value))
+        return values
+    except Exception:
+        return set()
+
+
 def _fingerprint() -> str:
     """Return the SHA-256 fingerprint of the on-disk cert as AA:BB:CC... hex."""
     der = None
@@ -118,13 +154,23 @@ def _fingerprint() -> str:
     return ":".join(digest[i:i+2] for i in range(0, len(digest), 2))
 
 
-def ensure_cert(*, reset: bool = False) -> tuple[str, bool]:
-    """Ensure a valid cert+key exist on disk.
+def ensure_cert(*, reset: bool = False, extra_sans: set[str] | None = None) -> tuple[str, bool]:
+    """Ensure a valid cert+key exist on disk, covering ``extra_sans``.
 
-    If *reset* is True, regenerate unconditionally.
+    If *reset* is True, regenerate unconditionally. Otherwise, also
+    regenerates (preserving any SANs already on the cert, unioned with
+    ``extra_sans``) whenever a requested SAN isn't already covered — e.g.
+    the first time ``--mcp-server --host 192.168.2.104`` is used, so a
+    LAN-bound server doesn't require a separate manual ``--reset-tls`` step
+    to pick up its own bind address.
+
     Returns ``(fingerprint, newly_generated)`` where ``newly_generated`` is
     True when a cert was just created (triggers the verbose console block).
     """
+    requested = {s.strip() for s in (extra_sans or ()) if s and s.strip()}
+    # Always already covered — no need to trigger a regen for these alone.
+    requested -= {"127.0.0.1", "::1", "localhost"}
+
     if reset:
         CERT_FILE.unlink(missing_ok=True)
         KEY_FILE.unlink(missing_ok=True)
@@ -132,15 +178,17 @@ def ensure_cert(*, reset: bool = False) -> tuple[str, bool]:
     newly_generated = False
 
     if not CERT_FILE.is_file() or not KEY_FILE.is_file():
-        _generate_cert()
+        _generate_cert(requested)
         newly_generated = True
     else:
-        # Tighten perms if needed, then check expiry
+        # Tighten perms if needed, then check expiry and SAN coverage.
         _enforce_600(CERT_FILE)
         _enforce_600(KEY_FILE)
         expiry = _cert_expiry()
-        if expiry is None or expiry <= datetime.datetime.now(datetime.timezone.utc):
-            _generate_cert()
+        existing = _existing_sans()
+        expired = expiry is None or expiry <= datetime.datetime.now(datetime.timezone.utc)
+        if expired or (requested - existing):
+            _generate_cert(existing | requested)
             newly_generated = True
 
     return _fingerprint(), newly_generated

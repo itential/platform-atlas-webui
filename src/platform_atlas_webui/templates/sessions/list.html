@@ -1,34 +1,31 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Sessions — Platform Atlas{% endblock %}
 {% block crumb %}Sessions{% endblock %}
 {% block content %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Audit</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">Sessions</h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Each session is a full audit run — capture data from your deployment,
-      validate it against the ruleset, and generate a report. Pick up where you left off at any time.
-    </p>
-  </div>
-  <div class="flex items-center gap-2">
-    <a class="btn primary" href="/sessions/new">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-      New session
-    </a>
-  </div>
-</header>
+{% set _total = sessions_total | default(sessions | length) %}
+
+{% call page_header("Sessions",
+    subtitle="Each session is a full audit run — capture data from your deployment, validate it against the ruleset, and generate a report. Pick up where you left off at any time.",
+    meta=[_total ~ " session" ~ ("" if _total == 1 else "s") ~ " total"] if _total else none) %}
+  <a class="btn primary" href="/sessions/new">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+    New session
+  </a>
+{% endcall %}
 
 {% if not sessions %}
-  <section class="flex flex-col items-center justify-center py-14 px-6 text-center bg-surface border border-line rounded-lg">
-    <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" class="opacity-40 mb-3.5 text-text-3"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>
+  <section class="flex flex-col items-center justify-center py-16 px-6 text-center bg-surface border border-line rounded-2xl shadow-xs">
+    <div class="w-14 h-14 rounded-full bg-surface-2 flex items-center justify-center mb-4">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="text-text-3"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>
+    </div>
     <strong class="text-[17px] mb-1.5">No sessions yet</strong>
-    <span class="text-text-3 max-w-[400px] text-[15px]">
+    <span class="text-text-3 max-w-[400px]">
       Create a session to start your first audit. Each session captures your deployment's
       current state, validates it, and produces a report you can share.
     </span>
-    <div class="mt-4">
+    <div class="mt-5">
       <a class="btn primary" href="/sessions/new">+ New session</a>
     </div>
   </section>
@@ -75,7 +72,6 @@
     </div>
   {% endif %}
 
-  {% set _total = sessions_total | default(sessions | length) %}
   {% set _page = sessions_page | default(1) %}
   {% set _per = sessions_per_page | default(20) %}
   {% set _pages = sessions_total_pages | default(1) %}
@@ -83,14 +79,28 @@
   {% set _start = ((_page - 1) * _per) + 1 if _total else 0 %}
   {% set _end = _start + (sessions | length) - 1 if sessions else 0 %}
 
-  <section class="card">
-    <div class="card-head flex items-center gap-3">
+  {% set _search_keys = [] %}
+  {% for s in sessions %}
+    {% set _ = _search_keys.append(((s.name or '') ~ ' ' ~ (s.environment or '') ~ ' ' ~ (s.ruleset_id or '')) | lower) %}
+  {% endfor %}
+
+  <section class="card overflow-hidden shadow-xs" x-data='{ q: "", keys: {{ _search_keys | tojson }} }'>
+    <div class="card-head flex items-center gap-3 flex-wrap">
       <h3 class="m-0">All sessions</h3>
       <span class="sub">
         {% if _total %}{{ _start }}–{{ _end }} of {{ _total }}{% else %}0 total{% endif %}
       </span>
+
+      <div class="relative ml-auto">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+             class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" x-model="q" placeholder="Filter this page…" aria-label="Filter sessions on this page"
+               class="h-8 pl-8 pr-3 w-[190px] text-[14px] bg-surface-2 text-text border border-line rounded-full
+                      placeholder:text-text-3 focus:outline-none focus:border-accent focus:bg-surface transition-colors">
+      </div>
+
       <form method="get" action="/sessions" id="sessions-perpage-form"
-            class="ml-auto inline-flex items-center gap-2 text-[14px] text-text-3">
+            class="inline-flex items-center gap-2 text-[14px] text-text-3">
         <label for="sessions-perpage" class="whitespace-nowrap">Show</label>
         <select id="sessions-perpage" name="per_page" onchange="this.form.submit()"
                 class="bg-surface-2 text-text border border-line rounded-md px-2 py-0.5 font-inherit">
@@ -103,161 +113,222 @@
       </form>
     </div>
 
-    {# Column headers #}
-    <div class="grid grid-cols-[8px_1fr_160px_120px_140px] gap-x-3.5 px-4 pb-2 border-b border-line">
-      <span></span>
-      <span class="text-[13px] text-text-3 font-semibold uppercase tracking-wider">Session</span>
-      <span class="text-[13px] text-text-3 font-semibold uppercase tracking-wider">Progress</span>
-      <span class="text-[13px] text-text-3 font-semibold uppercase tracking-wider">Results</span>
-      <span class="text-[13px] text-text-3 font-semibold uppercase tracking-wider text-right">Actions</span>
+    <div class="overflow-x-auto">
+      <table class="w-full border-collapse table-fixed">
+        <colgroup>
+          <col style="width:30px">
+          <col> {# Session — flexible, takes remaining space #}
+          <col style="width:136px">
+          <col style="width:96px">
+          <col style="width:132px">
+          <col style="width:210px">
+          <col style="width:90px">
+          <col style="width:104px">
+        </colgroup>
+        <thead>
+          <tr class="border-b border-line">
+            <th class="px-4 py-2"></th>
+            <th class="pr-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Session</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Environment</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Tier</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Progress</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Results</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Updated</th>
+            <th class="pl-3 pr-4 py-2 text-right text-[13px] text-text-3 font-semibold uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sessions %}
+            {% set _lk = s.tier_lock | default({}) %}
+            {% if s.status == 'running' %}{% set dot_class = 'run' %}
+            {% elif s.report_completed %}{% set dot_class = 'ok' %}
+            {% elif s.fail_count and s.fail_count > 0 %}{% set dot_class = 'fail' %}
+            {% elif s.capture_completed %}{% set dot_class = 'run' %}
+            {% else %}{% set dot_class = 'idle' %}
+            {% endif %}
+
+            <tr x-data="{ pending: false }"
+                x-show="!q || keys[{{ loop.index0 }}].includes(q.toLowerCase())"
+                :class="pending && 'bg-ok-soft transition-colors duration-150'"
+                class="border-b border-line last:border-b-0 transition-colors hover:bg-surface-2
+                       {% if s.is_active %}bg-accent-soft{% endif %}
+                       {% if _lk.locked %}opacity-[0.78]{% endif %}">
+
+              <td class="px-4 py-3 align-middle">
+                <span class="status-dot {{ dot_class }}"></span>
+              </td>
+
+              <td class="pr-3 py-3 align-middle min-w-0">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="shrink-0 inline-grid place-items-center w-7 h-7 rounded-full bg-accent-soft text-accent text-[14px] font-semibold border border-line">
+                    {{ s.name[0]|upper if s.name else '?' }}
+                  </span>
+                  <div class="min-w-0 flex items-center gap-1.5">
+                    {# Pin toggle — small inline form so hx-boost picks it up and the
+                       redirect-after-POST swaps the list without a full reload. Gold
+                       filled star when pinned, hollow grey outline when not. #}
+                    <form action="/sessions/{{ s.name }}/pin" method="post" class="inline-flex shrink-0 m-0">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button type="submit"
+                              class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-transparent border-0 cursor-pointer p-0 transition-colors
+                                     {% if s.is_pinned %}text-orange-400 hover:text-orange-300{% else %}text-text-4 hover:text-text-2{% endif %}"
+                              style="{% if s.is_pinned %}color: var(--brand-orange, #FF6633);{% endif %}"
+                              title="{% if s.is_pinned %}Unpin this session{% else %}Pin this session to the top{% endif %}"
+                              aria-label="{% if s.is_pinned %}Unpin {{ s.name }}{% else %}Pin {{ s.name }}{% endif %}">
+                        <svg width="13" height="13" viewBox="0 0 24 24"
+                             fill="{% if s.is_pinned %}currentColor{% else %}none{% endif %}"
+                             stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round" stroke-linejoin="round">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                      </button>
+                    </form>
+
+                    {% if _lk.locked %}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
+                           class="shrink-0 text-warn" title="{{ _lk.reason }} {{ _lk.fix }}"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    {% endif %}
+
+                    {% if _lk.view_blocked %}
+                      {# Tier-locked AND not complete — no <a> at all so the link doesn't tease an action that gets bounced. #}
+                      <span class="text-[15px] font-medium text-text-3 cursor-not-allowed truncate"
+                            title="{{ _lk.reason }} {{ _lk.fix }}">{{ s.name }}</span>
+                    {% else %}
+                      <a href="/sessions/{{ s.name }}" class="text-[15px] font-medium text-inherit no-underline hover:text-accent truncate">{{ s.name }}</a>
+                    {% endif %}
+                  </div>
+                </div>
+              </td>
+
+              <td class="px-3 py-3 align-middle min-w-0">
+                <div class="font-mono text-[14px] text-text-2 truncate" title="{{ s.environment or '(no environment)' }}">
+                  {{ s.environment or '(no environment)' }}
+                </div>
+              </td>
+
+              <td class="px-3 py-3 align-middle">
+                {% if s.tier == 'standard' %}
+                  <span class="chip px-1.5 py-px" style="color:var(--tier-standard); border-color:color-mix(in oklab, var(--tier-standard) 30%, transparent); background:color-mix(in oklab, var(--tier-standard) 9%, transparent);">Standard</span>
+                {% elif s.tier == 'saas' %}
+                  <span class="chip px-1.5 py-px" style="color:var(--tier-saas); border-color:color-mix(in oklab, var(--tier-saas) 30%, transparent); background:color-mix(in oklab, var(--tier-saas) 9%, transparent);">SaaS</span>
+                {% else %}
+                  <span class="chip px-1.5 py-px" style="color:var(--tier-extended); border-color:color-mix(in oklab, var(--tier-extended) 30%, transparent); background:color-mix(in oklab, var(--tier-extended) 9%, transparent);">Extended</span>
+                {% endif %}
+              </td>
+
+              {# Progress — the 3-node CAP/VAL/RPT tracker only earns its space
+                 while a session is genuinely mid-pipeline (it says WHERE you are).
+                 For the two terminal states — done, or not started — it was
+                 rendering as either three identical green checkmarks or three
+                 identical grey "1/2/3" circles on every row, adding visual noise
+                 without adding information. Collapse those two cases to one
+                 compact label instead. #}
+              {% set _all_done = s.capture_completed and s.validation_completed and s.report_completed %}
+              {% set _not_started = not s.capture_completed and s.status != 'running' %}
+              <td class="px-3 py-3 align-middle">
+                {% if _all_done %}
+                  <span class="chip ok"><span class="dot"></span>Complete</span>
+                {% elif _not_started %}
+                  <span class="chip"><span class="dot"></span>Not started</span>
+                {% else %}
+                  <div class="flex items-center gap-1.5">
+                    {% for step_label, step_done, step_active in [
+                      ('CAP', s.capture_completed,    (s.status == 'running' and not s.capture_completed)),
+                      ('VAL', s.validation_completed, (s.capture_completed and not s.validation_completed)),
+                      ('RPT', s.report_completed,     (s.validation_completed and not s.report_completed)),
+                    ] %}
+                      <span class="flex flex-col items-center gap-[3px]">
+                        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-semibold border-[1.5px]
+                          {% if step_done %}bg-ok-soft text-ok border-ok
+                          {% elif step_active %}bg-accent-soft text-accent border-accent
+                          {% else %}bg-surface-2 text-text-4 border-line{% endif %}">
+                          {% if step_done %}✓{% else %}{{ loop.index }}{% endif %}
+                        </span>
+                        <span class="text-[11px] text-text-4 tracking-wide">{{ step_label }}</span>
+                      </span>
+                      {% if not loop.last %}
+                        <span class="w-3 h-[1.5px] mb-3.5 {% if step_done or step_active %}bg-line-2{% else %}bg-line{% endif %}"></span>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </td>
+
+              {# Results — a small proportion bar (pass/fail/skip at a glance) plus
+                 real words instead of a terse "58P · 5F · 9S" string. Skip count
+                 moves into the bar's tooltip rather than always being spelled out
+                 inline, so the common case (pass, or pass+fail) stays one line and
+                 every row holds the same height. #}
+              <td class="px-3 py-3 align-middle">
+                {% if s.validation_completed and s.total_rules %}
+                  {% set _pass_pct = (s.pass_count / s.total_rules * 100) if s.total_rules else 0 %}
+                  {% set _fail_pct = (s.fail_count / s.total_rules * 100) if s.total_rules else 0 %}
+                  {% set _skip_pct = [100 - _pass_pct - _fail_pct, 0] | max %}
+                  <div class="flex items-center gap-2 min-w-0"
+                       title="{{ s.pass_count }} passed · {{ s.fail_count }} failed{% if s.skip_count %} · {{ s.skip_count }} skipped{% endif %}">
+                    <div class="flex h-1.5 w-9 rounded-full overflow-hidden bg-surface-2 shrink-0">
+                      <span style="width:{{ _pass_pct }}%; background:var(--ok);"></span>
+                      <span style="width:{{ _fail_pct }}%; background:var(--bad);"></span>
+                      {% if s.skip_count %}<span style="width:{{ _skip_pct }}%; background:var(--text-4);"></span>{% endif %}
+                    </div>
+                    <span class="text-[14px] whitespace-nowrap truncate">
+                      <span class="font-semibold text-text">{{ s.pass_count }}</span><span class="text-text-3"> passed</span>{% if s.fail_count %}<span class="text-text-4"> · </span><span class="font-semibold text-bad">{{ s.fail_count }}</span><span class="text-text-3"> failed</span>{% endif %}
+                    </span>
+                  </div>
+                {% elif s.capture_completed %}
+                  <span class="chip">Captured</span>
+                {% else %}
+                  <span class="text-text-4">—</span>
+                {% endif %}
+              </td>
+
+              <td class="px-3 py-3 align-middle text-[14px] text-text-3 whitespace-nowrap">
+                {% if s.updated_at %}<span data-ts="{{ s.updated_at }}">{{ s.updated_at[:10] }}</span>{% else %}—{% endif %}
+              </td>
+
+              <td class="pl-3 pr-4 py-3 align-middle text-right">
+                {% if s.is_active %}
+                  <a href="/sessions/{{ s.name }}"
+                     class="inline-flex items-center h-7 px-3.5 rounded-full text-[14px] font-medium border border-line-2 bg-surface-2 text-text-2 no-underline hover:bg-surface-3">Open</a>
+                {% else %}
+                  <form action="/sessions/{{ s.name }}/activate" method="post" @submit="pending = true">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit"
+                            data-loading-label="Activating…"
+                            :disabled="pending"
+                            class="inline-flex items-center h-7 px-3.5 rounded-full text-[14px] font-medium border-0 cursor-pointer bg-accent text-accent-ink hover:bg-accent-hover disabled:opacity-60 disabled:cursor-wait">Activate</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+
+          <tr x-show="q && !keys.some(k => k.includes(q.toLowerCase()))" x-cloak>
+            <td colspan="8" class="px-4 py-10 text-center text-text-3 text-[15px]">
+              No sessions on this page match "<span x-text="q" class="text-text font-medium"></span>".
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
-    {% for s in sessions %}
-      {% set _lk = s.tier_lock | default({}) %}
-      {% if s.status == 'running' %}{% set dot_class = 'run' %}
-      {% elif s.report_completed %}{% set dot_class = 'ok' %}
-      {% elif s.fail_count and s.fail_count > 0 %}{% set dot_class = 'fail' %}
-      {% elif s.capture_completed %}{% set dot_class = 'run' %}
-      {% else %}{% set dot_class = 'idle' %}
-      {% endif %}
-
-      <div x-data="{ pending: false }"
-           :class="pending && 'bg-ok-soft transition-colors duration-150'"
-           class="grid grid-cols-[8px_1fr_160px_120px_140px] gap-x-3.5 items-center px-4 py-3 border-b border-line last:border-b-0
-                  {% if _lk.locked %}opacity-[0.78]{% endif %}">
-
-        <span class="status-dot {{ dot_class }}"></span>
-
-        <div class="min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            {# Pin toggle — small inline form so hx-boost picks it up and the
-               redirect-after-POST swaps the list without a full reload. Gold
-               filled star when pinned, hollow grey outline when not. Sits
-               immediately left of the name so the icon's meaning is obvious
-               from context. #}
-            <form action="/sessions/{{ s.name }}/pin" method="post"
-                  class="inline-flex shrink-0 m-0">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button type="submit"
-                      class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-transparent border-0 cursor-pointer p-0 transition-colors
-                             {% if s.is_pinned %}text-orange-400 hover:text-orange-300{% else %}text-text-4 hover:text-text-2{% endif %}"
-                      style="{% if s.is_pinned %}color: var(--brand-orange, #FF6633);{% endif %}"
-                      title="{% if s.is_pinned %}Unpin this session{% else %}Pin this session to the top{% endif %}"
-                      aria-label="{% if s.is_pinned %}Unpin {{ s.name }}{% else %}Pin {{ s.name }}{% endif %}">
-                <svg width="13" height="13" viewBox="0 0 24 24"
-                     fill="{% if s.is_pinned %}currentColor{% else %}none{% endif %}"
-                     stroke="currentColor" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                </svg>
-              </button>
-            </form>
-            {% if _lk.view_blocked %}
-              {# Tier-locked AND not complete — no <a> at all so the link doesn't tease an action that gets bounced. #}
-              <span class="text-[15px] font-medium text-text-3 cursor-not-allowed inline-flex items-center gap-1"
-                    title="{{ _lk.reason }} {{ _lk.fix }}">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="opacity-70"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                {{ s.name }}
-              </span>
-            {% else %}
-              <a href="/sessions/{{ s.name }}" class="text-[15px] font-medium text-inherit no-underline hover:text-accent">{{ s.name }}</a>
-            {% endif %}
-            {% if s.is_active %}<span class="chip ok text-[12px] px-1.5 py-px"><span class="dot"></span>Active</span>{% endif %}
-            {% if s.tier == 'standard' %}
-              <span class="chip text-[12px] px-1.5 py-px" style="color:oklch(60% 0.18 220); border-color:oklch(60% 0.18 220/.3); background:oklch(60% 0.18 220/.07);">Standard</span>
-            {% elif s.tier == 'saas' %}
-              <span class="chip text-[12px] px-1.5 py-px" style="color:oklch(55% 0.2 340); border-color:oklch(55% 0.2 340/.3); background:oklch(55% 0.2 340/.07);">SaaS</span>
-            {% else %}
-              <span class="chip text-[12px] px-1.5 py-px" style="color:oklch(70% 0.18 30); border-color:oklch(70% 0.18 30/.3); background:oklch(70% 0.18 30/.07);">Extended</span>
-            {% endif %}
-            {% if _lk.locked %}
-              <span class="chip text-[12px] px-1.5 py-px"
-                    style="color:var(--warn); border-color:oklch(82% .13 75 / .35); background:oklch(82% .13 75 / .08);"
-                    title="{{ _lk.reason }} {{ _lk.fix }}">
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                tier-locked
-              </span>
-            {% endif %}
-          </div>
-          <div class="text-[13px] text-text-3 mt-0.5 font-mono">
-            {{ s.environment or '(no environment)' }}{% if s.ruleset_id %} · {{ s.ruleset_id }}{% endif %}
-          </div>
-          {% if s.updated_at %}
-            <div class="text-[13px] text-text-4 mt-px" data-ts="{{ s.updated_at }}">{{ s.updated_at[:10] }}</div>
-          {% endif %}
-        </div>
-
-        {# Pipeline progress track #}
-        <div class="flex items-center gap-1.5">
-          {% for step_label, step_done, step_active in [
-            ('CAP', s.capture_completed,    (s.status == 'running' and not s.capture_completed)),
-            ('VAL', s.validation_completed, (s.capture_completed and not s.validation_completed)),
-            ('RPT', s.report_completed,     (s.validation_completed and not s.report_completed)),
-          ] %}
-            <span class="flex flex-col items-center gap-[3px]">
-              <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-semibold border-[1.5px]
-                {% if step_done %}bg-ok-soft text-ok border-ok
-                {% elif step_active %}bg-accent-soft text-accent border-accent
-                {% else %}bg-surface-2 text-text-4 border-line{% endif %}">
-                {% if step_done %}✓{% else %}{{ loop.index }}{% endif %}
-              </span>
-              <span class="text-[10px] text-text-4 tracking-wide">{{ step_label }}</span>
-            </span>
-            {% if not loop.last %}
-              <span class="flex-1 h-[1.5px] mb-3.5 {% if step_done or step_active %}bg-line-2{% else %}bg-line{% endif %}"></span>
-            {% endif %}
-          {% endfor %}
-        </div>
-
-        {# Results #}
-        <div class="font-mono text-[14px]">
-          {% if s.validation_completed and s.total_rules %}
-            <div class="flex flex-col gap-0.5">
-              <span><span class="text-ok font-semibold">{{ s.pass_count }}</span> <span class="text-text-4">pass</span></span>
-              <span><span class="text-bad font-semibold">{{ s.fail_count }}</span> <span class="text-text-4">fail</span></span>
-              {% if s.skip_count %}<span><span class="text-text-3">{{ s.skip_count }}</span> <span class="text-text-4">skip</span></span>{% endif %}
-            </div>
-          {% elif s.capture_completed %}
-            <span class="chip text-[12px]">Captured</span>
-          {% else %}
-            <span class="text-text-4">Not started</span>
-          {% endif %}
-        </div>
-
-        <div class="flex justify-end">
-          {% if s.is_active %}
-            <a href="/sessions/{{ s.name }}"
-               class="inline-flex items-center h-7 px-3.5 rounded-full text-[14px] font-medium border border-line-2 bg-surface-2 text-text-2 no-underline hover:bg-surface-3">Open</a>
-          {% else %}
-            <form action="/sessions/{{ s.name }}/activate" method="post" @submit="pending = true">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button type="submit"
-                      data-loading-label="Activating…"
-                      :disabled="pending"
-                      class="inline-flex items-center h-7 px-3.5 rounded-full text-[14px] font-medium border-0 cursor-pointer bg-accent text-accent-ink hover:bg-accent-hover disabled:opacity-60 disabled:cursor-wait">Activate</button>
-            </form>
-          {% endif %}
-        </div>
-      </div>
-    {% endfor %}
+    {% if _pages > 1 %}
+      <nav aria-label="Sessions pages"
+           class="flex items-center justify-between gap-3 px-4 py-3 border-t border-line text-[14px] text-text-3">
+        <span>Page <strong class="text-text">{{ _page }}</strong> of {{ _pages }}</span>
+        <span class="inline-flex items-center gap-1.5">
+          <a class="btn sm{% if _page <= 1 %} opacity-40 pointer-events-none{% endif %}"
+             {% if _page > 1 %}href="?page={{ _page - 1 }}&per_page={{ _per }}"{% endif %}
+             aria-disabled="{{ 'true' if _page <= 1 else 'false' }}">&larr; Prev</a>
+          <a class="btn sm{% if _page >= _pages %} opacity-40 pointer-events-none{% endif %}"
+             {% if _page < _pages %}href="?page={{ _page + 1 }}&per_page={{ _per }}"{% endif %}
+             aria-disabled="{{ 'true' if _page >= _pages else 'false' }}">Next &rarr;</a>
+        </span>
+      </nav>
+    {% endif %}
   </section>
 
-  {% if _pages > 1 %}
-    <nav aria-label="Sessions pages"
-         class="flex items-center justify-between gap-3 mt-3.5 px-1 text-[14px] text-text-3">
-      <span>Page <strong class="text-text">{{ _page }}</strong> of {{ _pages }}</span>
-      <span class="inline-flex items-center gap-1.5">
-        <a class="btn sm{% if _page <= 1 %} opacity-40 pointer-events-none{% endif %}"
-           {% if _page > 1 %}href="?page={{ _page - 1 }}&per_page={{ _per }}"{% endif %}
-           aria-disabled="{{ 'true' if _page <= 1 else 'false' }}">&larr; Prev</a>
-        <a class="btn sm{% if _page >= _pages %} opacity-40 pointer-events-none{% endif %}"
-           {% if _page < _pages %}href="?page={{ _page + 1 }}&per_page={{ _per }}"{% endif %}
-           aria-disabled="{{ 'true' if _page >= _pages else 'false' }}">Next &rarr;</a>
-      </span>
-    </nav>
-  {% endif %}
-
-  <p class="text-text-4 text-[13px] mt-3 pl-1">
+  <p class="text-text-4 text-[14px] mt-3 pl-1">
     Only one session is "active" at a time — the active session is what the CLI and WebUI operate on by default.
     Switching sessions takes effect immediately.
   </p>

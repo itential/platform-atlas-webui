@@ -1,0 +1,156 @@
+{# ── Pipeline progress (pp2) — shared partial ───────────────────────────
+   The calm, phase-based progress view for a full audit pipeline run:
+   a Capture → Validate → Report stepper, a per-stage activity panel, a
+   collapsible verbose log (hidden by default), and terminal success/error
+   heroes. Driven entirely by job-stream.js, which binds to #job-stream via
+   its data-* attributes and reconstructs stage state from the SSE stream.
+
+   Included by:
+     • jobs/detail.html          (the standalone /jobs/<id> view)
+     • sessions/detail.html      (inline, when a pipeline job is active)
+
+   Contract — the caller provides a `job` dict with:
+     job.id, job.started_at_epoch, job.metadata (return_url, session_name)
+
+   The `.pp2-*` styles live in atlas.css (shared, theme-aware), and the
+   caller is responsible for loading anime.min.js + job-stream.js. #}
+{% set _session_name = job.metadata.get('session_name', '') %}
+<section class="card" id="pipeline-shell">
+  <div class="card-head">
+    <h3>Full audit pipeline</h3>
+    <span class="sub">
+      capture · validate · report
+      {% if _session_name %}&nbsp;&mdash;&nbsp;<code class="font-mono text-[14px]">{{ _session_name }}</code>{% endif %}
+    </span>
+  </div>
+
+  <div class="card-body pp2-body">
+
+    {# ── Running view ─────────────────────────────────────── #}
+    <div id="pp2-running-view">
+
+      {# Phase stepper — 3 nodes with SVG icons #}
+      <div class="pp2-stepper">
+
+        <div class="pp2-phase is-active" id="pp2-ph-1">
+          <div class="pp2-dot" data-status="active">
+            {# Database — data collection #}
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          </div>
+          <span class="pp2-label">Capture</span>
+        </div>
+
+        <div class="pp2-conn" id="pp2-conn-1"></div>
+
+        <div class="pp2-phase" id="pp2-ph-2">
+          <div class="pp2-dot" data-status="pending">
+            {# Shield — rule validation #}
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <span class="pp2-label">Validate</span>
+        </div>
+
+        <div class="pp2-conn" id="pp2-conn-2"></div>
+
+        <div class="pp2-phase" id="pp2-ph-3">
+          <div class="pp2-dot" data-status="pending">
+            {# Bar chart — report generation #}
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          </div>
+          <span class="pp2-label">Reports</span>
+        </div>
+
+      </div>{# /stepper #}
+
+      {# Stage info: current stage name + elapsed clock #}
+      <div class="pp2-stage-bar">
+        <span class="pp2-stage-name" id="pp2-stage-name">Preparing pipeline…</span>
+        <span class="pp2-elapsed" id="pp2-elapsed"></span>
+      </div>
+
+      {# Live single-line status from the SSE stream #}
+      <div class="pp2-status" id="pp2-status">Connecting…</div>
+
+      {# Activity panel — JS populates per stage:
+         Capture → module checklist + aggregation pipeline list
+         Validate → category breakdown grid
+         Report  → report checklist #}
+      <div class="pp2-activity" id="pp2-activity" hidden></div>
+
+      {# Collapsible verbose log (human / raw mode) — closed by default #}
+      <details class="pp2-log-details" id="pp2-log-details">
+        <summary class="pp2-log-summary">
+          <span class="pp2-log-arrow">▶</span>
+          <span id="pp2-log-label">Show live output</span>
+        </summary>
+        <div class="stream-mode" id="stream-mode" data-mode="human">
+          <span class="stream-mode-label">Output mode</span>
+          <div class="stream-mode-pills" role="tablist" aria-label="Output verbosity">
+            <button type="button" class="stream-mode-pill is-active"
+                    data-mode="human" role="tab" aria-selected="true">Human-friendly</button>
+            <button type="button" class="stream-mode-pill"
+                    data-mode="raw" role="tab" aria-selected="false">Raw progress logs</button>
+          </div>
+          <span class="stream-mode-hint" id="stream-mode-hint">curated narrative only</span>
+        </div>
+        <div class="job-stream mode-human" id="job-stream"
+             data-job-id="{{ job.id }}"
+             data-job-kind="pipeline"
+             data-session-name="{{ _session_name }}"
+             data-return-url="{{ job.metadata.get('return_url', '') }}"
+             data-started-at="{{ job.started_at_epoch }}"></div>
+      </details>
+
+    </div>{# /pp2-running-view #}
+
+    {# ── Success view (revealed when pipeline succeeds) ────── #}
+    <div id="pp2-success-view" hidden>
+      <div class="pp2-hero">
+        <div class="pp2-hero-ring pp2-hero-ring--ok">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h2 class="pp2-hero-title" id="pp2-hero-title">Compliance audit complete</h2>
+        <p class="pp2-hero-sub" id="pp2-hero-sub"></p>
+        <div class="pp2-score-card">
+          <div class="pp2-score-pct" id="pp2-score-pct">—%</div>
+          <div class="pp2-score-lbl">compliance rate</div>
+          <div class="pp2-score-counts">
+            <span class="pp2-score-count ok"><b id="pp2-pass-count">0</b> passed</span>
+            <span class="pp2-score-count bad"><b id="pp2-fail-count">0</b> findings</span>
+            <span class="pp2-score-count dim"><b id="pp2-skip-count">0</b> skipped</span>
+          </div>
+        </div>
+        <div class="pp2-action-row">
+          <a class="btn primary" id="pp2-link-compliance" href="#" target="_blank" rel="noopener" hidden>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Open compliance report ↗
+          </a>
+          <a class="btn" id="pp2-link-session" href="#" hidden>Back to session</a>
+        </div>
+        <div class="pp2-alt-row" id="pp2-alt-row" hidden>
+          <a id="pp2-link-operational"  href="#" target="_blank" rel="noopener" hidden>Operational ↗</a>
+          <span class="sep" id="pp2-sep1" hidden>·</span>
+          <a id="pp2-link-architecture" href="#" target="_blank" rel="noopener" hidden>Architecture ↗</a>
+          <span class="sep" id="pp2-sep2" hidden>·</span>
+          <a href="/jobs" class="text-text-3 hover:text-accent hover:underline">View all jobs</a>
+        </div>
+      </div>
+    </div>{# /pp2-success-view #}
+
+    {# ── Error view (revealed when pipeline fails) ──────────── #}
+    <div id="pp2-error-view" hidden>
+      <div class="pp2-hero">
+        <div class="pp2-hero-ring pp2-hero-ring--bad">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+        <h2 class="pp2-hero-title" style="color:var(--bad)">Pipeline failed</h2>
+        <p class="pp2-hero-sub" id="pp2-error-msg">An error occurred. Check the output log for details.</p>
+        <div class="pp2-action-row">
+          <a class="btn" href="{{ job.metadata.get('return_url', '/sessions') }}">Back to session</a>
+          <a class="btn" href="/jobs">View all jobs</a>
+        </div>
+      </div>
+    </div>{# /pp2-error-view #}
+
+  </div>{# /card-body #}
+</section>

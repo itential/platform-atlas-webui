@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Environments — Platform Atlas{% endblock %}
 {% block crumb %}Environments{% endblock %}
 {% block content %}
@@ -15,29 +16,36 @@
 </div>
 {% endif %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Configuration</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
-      Environments, <em class="not-italic text-accent">audit targets</em>
-    </h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Each environment is an overlay with its own URI, topology, tier, and credentials.
-      The active environment determines what the next capture targets.
-    </p>
+{% set active_env = environments | selectattr('is_active') | first | default(none) %}
+{% set active_count = 1 if active_env else 0 %}
+{% call page_header("Environments",
+    subtitle="Each environment is an overlay with its own URI, topology, tier, and credentials. The active environment determines what the next capture targets.",
+    meta=['<span class="dot"></span>' ~ environments|length ~ ' configured' ~ (' · ' ~ active_count ~ ' active' if active_count else '')]) %}
+  <a class="btn primary" href="/environments/new">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+    New environment
+  </a>
+{% endcall %}
+
+{# Active-environment banner — mirrors the "Active session" banner on
+   /sessions, giving this page the same at-a-glance confirmation of what's
+   currently live instead of making you scan the table for the one row
+   with a small "Active" chip. #}
+{% if active_env %}
+  <div class="flash flash--info mb-[18px] flex items-center gap-3">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+    <span>Active environment: <strong>{{ active_env.name }}</strong>
+      — {{ 'SaaS' if active_env.tier == 'saas' else active_env.tier|capitalize }} tier
+      {% if active_env.organization_name %} · {{ active_env.organization_name }}{% endif %}
+    </span>
+    <a class="btn sm ml-auto" href="/environments/{{ active_env.name }}">View details</a>
   </div>
-  <div class="flex items-center gap-2">
-    <a class="btn primary" href="/environments/new">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-      New environment
-    </a>
-  </div>
-</header>
+{% endif %}
 
 {% if not environments %}
   <section class="flex flex-col items-center justify-center py-12 px-6 text-center bg-surface border border-line rounded-lg">
     <strong class="mb-1.5">No environments configured</strong>
-    <span class="text-text-3 max-w-[440px] text-[15px]">
+    <span class="text-text-3 max-w-[440px]">
       An environment captures the URIs, tier, and credential backend for one deployment.
       Atlas won't run captures or preflight without one.
     </span>
@@ -46,46 +54,89 @@
     </div>
   </section>
 {% else %}
-  <section class="card">
+  <section class="card overflow-hidden shadow-xs">
     <div class="card-head">
       <h3>All environments</h3>
       <span class="sub">{{ environments|length }} total</span>
     </div>
-    <div>
-      {% for env in environments %}
-        <div x-data="{ pending: false }"
-             :class="pending && 'bg-ok-soft transition-colors duration-150'"
-             class="flex items-center gap-3 px-4 py-3 text-[15px] border-b border-line last:border-b-0 hover:bg-surface-2">
-          <span class="status-dot {% if env.is_active %}ok{% else %}idle{% endif %}"></span>
-          <span class="font-medium truncate">
-            <a href="/environments/{{ env.name }}" class="text-inherit hover:text-accent no-underline">{{ env.name }}</a>
-            {% if env.is_active %}<span class="chip ok ml-2"><span class="dot"></span>Active</span>{% endif %}
-          </span>
-          <span class="text-text-3 truncate">
-            {{ 'SaaS' if env.tier == 'saas' else env.tier|capitalize }}
-            {% if env.organization_name %} · {{ env.organization_name }}{% endif %}
-            {% if env.credential_backend %} · {{ env.credential_backend }}{% endif %}
-          </span>
-          <span class="ml-auto text-text-3 font-mono truncate max-w-[40ch]">{{ env.platform_uri or '—' }}</span>
-          <span class="flex gap-1.5 shrink-0">
-            {% if not env.is_active %}
-              <form action="/environments/{{ env.name }}/activate" method="post" class="inline" @submit="pending = true">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button class="btn sm" type="submit" data-loading-label="Activating…" :disabled="pending">Activate</button>
-              </form>
-            {% endif %}
-            <a class="btn sm" href="/environments/{{ env.name }}/edit">Edit</a>
-            <form action="/environments/{{ env.name }}/delete" method="post" class="inline"
-                  data-confirm-action data-confirm-kind="danger"
-                  data-confirm-title="Delete environment?"
-                  data-confirm-message="Delete environment '{{ env.name }}'? This cannot be undone."
-                  data-confirm-label="Delete">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="btn sm danger" type="submit">Delete</button>
-            </form>
-          </span>
-        </div>
-      {% endfor %}
+
+    <div class="overflow-x-auto">
+      <table class="w-full border-collapse table-fixed">
+        <colgroup>
+          <col style="width:30px">
+          <col> {# Environment — flexible, takes remaining space #}
+          <col style="width:110px">
+          <col style="width:110px">
+          <col style="width:260px">
+          <col style="width:120px">
+        </colgroup>
+        <thead>
+          <tr class="border-b border-line">
+            <th class="px-4 py-2"></th>
+            <th class="pr-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Environment</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Tier</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Credentials</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Platform URI</th>
+            <th class="pl-3 pr-4 py-2 text-right text-[13px] text-text-3 font-semibold uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for env in environments %}
+            <tr x-data="{ pending: false }"
+                :class="pending && 'bg-ok-soft transition-colors duration-150'"
+                class="border-b border-line last:border-b-0 transition-colors hover:bg-surface-2
+                       {% if env.is_active %}bg-accent-soft{% endif %}">
+
+              <td class="px-4 py-3 align-middle">
+                <span class="status-dot {% if env.is_active %}ok{% else %}idle{% endif %}"></span>
+              </td>
+
+              <td class="pr-3 py-3 align-middle min-w-0">
+                <a href="/environments/{{ env.name }}" class="text-[15px] font-medium text-inherit no-underline hover:text-accent truncate">{{ env.name }}</a>
+              </td>
+
+              <td class="px-3 py-3 align-middle">
+                {% if env.tier == 'standard' %}
+                  <span class="chip px-1.5 py-px" style="color:var(--tier-standard); border-color:color-mix(in oklab, var(--tier-standard) 30%, transparent); background:color-mix(in oklab, var(--tier-standard) 9%, transparent);">Standard</span>
+                {% elif env.tier == 'saas' %}
+                  <span class="chip px-1.5 py-px" style="color:var(--tier-saas); border-color:color-mix(in oklab, var(--tier-saas) 30%, transparent); background:color-mix(in oklab, var(--tier-saas) 9%, transparent);">SaaS</span>
+                {% else %}
+                  <span class="chip px-1.5 py-px" style="color:var(--tier-extended); border-color:color-mix(in oklab, var(--tier-extended) 30%, transparent); background:color-mix(in oklab, var(--tier-extended) 9%, transparent);">Extended</span>
+                {% endif %}
+              </td>
+
+              <td class="px-3 py-3 align-middle text-[14px] text-text-2">
+                {{ env.credential_backend|capitalize if env.credential_backend else '—' }}
+              </td>
+
+              <td class="px-3 py-3 align-middle min-w-0">
+                <div class="font-mono text-[14px] text-text-2 truncate" title="{{ env.platform_uri or '' }}">{{ env.platform_uri or '—' }}</div>
+              </td>
+
+              {# Edit and Delete used to sit on every one of 31 rows (Delete as
+                 a solid red button, every time) — both are one click away on
+                 the environment's own detail page (name link above), which
+                 already carries Edit in its header and Delete under Raw
+                 configuration. Only Activate stays here: switching the active
+                 environment is frequent enough to be worth a one-click
+                 shortcut from the list; editing/deleting a config is not. #}
+              <td class="pl-3 pr-4 py-3 align-middle text-right">
+                {% if env.is_active %}
+                  <span class="inline-flex items-center h-7 px-3.5 rounded-full text-[14px] font-medium border border-line-2 bg-surface-2 text-text-2">Active</span>
+                {% else %}
+                  <form action="/environments/{{ env.name }}/activate" method="post" @submit="pending = true">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit"
+                            data-loading-label="Activating…"
+                            :disabled="pending"
+                            class="inline-flex items-center h-7 px-3.5 rounded-full text-[14px] font-medium border-0 cursor-pointer bg-accent text-accent-ink hover:bg-accent-hover disabled:opacity-60 disabled:cursor-wait">Activate</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </section>
 {% endif %}

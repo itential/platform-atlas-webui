@@ -225,11 +225,29 @@ async def validate_session_name(value: str = "") -> HTMLResponse:
 
 @router.get("/{name}", response_class=HTMLResponse)
 async def view_session(
-    request: Request, name: str, lock_run: str = "",
+    request: Request, name: str, lock_run: str = "", job: str = "",
 ) -> HTMLResponse:
     session = await run_in_threadpool(session_svc.get_session, name)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session '{name}' not found")
+
+    # Inline pipeline progress — when a run was just kicked off (or the page is
+    # reloaded mid-run), ?job=<id> renders the calm phase-based progress view in
+    # place of the run controls. Only full-pipeline jobs stream inline; a stale
+    # or missing id is ignored (falls back to the normal detail view). The SSE
+    # stream replays history, so a completed job still resolves to its terminal
+    # success/error hero on reload.
+    active_job = None
+    if job:
+        record = get_registry().get(job)
+        if record is not None and (record.name or "").startswith("full pipeline:"):
+            active_job = {
+                "id": record.id,
+                "name": record.name,
+                "status": record.status.value,
+                "metadata": record.metadata or {},
+                "started_at_epoch": record.started_at or 0,
+            }
     # Tier guard — incomplete sessions on the wrong tier are bounced to the
     # list page where the user can either switch tier or pick a different
     # session. Complete sessions are allowed through (view_blocked is False)
@@ -288,6 +306,7 @@ async def view_session(
             cm_reminder_cmd=cm_reminder_cmd,
             missing_creds=missing_creds,
             arch_summary=arch_summary,
+            active_job=active_job,
         ),
     )
 
@@ -338,10 +357,10 @@ async def delete_session(name: str):
 def _build_session_json_export(name: str) -> _Path:
     """Render the JSON report to a temp file. Sync — runs in threadpool."""
     import tempfile
-    import pandas as pd
     from pathlib import Path
     from platform_atlas.reporting.reporting_engine import export_json_report
     from platform_atlas.core.session_manager import get_session_manager
+    from platform_atlas.validation.results import load_validation_results
 
     mgr = get_session_manager()
     session = mgr.get(name)
@@ -352,23 +371,23 @@ def _build_session_json_export(name: str) -> _Path:
             detail=f"Session '{name}' has no validation results yet — run validate first.",
         )
 
-    df = pd.read_parquet(session.validation_file)
+    results = load_validation_results(session.validation_file)
 
-    # Rehydrate metadata (same as report runner)
+    # Defensive fallback for sessions validated before metadata was stored inline.
     if session.capture_file.exists():
         try:
             with session.capture_file.open(encoding="utf-8") as f:
                 cap = json.load(f)
             atlas_meta = (cap.get("_atlas") or {}).get("metadata") or {}
             for key, val in atlas_meta.items():
-                df.attrs.setdefault(key, val)
+                results.metadata.setdefault(key, val)
         except Exception:
             pass
 
     with tempfile.NamedTemporaryFile(suffix=".json", prefix=f"atlas-{name}-", delete=False) as tmp:
         tmp_path = Path(tmp.name)
 
-    export_json_report(df, tmp_path)
+    export_json_report(results, tmp_path)
     return tmp_path
 
 
@@ -377,8 +396,8 @@ async def session_summary(name: str):
     """Lightweight JSON summary used by the post-pipeline mini-report.
 
     Returns counts, compliance %, and a top-N slice of failing rules ordered
-    by severity. Reads the validation parquet, so this only returns useful
-    data once validation has completed.
+    by severity. Reads the validation results file, so this only returns
+    useful data once validation has completed.
     """
     summary = await run_in_threadpool(session_svc.get_session_summary, name)
     if summary is None:
@@ -390,7 +409,7 @@ async def session_summary(name: str):
 async def export_session_json(name: str):
     """Generate and return a JSON compliance report for the session."""
     try:
-        # Pandas/pyarrow + JSON export is sync — push it off the event loop.
+        # JSON load + export is sync — push it off the event loop.
         tmp_path = await run_in_threadpool(_build_session_json_export, name)
     except HTTPException:
         raise
@@ -596,4 +615,11 @@ async def run_session_stage(
     else:
         raise HTTPException(status_code=400, detail=f"Unknown stage: {stage}")
 
+    # Full pipeline runs stream inline on the session page as a calm,
+    # phase-based progress view; single-stage re-runs open the standalone job
+    # log view. (Both use the same job/SSE infrastructure underneath.)
+    if stage == "all":
+        return RedirectResponse(
+            url=f"/sessions/{_qs(name)}?job={record.id}", status_code=303,
+        )
     return RedirectResponse(url=f"/jobs/{record.id}", status_code=303)

@@ -1,36 +1,26 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Notifications — Platform Atlas{% endblock %}
 {% block crumb %}Notifications{% endblock %}
 {% block content %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Outbound channels</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">Notifications</h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Slack incoming-webhooks and generic webhooks receive drift events from continuous audit when a new
-      alert is created or an acknowledged alert re-opens. Channels are scoped per environment so you can
-      route production drift to a paging channel without spamming staging.
-    </p>
-  </div>
-  <div class="flex items-center gap-2"><a class="btn" href="/continuous">Continuous audit →</a></div>
-</header>
+{% call page_header("Notifications",
+    subtitle="Slack incoming-webhooks and generic webhooks receive drift events from continuous audit when a new alert is created or an acknowledged alert re-opens. Channels are scoped per environment so you can route production drift to a paging channel without spamming staging.",
+    meta=(['<span class="dot"></span>' ~ channels|length ~ ' channel' ~ ('s' if channels|length != 1 else '') ~ ' · ' ~ env] if env else None)) %}
+  <a class="btn" href="/continuous">Continuous audit →</a>
+{% endcall %}
 
 {% if not env %}
-  <section class="card">
-    <div class="card-body">
-      <div class="empty" style="border:0; padding:24px;">
-        <strong>No active environment</strong>
-        <span style="color:var(--text-3);">
-          Notification channels are stored on the environment overlay. Activate an environment first.
-        </span>
-        <div style="margin-top:12px;"><a class="btn" href="/environments">Manage environments</a></div>
-      </div>
-    </div>
+  <section class="flex flex-col items-center justify-center py-12 px-6 text-center bg-surface border border-line rounded-lg">
+    <strong class="mb-1.5">No active environment</strong>
+    <span class="text-text-3 max-w-[440px]">
+      Notification channels are stored on the environment overlay. Activate an environment first.
+    </span>
+    <div class="mt-4"><a class="btn" href="/environments">Manage environments</a></div>
   </section>
 {% else %}
 
-<section class="grid-2" style="grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);">
+<section class="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr] gap-3">
 
   {# ── Channel list ── #}
   <div class="card">
@@ -38,58 +28,59 @@
       <h3>Channels — {{ env }}</h3>
       <span class="sub">{{ channels|length }} configured</span>
     </div>
-    <div class="card-body" style="padding:0;">
+    <div class="card-body p-0">
       {% if not channels %}
-        <div class="empty" style="border:0; padding:28px 24px;">
-          <strong>No channels yet</strong>
-          <span style="color:var(--text-3);">
+        <div class="flex flex-col items-center justify-center py-7 px-6 text-center">
+          <strong class="mb-1.5">No channels yet</strong>
+          <span class="text-text-3">
             Add a Slack incoming webhook or a generic JSON webhook to receive drift notifications.
           </span>
         </div>
       {% else %}
-        <table class="data-table" style="width:100%; border-collapse:collapse; font-size:15px;">
+        <div class="overflow-x-auto">
+        <table class="table-scroll w-full border-collapse text-[15px]">
           <thead>
-            <tr style="background: var(--surface-2);">
-              <th style="text-align:left; padding:10px 14px; color:var(--text-3); font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:.04em;">Type</th>
-              <th style="text-align:left; padding:10px 14px; color:var(--text-3); font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:.04em;">Name</th>
-              <th style="text-align:left; padding:10px 14px; color:var(--text-3); font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:.04em;">URL</th>
-              <th style="text-align:left; padding:10px 14px; color:var(--text-3); font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:.04em;">Signed</th>
-              <th style="text-align:right; padding:10px 14px; color:var(--text-3); font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:.04em;">Actions</th>
+            <tr class="bg-surface-2">
+              <th class="text-left py-2.5 px-3.5 text-text-3 font-semibold text-[13px] uppercase tracking-wide">Type</th>
+              <th class="text-left py-2.5 px-3.5 text-text-3 font-semibold text-[13px] uppercase tracking-wide">Name</th>
+              <th class="text-left py-2.5 px-3.5 text-text-3 font-semibold text-[13px] uppercase tracking-wide">URL</th>
+              <th class="text-left py-2.5 px-3.5 text-text-3 font-semibold text-[13px] uppercase tracking-wide">Signed</th>
+              <th class="text-right py-2.5 px-3.5 text-text-3 font-semibold text-[13px] uppercase tracking-wide">Actions</th>
             </tr>
           </thead>
           <tbody>
             {% for ch in channels %}
-              <tr class="channel-row" style="border-top:1px solid var(--line);">
-                <td style="padding:12px 14px; vertical-align:top;">
+              <tr class="channel-row border-t border-line">
+                <td class="py-3 px-3.5 align-top">
                   {% if ch.type == CHANNEL_TYPE_SLACK %}
                     <span class="chip" style="background: color-mix(in oklch, var(--info) 12%, transparent); border-color: color-mix(in oklch, var(--info) 30%, transparent);"><span class="dot" style="background:var(--info);"></span>Slack</span>
                   {% else %}
                     <span class="chip"><span class="dot" style="background:var(--accent);"></span>Webhook</span>
                   {% endif %}
                 </td>
-                <td style="padding:12px 14px; vertical-align:top;">
-                  <div style="font-weight:600;">{{ ch.name }}</div>
-                  <div style="color:var(--text-4); font-family:var(--mono); font-size:13px;">{{ ch.id }}</div>
+                <td class="py-3 px-3.5 align-top">
+                  <div class="font-semibold">{{ ch.name }}</div>
+                  <div class="text-text-4 font-mono text-[13px]">{{ ch.id }}</div>
                 </td>
-                <td style="padding:12px 14px; vertical-align:top; max-width:320px; overflow:hidden; text-overflow:ellipsis;">
-                  <code style="font-family:var(--mono); font-size:13px; word-break:break-all;">{{ ch.url }}</code>
+                <td class="py-3 px-3.5 align-top max-w-[320px] overflow-hidden text-ellipsis">
+                  <code class="text-[13px]" style="word-break:break-all;">{{ ch.url }}</code>
                   {% if ch.headers %}
-                    <div style="color:var(--text-4); font-size:12px; margin-top:4px;">+{{ ch.headers|length }} custom header{{ 's' if ch.headers|length != 1 else '' }}</div>
+                    <div class="text-text-4 text-[12px] mt-1">+{{ ch.headers|length }} custom header{{ 's' if ch.headers|length != 1 else '' }}</div>
                   {% endif %}
                 </td>
-                <td style="padding:12px 14px; vertical-align:top;">
+                <td class="py-3 px-3.5 align-top">
                   {% if ch.type == CHANNEL_TYPE_WEBHOOK and ch.secret %}
                     <span class="chip ok" title="HMAC-SHA256 signing enabled"><span class="dot"></span>HMAC</span>
                   {% else %}
-                    <span style="color:var(--text-4); font-size:13px;">—</span>
+                    <span class="text-text-4 text-[13px]">—</span>
                   {% endif %}
                 </td>
-                <td style="padding:10px 14px; text-align:right; vertical-align:top; white-space:nowrap;">
-                  <form method="post" action="/notifications/{{ ch.id }}/test" style="display:inline-block; margin-right:6px;" data-confirm-action>
+                <td class="py-2.5 px-3.5 align-top text-right whitespace-nowrap">
+                  <form method="post" action="/notifications/{{ ch.id }}/test" class="inline-block mr-1.5" data-confirm-action>
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn sm" data-loading-label="Sending…">Test</button>
                   </form>
-                  <form method="post" action="/notifications/{{ ch.id }}/remove" style="display:inline-block;"
+                  <form method="post" action="/notifications/{{ ch.id }}/remove" class="inline-block"
                         data-confirm-action data-confirm-message="Remove channel {{ ch.name }}? This cannot be undone.">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn sm danger" data-loading-label="Removing…">Remove</button>
@@ -99,6 +90,7 @@
             {% endfor %}
           </tbody>
         </table>
+        </div>
       {% endif %}
     </div>
   </div>
@@ -143,27 +135,25 @@
             <label for="headers_raw">Custom headers</label>
             <textarea id="headers_raw" name="headers_raw" rows="3"
                       placeholder="Authorization: Bearer abc123&#10;X-Tenant: prod"
-                      style="font-family:var(--mono); font-size:14px;"></textarea>
+                      class="font-mono text-[14px]"></textarea>
             <span class="hint">One <code>Key: Value</code> per line. <code>Content-Type</code> and <code>X-Atlas-*</code> headers are reserved.</span>
           </div>
           <div class="field">
-            <label for="secret">Signing secret <span style="color:var(--text-3); font-weight:400;">(optional, recommended for production)</span></label>
-            <div style="display:flex; gap:8px; align-items:stretch;">
+            <label for="secret">Signing secret <span class="text-text-3 font-normal">(optional, recommended for production)</span></label>
+            <div class="flex gap-2 items-stretch">
               <input id="secret" name="secret" type="password" autocomplete="off"
                      placeholder="Leave blank to skip signing"
-                     style="flex:1;">
-              <button type="button" class="btn sm" id="webhook-secret-generate"
-                      title="Generate a random 32-byte hex string"
-                      style="white-space:nowrap;">
+                     class="flex-1">
+              <button type="button" class="btn sm whitespace-nowrap" id="webhook-secret-generate"
+                      title="Generate a random 32-byte hex string">
                 Generate
               </button>
-              <button type="button" class="btn sm" id="webhook-secret-toggle"
-                      title="Show / hide the secret"
-                      style="white-space:nowrap;">
+              <button type="button" class="btn sm whitespace-nowrap" id="webhook-secret-toggle"
+                      title="Show / hide the secret">
                 Show
               </button>
             </div>
-            <span class="hint" style="display:block; margin-top:6px;">
+            <span class="hint block mt-1.5">
               <strong>What is this?</strong>
               A shared password <em>you choose</em>. Atlas uses it to sign every outgoing
               webhook so your receiver can prove the request really came from Atlas (and
@@ -172,13 +162,13 @@
               on your receiver. If you don't need signing (e.g. internal-only, behind a
               firewall) leave it blank.
             </span>
-            <details class="hint" style="margin-top:8px;">
-              <summary style="cursor:pointer; color:var(--text-2);">How does the receiver verify it?</summary>
-              <div style="margin-top:6px; padding:8px 10px; background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r); font-size:14px; line-height:1.6;">
+            <details class="hint mt-2">
+              <summary class="cursor-pointer text-text-2">How does the receiver verify it?</summary>
+              <div class="mt-1.5 py-2 px-2.5 bg-surface-2 border border-line rounded-md text-[14px] leading-relaxed">
                 Atlas adds <code>X-Atlas-Signature: sha256=&lt;hex&gt;</code> to every webhook,
                 where <code>&lt;hex&gt;</code> is <code>HMAC-SHA256(secret, raw_body)</code>.
                 Your receiver should:
-                <ol style="margin:6px 0 0 18px; padding:0;">
+                <ol class="mt-1.5 mb-0 pl-[18px] p-0">
                   <li>Read the raw request body (don't parse JSON first — bytes must match).</li>
                   <li>Compute <code>HMAC-SHA256(secret, raw_body)</code> using the same secret.</li>
                   <li>Compare hex digests in <em>constant time</em> against the header value.</li>

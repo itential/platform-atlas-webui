@@ -88,6 +88,7 @@
     paintCompliance(vm.compliance || {}, vm.session || {});
     paintOperational(vm.operational || {});
     paintArchitecture(vm.architecture || {});
+    paintRBAC(vm.rbac || {});
 
     // Pre-flight reset for animated values: zero them out RIGHT BEFORE
     // we show the panel, so the user never sees the static final value
@@ -95,14 +96,13 @@
     // the final value in dataset.target as the source-of-truth and the
     // graceful fallback when motion is reduced.
     if (animeAvailable && !prefersReducedMotion) {
-      const initial = root.querySelector('[data-vm-panel="compliance"]');
-      if (initial) {
-        initial.querySelectorAll('[data-vm-counter]').forEach(function (el) {
+      tabScopes('compliance').forEach(function (scope) {
+        scope.querySelectorAll('[data-vm-counter]').forEach(function (el) {
           if (el.dataset.target && el.dataset.target !== '0') el.textContent = '0';
         });
-        const rate = initial.querySelector('[data-vm-id="pass_rate"]');
-        if (rate) rate.textContent = '0';
-      }
+      });
+      const rate = root.querySelector('[data-vm-id="pass_rate"]');
+      if (rate) rate.textContent = '0';
     }
 
     const alpine = root._x_dataStack && root._x_dataStack[0];
@@ -181,13 +181,16 @@
     const c = (vm.compliance && vm.compliance.summary && vm.compliance.summary.total_rules) || 0;
     const op = (vm.operational && (vm.operational.mongodb_pipelines || []).length) || 0;
     const oplogs = (vm.operational && (vm.operational.log_sections || []).length) || 0;
-    const a = ((vm.architecture && (vm.architecture.extended_checks || []).length) || 0) +
-              Object.keys((vm.architecture && vm.architecture.sections) || {})
-                .filter(function (k) { return vm.architecture.sections[k] != null; }).length;
+    const av = (vm.architecture && (vm.architecture.extended_checks || []).length) || 0;
+    const arch = Object.keys((vm.architecture && vm.architecture.sections) || {})
+      .filter(function (k) { return vm.architecture.sections[k] != null; }).length;
+    const rbac = (vm.rbac && vm.rbac.summary && vm.rbac.summary.total_accounts) || 0;
 
     setText('[data-vm-tab-count="compliance"]', String(c));
     setText('[data-vm-tab-count="operational"]', String(op + oplogs));
-    setText('[data-vm-tab-count="architecture"]', String(a));
+    setText('[data-vm-tab-count="additional_validation"]', String(av));
+    setText('[data-vm-tab-count="architecture"]', String(arch));
+    setText('[data-vm-tab-count="rbac"]', String(rbac));
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -198,7 +201,7 @@
 
     setText('[data-vm-id="health_rating"]', summary.health_rating || '—');
     setText('[data-vm-id="evaluated"]', String(summary.evaluated || 0));
-    setText('[data-vm-id="pass_rate"]', formatPct(summary.pass_rate));
+    setText('[data-vm-id="pass_rate"]', formatPct(effectivePct(summary)));
 
     setCounterTarget('[data-vm-counter="compliant"]', summary.compliant || 0);
     setCounterTarget('[data-vm-counter="non_compliant"]', summary.non_compliant || 0);
@@ -206,6 +209,7 @@
     setCounterTarget('[data-vm-counter="errors"]', summary.errors || 0);
 
     paintHeroLede(summary);
+    paintHeroHeadline(comp);
     paintPriorityActions(comp.priority_actions || []);
     paintCategoryBars(comp.by_category || []);
     paintSeveritySplit(comp.by_severity || []);
@@ -239,6 +243,39 @@
       html += ' ' + errors + ' rules errored during evaluation.';
     }
     el.innerHTML = html;
+  }
+
+  // Hero headline — one-line plain-English verdict, same three-way split
+  // the standalone report's Executive Summary uses (no failures / a
+  // critical-severity failure among them / failures but none critical).
+  // Also sets the ring's grade letter and tone color from the same
+  // severity-weighted score, so the headline, the grade, and the ring's
+  // color always agree with each other.
+  function paintHeroHeadline(comp) {
+    const summary = comp.summary || {};
+    const fail = summary.non_compliant || 0;
+    const crit = (comp.by_severity || [])
+      .filter(function (s) { return s.name === 'critical'; })
+      .reduce(function (a, s) { return a + (s.non_compliant || 0); }, 0);
+
+    const headlineEl = root.querySelector('[data-vm-hero-headline]');
+    if (headlineEl) {
+      headlineEl.textContent = fail === 0
+        ? 'A clean bill of health.'
+        : (crit > 0 ? 'A solid core, with critical gaps to close.' : 'Largely compliant, with items to review.');
+    }
+
+    const pct = effectivePct(summary);
+    const grade = pct >= 90 ? 'A' : pct >= 80 ? 'B' : pct >= 70 ? 'C' : pct >= 60 ? 'D' : 'F';
+    const tone  = pct >= 85 ? 'var(--ok)' : pct >= 70 ? 'var(--warn)' : 'var(--bad)';
+
+    const gradeEl = root.querySelector('[data-vm-ring-grade]');
+    if (gradeEl) {
+      gradeEl.textContent = 'Grade ' + grade;
+      gradeEl.style.color = tone;
+    }
+    const ring = root.querySelector('.vm-hero-ring');
+    if (ring) ring.style.setProperty('--vm-dial-tone', tone);
   }
 
   function paintPriorityActions(actions) {
@@ -945,6 +982,149 @@
   }
 
   // ─────────────────────────────────────────────────────────────
+  // RBAC — role/account summary from
+  // platform_atlas.validation.rbac_engine.build_rbac_summary. Empty
+  // ({} or no accounts) when RBAC collection wasn't enabled for this
+  // session; the panel shows an explanatory empty state rather than a
+  // bare zero-stats grid in that case.
+  // ─────────────────────────────────────────────────────────────
+  const RBAC_TIER_LABELS = ['No access', 'Read-only', 'Write', 'Build', 'Ops', 'Admin'];
+
+  function rbacTierLabel(tier) {
+    return RBAC_TIER_LABELS[tier] || String(tier);
+  }
+
+  // Mirrors the standalone report's tier bands (see TIER_SWATCH in
+  // report.html): 5 = full admin reads as bad, 4 = infra/ops reads as
+  // warn, 2-3 (write/build) stay neutral, 0-1 (no access/read-only) are
+  // muted so the table doesn't shout about accounts that can't do harm.
+  function rbacTierToneClass(tier) {
+    if (tier >= 5) return 'text-bad';
+    if (tier >= 4) return 'text-warn';
+    if (tier <= 1) return 'text-text-4';
+    return '';
+  }
+
+  function paintRBAC(rbac) {
+    const statsWrap = root.querySelector('[data-vm-rbac-stats]');
+    const bodyWrap = root.querySelector('[data-vm-rbac-body]');
+    const emptyWrap = root.querySelector('[data-vm-rbac-empty]');
+    const summary = rbac && rbac.summary;
+
+    if (!summary || !summary.total_accounts) {
+      if (emptyWrap) {
+        emptyWrap.innerHTML = emptyState(
+          'No RBAC data captured for this session. Enable RBAC collection on the ' +
+          'environment to see role and access details here.'
+        );
+      }
+      if (statsWrap) statsWrap.hidden = true;
+      if (bodyWrap) bodyWrap.hidden = true;
+      return;
+    }
+
+    if (emptyWrap) emptyWrap.innerHTML = '';
+    if (statsWrap) statsWrap.hidden = false;
+    if (bodyWrap) bodyWrap.hidden = false;
+
+    setCounterTarget('[data-vm-counter="rbac_total_accounts"]', summary.total_accounts || 0);
+    setCounterTarget('[data-vm-counter="rbac_admin"]', summary.admin_count || 0);
+    setCounterTarget('[data-vm-counter="rbac_stale"]', summary.stale_privileged || 0);
+    setCounterTarget('[data-vm-counter="rbac_apps"]', summary.total_apps || 0);
+
+    const accounts = rbac.accounts || [];
+    const countEl = root.querySelector('[data-vm-rbac-accounts-count]');
+    if (countEl) countEl.textContent = accounts.length + ' account' + (accounts.length === 1 ? '' : 's');
+
+    paintRBACAccountsTable(accounts);
+    paintRBACFlags(accounts);
+  }
+
+  // Highest-privilege accounts first — same "worst first" instinct as the
+  // rules table's default sort, so the table leads with what matters most
+  // rather than whatever order the source API happened to return.
+  function paintRBACAccountsTable(accounts) {
+    const body = root.querySelector('[data-vm-rbac-accounts-body]');
+    if (!body) return;
+    body.innerHTML = '';
+
+    const sorted = accounts.slice().sort(function (a, b) {
+      return (b.max_tier || 0) - (a.max_tier || 0);
+    });
+
+    sorted.forEach(function (a) {
+      const tier = a.max_tier || 0;
+      const appCount = a.app_tiers ? Object.keys(a.app_tiers).length : 0;
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="vm-col-name">' +
+          '<span>' + escapeHTML(a.username || '') + '</span>' +
+          (a.is_stale ? ' <span class="vm-sev-tag vm-sev-warning">Stale</span>' : '') +
+        '</td>' +
+        '<td class="vm-col-category">' + (a.is_service ? 'Service' : 'Human') + '</td>' +
+        '<td class="vm-col-status"><span class="' + rbacTierToneClass(tier) + '">' +
+          escapeHTML(rbacTierLabel(tier)) + '</span></td>' +
+        '<td class="vm-col-category">' + appCount + '</td>' +
+        '<td class="vm-col-view text-text-3">' +
+          escapeHTML(a.last_login ? String(a.last_login).slice(0, 10) : '—') + '</td>';
+      body.appendChild(tr);
+    });
+  }
+
+  // Flags admin-tier, stale-with-access, and inactive-with-access accounts
+  // into the same visual language as Compliance's Priority Actions list
+  // (.vm-priority-item / .vm-sev-*) so "what needs review" reads the same
+  // way across tabs.
+  function paintRBACFlags(accounts) {
+    const list = root.querySelector('[data-vm-rbac-flags]');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const flagged = accounts
+      .filter(function (a) { return (a.max_tier || 0) >= 4 || a.is_stale || a.inactive; })
+      .sort(function (a, b) { return (b.max_tier || 0) - (a.max_tier || 0); })
+      .slice(0, 8);
+
+    if (!flagged.length) {
+      list.innerHTML =
+        '<li class="vm-priority-empty">' +
+          '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>' +
+          '</svg>' +
+          '<div><strong>Nothing flagged.</strong><span>No admin-tier, stale, or inactive privileged accounts.</span></div>' +
+        '</li>';
+      return;
+    }
+
+    flagged.forEach(function (a) {
+      const tier = a.max_tier || 0;
+      const sevClass = tier >= 5 ? 'vm-sev-critical' : (tier >= 4 || a.is_stale ? 'vm-sev-warning' : 'vm-sev-info');
+      const reasons = [];
+      if (tier >= 4) reasons.push(rbacTierLabel(tier) + '-tier access');
+      if (a.is_stale) {
+        reasons.push('inactive' + (a.staleness_days != null ? ' ' + a.staleness_days + ' days' : '') + ' with elevated access');
+      } else if (a.inactive) {
+        reasons.push('inactive account');
+      }
+
+      const li = document.createElement('li');
+      li.className = 'vm-priority-item ' + sevClass;
+      li.innerHTML =
+        '<div class="vm-priority-body">' +
+          '<div class="vm-priority-title-row">' +
+            '<div class="vm-priority-title">' + escapeHTML(a.username || '') + '</div>' +
+            '<span class="vm-sev-tag ' + sevClass + '">' + escapeHTML(rbacTierLabel(tier)) + '</span>' +
+          '</div>' +
+          '<div class="vm-priority-meta">' +
+            '<span class="vm-priority-cat">' + escapeHTML((a.role_names || []).slice(0, 3).join(', ')) + '</span>' +
+          '</div>' +
+          (reasons.length ? '<p class="vm-priority-rec">' + escapeHTML(reasons.join(' · ')) + '</p>' : '') +
+        '</div>';
+      list.appendChild(li);
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // Sortable tables (MongoDB pipelines)
   //
   // Click a header to sort by that column. Click again to reverse.
@@ -1055,12 +1235,53 @@
       });
       const dial = root.querySelector('[data-vm-dial="pass-rate"]');
       if (dial && vm.compliance && vm.compliance.summary) {
-        dial.style.strokeDashoffset = String(100 - clampPct(vm.compliance.summary.pass_rate));
+        // 75 of 100 pathLength units are the drawn arc (the 270° gauge —
+        // see the SVG in view.html); the offset walks from fully-empty (75)
+        // down toward 0 as the score climbs, same convention as the
+        // animated path below.
+        const pct = effectivePct(vm.compliance.summary);
+        dial.style.strokeDashoffset = String(75 - (75 * pct / 100));
       }
       return;
     }
 
+    animateHeroRing(vm);
     animatePanelEntrance('compliance', vm);
+  }
+
+  // Everything that belongs to a tab: its panel, plus its slice of the hero
+  // (the hero swaps a title, description and stat ledger per tab — see the
+  // [data-vm-hero-slice] blocks in view.html).
+  function tabScopes(tab) {
+    const scopes = [];
+    const panel = root.querySelector('[data-vm-panel="' + tab + '"]');
+    if (panel) scopes.push(panel);
+    root.querySelectorAll('[data-vm-hero-slice="' + tab + '"]').forEach(function (el) { scopes.push(el); });
+    return scopes;
+  }
+
+  function animateHeroRing(vm) {
+    const dial = root.querySelector('[data-vm-dial="pass-rate"]');
+    const rateLabel = root.querySelector('[data-vm-id="pass_rate"]');
+    if (!dial || !vm || !vm.compliance || !vm.compliance.summary) return;
+    const passRate = effectivePct(vm.compliance.summary);
+    window.anime.animate(dial, {
+      strokeDashoffset: [75, 75 - (75 * passRate / 100)],
+      duration: 1100,
+      ease: 'outCubic',
+    });
+    // Sync the big number inside the ring with the sweep.
+    if (rateLabel) {
+      rateLabel.textContent = '0';
+      const obj = { v: 0 };
+      window.anime.animate(obj, {
+        v: passRate,
+        duration: 1100,
+        ease: 'outCubic',
+        onUpdate: function () { rateLabel.textContent = formatPct(obj.v); },
+        onComplete: function () { rateLabel.textContent = formatPct(passRate); },
+      });
+    }
   }
 
   function animatePanelEntrance(tab, vm) {
@@ -1087,7 +1308,10 @@
     // when the user lands there. Reset to "0" right before tweening so
     // there's no flash of the final value (paintCompliance sets it to
     // the final number so the static fallback works without anime).
-    const counters = panel.querySelectorAll('[data-vm-counter]');
+    const counters = [];
+    tabScopes(tab).forEach(function (scope) {
+      Array.prototype.push.apply(counters, scope.querySelectorAll('[data-vm-counter]'));
+    });
     counters.forEach(function (el) {
       const target = parseInt(el.dataset.target || '0', 10) || 0;
       if (target === 0) { el.textContent = '0'; return; }
@@ -1103,31 +1327,7 @@
     });
 
     if (tab === 'compliance') {
-      const dial = panel.querySelector('[data-vm-dial="pass-rate"]');
-      const rateLabel = panel.querySelector('[data-vm-id="pass_rate"]');
-      if (dial && vm && vm.compliance && vm.compliance.summary) {
-        const passRate = clampPct(vm.compliance.summary.pass_rate);
-        window.anime.animate(dial, {
-          strokeDashoffset: [100, 100 - passRate],
-          duration: 1100,
-          ease: 'outCubic',
-        });
-        // Sync the big number under the ring with the sweep (mockup #3).
-        // Reset to "0" right before tweening so there's no flash of the
-        // final value (paintCompliance set it to formatPct so the static
-        // fallback works without anime).
-        if (rateLabel) {
-          rateLabel.textContent = '0';
-          const obj = { v: 0 };
-          window.anime.animate(obj, {
-            v: passRate,
-            duration: 1100,
-            ease: 'outCubic',
-            onUpdate: function () { rateLabel.textContent = formatPct(obj.v); },
-            onComplete: function () { rateLabel.textContent = formatPct(passRate); },
-          });
-        }
-      }
+      // (The score ring moved to the hero — see animateHeroRing.)
 
       // Bar segments — reset to 0% then tween to their CSS-default --w.
       panel.querySelectorAll('.vm-bar-seg, .vm-sev-seg').forEach(function (seg) {
@@ -1273,15 +1473,11 @@
       const btn = e.target.closest('.vm-tab[data-tab-id]');
       if (!btn) return;
       const targetTab = btn.dataset.tabId;
-      const targetPanel = root.querySelector('[data-vm-panel="' + targetTab + '"]');
-      if (!targetPanel) return;
-      targetPanel.querySelectorAll('[data-vm-counter]').forEach(function (el) {
-        if (el.dataset.target && el.dataset.target !== '0') el.textContent = '0';
+      tabScopes(targetTab).forEach(function (scope) {
+        scope.querySelectorAll('[data-vm-counter]').forEach(function (el) {
+          if (el.dataset.target && el.dataset.target !== '0') el.textContent = '0';
+        });
       });
-      if (targetTab === 'compliance') {
-        const rate = targetPanel.querySelector('[data-vm-id="pass_rate"]');
-        if (rate) rate.textContent = '0';
-      }
     });
   }
 
@@ -2343,6 +2539,16 @@
     const v = Number(n);
     if (!isFinite(v)) return 0;
     return Math.max(0, Math.min(100, v));
+  }
+
+  // The dial's headline number prefers the severity-weighted score (a
+  // critical failure costs more than an informational one) over the plain
+  // pass rate — same preference the standalone report and the dashboard
+  // hero (see project memory: weighted_pass_percent) both use, so the "one
+  // number" a viewer remembers agrees across all three surfaces.
+  function effectivePct(summary) {
+    if (summary && summary.weighted_score != null) return clampPct(summary.weighted_score);
+    return clampPct(summary && summary.pass_rate);
   }
 
   function formatPct(n) {

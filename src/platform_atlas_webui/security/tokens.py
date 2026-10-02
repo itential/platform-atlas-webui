@@ -17,6 +17,12 @@ from platform_atlas.core.paths import ATLAS_HOME
 TOKEN_FILE = ATLAS_HOME / ".webui-token"
 SECRET_FILE = ATLAS_HOME / ".webui-secret"
 COOKIE_SECRET_FILE = ATLAS_HOME / ".webui-cookie-secret"
+# Bearer-auth secret for the Atlas MCP server (`--mcp-server` mode). Separate
+# file from TOKEN_FILE on purpose: the MCP endpoint is meant to be handed to
+# Gateway5 (`iagctl mcp server add ... --header "Authorization: Bearer <this>"`)
+# and network-reachable, so it must be rotatable independently of the
+# browser UI's login token without logging every browser session out.
+MCP_TOKEN_FILE = ATLAS_HOME / ".mcp-token"
 
 COOKIE_NAME = "atlas_session"
 _NONCE_TTL = 60          # seconds
@@ -104,6 +110,27 @@ def reset_token() -> None:
     """
     TOKEN_FILE.unlink(missing_ok=True)
     _write_secret(TOKEN_FILE)
+
+
+def load_mcp_token() -> bytes:
+    """Return the Atlas MCP server's bearer-auth secret, generating if missing.
+
+    The hex text on disk *is* the credential an operator hands to
+    ``iagctl mcp server add --header "Authorization: Bearer <token>"`` — the
+    file's raw contents and ``load_mcp_token().hex()`` are always identical.
+    """
+    return _load_secret(MCP_TOKEN_FILE)
+
+
+def reset_mcp_token() -> None:
+    """Regenerate the MCP bearer token.
+
+    Invalidates every client presenting the old value immediately — any
+    Gateway5 registration (``iagctl mcp server add``) must be updated with
+    the new token afterward.
+    """
+    MCP_TOKEN_FILE.unlink(missing_ok=True)
+    _write_secret(MCP_TOKEN_FILE)
 
 
 def reset_cookie_secret() -> None:

@@ -1,22 +1,11 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Settings — Platform Atlas{% endblock %}
 {% block crumb %}Settings{% endblock %}
 {% block content %}
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Settings</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
-      Configuration, <em class="not-italic text-accent font-mono text-[28px]">~/.atlas/config.json</em>
-    </h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Workspace-wide defaults, behaviour, and WebUI appearance. Each environment
-      carries its <strong>own</strong> tier, credentials, and connection details —
-      manage those per environment on the
-      <a href="/environments" class="text-accent hover:text-accent-hover">Environments</a> page.
-      Need a health check first? <a href="/config/doctor" class="text-accent hover:text-accent-hover">Run Config Doctor →</a>
-    </p>
-  </div>
-</header>
+{{ page_header("Configuration",
+    subtitle="Workspace-wide defaults, behaviour, and WebUI appearance. Each environment carries its <strong>own</strong> tier, credentials, and connection details — manage those per environment on the <a href=\"/environments\" class=\"text-accent hover:text-accent-hover\">Environments</a> page. Need a health check first? <a href=\"/config/doctor\" class=\"text-accent hover:text-accent-hover\">Run Config Doctor →</a>",
+    meta=['<code>~/.atlas/config.json</code>']) }}
 
 <section class="card mb-4">
   <div class="card-head">
@@ -32,8 +21,20 @@
                 style="grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));">
         <legend class="sr-only">Theme</legend>
 
-        <label class="theme-pick-card{% if prefs.theme == 'itential' or not prefs.theme %} is-active{% endif %}">
-          <input type="radio" name="theme" value="itential" {% if prefs.theme == 'itential' or not prefs.theme %}checked{% endif %}>
+        <label class="theme-pick-card{% if prefs.theme == 'modern' or not prefs.theme %} is-active{% endif %}">
+          <input type="radio" name="theme" value="modern" {% if prefs.theme == 'modern' or not prefs.theme %}checked{% endif %}>
+          <span class="theme-pick-swatches" aria-hidden="true">
+            <span class="sw" style="background:#0A101E;"></span>
+            <span class="sw" style="background:#16213A;"></span>
+            <span class="sw" style="background:#E0A867;"></span>
+            <span class="sw" style="background:#4DB4EA;"></span>
+          </span>
+          <span class="theme-pick-name">Modern</span>
+          <span class="theme-pick-hint">Navy, brass &amp; sky · default</span>
+        </label>
+
+        <label class="theme-pick-card{% if prefs.theme == 'itential' %} is-active{% endif %}">
+          <input type="radio" name="theme" value="itential" {% if prefs.theme == 'itential' %}checked{% endif %}>
           <span class="theme-pick-swatches" aria-hidden="true">
             <span class="sw" style="background:#101625;"></span>
             <span class="sw" style="background:#FFFFFF; box-shadow: inset 0 0 0 1px rgba(16,22,37,0.18);"></span>
@@ -42,30 +43,6 @@
           </span>
           <span class="theme-pick-name">Itential</span>
           <span class="theme-pick-hint">Brand-true · mode-locked</span>
-        </label>
-
-        <label class="theme-pick-card{% if prefs.theme == 'aurora' %} is-active{% endif %}">
-          <input type="radio" name="theme" value="aurora" {% if prefs.theme == 'aurora' %}checked{% endif %}>
-          <span class="theme-pick-swatches" aria-hidden="true">
-            <span class="sw" style="background:#0A1628;"></span>
-            <span class="sw" style="background:#152944;"></span>
-            <span class="sw" style="background:#4D9FFF;"></span>
-            <span class="sw" style="background:#E8EEF5;"></span>
-          </span>
-          <span class="theme-pick-name">Aurora</span>
-          <span class="theme-pick-hint">Confident, technical</span>
-        </label>
-
-        <label class="theme-pick-card{% if prefs.theme == 'horizon' %} is-active{% endif %}">
-          <input type="radio" name="theme" value="horizon" {% if prefs.theme == 'horizon' %}checked{% endif %}>
-          <span class="theme-pick-swatches" aria-hidden="true">
-            <span class="sw" style="background:#0D1424;"></span>
-            <span class="sw" style="background:#1C2942;"></span>
-            <span class="sw" style="background:#C98847;"></span>
-            <span class="sw" style="background:#F3EFE3;"></span>
-          </span>
-          <span class="theme-pick-name">Horizon</span>
-          <span class="theme-pick-hint">Warm, editorial</span>
         </label>
 
         <label class="theme-pick-card{% if prefs.theme == 'obsidian' %} is-active{% endif %}">
@@ -80,18 +57,6 @@
           <span class="theme-pick-hint">High-contrast, violet</span>
         </label>
 
-        <label class="theme-pick-card{% if prefs.theme == 'meadow' %} is-active{% endif %}">
-          <input type="radio" name="theme" value="meadow" {% if prefs.theme == 'meadow' %}checked{% endif %}>
-          <span class="theme-pick-swatches" aria-hidden="true">
-            <span class="sw" style="background:#0E1812;"></span>
-            <span class="sw" style="background:#1B2A22;"></span>
-            <span class="sw" style="background:#84A98C;"></span>
-            <span class="sw" style="background:#DCE8DD;"></span>
-          </span>
-          <span class="theme-pick-name">Meadow</span>
-          <span class="theme-pick-hint">Calm, sage green</span>
-        </label>
-
         <label class="theme-pick-card{% if prefs.theme == 'carbon' %} is-active{% endif %}">
           <input type="radio" name="theme" value="carbon" {% if prefs.theme == 'carbon' %}checked{% endif %}>
           <span class="theme-pick-swatches" aria-hidden="true">
@@ -102,18 +67,6 @@
           </span>
           <span class="theme-pick-name">Carbon</span>
           <span class="theme-pick-hint">Pure grayscale</span>
-        </label>
-
-        <label class="theme-pick-card{% if prefs.theme == 'dracula' %} is-active{% endif %}">
-          <input type="radio" name="theme" value="dracula" {% if prefs.theme == 'dracula' %}checked{% endif %}>
-          <span class="theme-pick-swatches" aria-hidden="true">
-            <span class="sw" style="background:#1E1F29;"></span>
-            <span class="sw" style="background:#282A36;"></span>
-            <span class="sw" style="background:#FF79C6;"></span>
-            <span class="sw" style="background:#F8F8F2;"></span>
-          </span>
-          <span class="theme-pick-name">Dracula</span>
-          <span class="theme-pick-hint">Iconic, vampiric pink</span>
         </label>
       </fieldset>
     </div>
