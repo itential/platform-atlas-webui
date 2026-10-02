@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 SENSITIVE_KEYS: frozenset[str] = frozenset({
@@ -16,7 +17,41 @@ SENSITIVE_KEYS: frozenset[str] = frozenset({
     "secret_id",
     "role_id",
     "csrf_token",
+    "ssh_passphrase",
+    "ssh_password",
+    "saas_ssh_passphrase",
+    "saas_ssh_password",
+    "saas_gw4_password",
+    "vault_secret_id",
+    "vault_role_id",
+    "vault_wrapping_token",
 })
+
+# Pattern-based matching (SEC-05) so future fields are covered without editing
+# the list. Field names are normalized (camelCase -> snake_case, lowercased,
+# separators collapsed) and matched against these substrings.
+_SENSITIVE_SUBSTRINGS: tuple[str, ...] = (
+    "password", "passwd", "passphrase", "secret", "token", "apikey", "api_key",
+    "private_key", "credential", "requirepass", "masterauth", "role_id",
+)
+# Names that merely *point at* a secret (a file path, a store selector) are not secrets.
+_SAFE_SUFFIXES: tuple[str, ...] = ("_path", "_file", "_store", "_backend", "_method", "_name")
+
+_CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def is_sensitive_key(key: Any) -> bool:
+    """True when a field name looks like it carries a secret."""
+    if not isinstance(key, str):
+        return False
+    if key in SENSITIVE_KEYS:
+        return True
+    norm = re.sub(r"[^a-z0-9]+", "_", _CAMEL_RE.sub("_", key).lower()).strip("_")
+    if norm in SENSITIVE_KEYS:
+        return True
+    if norm.endswith(_SAFE_SUFFIXES):
+        return False
+    return any(sub in norm for sub in _SENSITIVE_SUBSTRINGS)
 
 _REDACTED = "***REDACTED***"
 
@@ -29,7 +64,7 @@ def redact(payload: Any) -> Any:
     """
     if isinstance(payload, dict):
         return {
-            k: _REDACTED if k in SENSITIVE_KEYS else redact(v)
+            k: _REDACTED if is_sensitive_key(k) else redact(v)
             for k, v in payload.items()
         }
     if isinstance(payload, list):

@@ -303,12 +303,22 @@ async def view_avc_modules(request: Request, saved: int = Query(0)) -> HTMLRespo
     disabled set from the same ``config.json`` key the CLI's `config edit` >
     Advanced > Additional Validation Modules menu writes.
     """
-    from platform_atlas.core.config import FACTORY_DISABLED_EXTENDED_CHECKS
+    from platform_atlas.core.config import FACTORY_DISABLED_EXTENDED_CHECKS, SAAS_AVC_GROUP
     from platform_atlas.validation.extended_validation import get_registry
+
+    # Tier drives which checks are even shown. Under SaaS the page lists ONLY
+    # the whitelisted adapter/application group (SAAS_AVC_GROUP) — every other
+    # check is hidden entirely, because SaaS can never run it. Resolved the same
+    # way the rest of the WebUI resolves tier (ATLAS_TIER > active env overlay >
+    # root config), so this page agrees with the credentials/doctor pages.
+    tier = (config_svc.resolve_active_tier() or "").strip().lower()
+    is_saas = tier == "saas"
 
     disabled = set(config_svc.get_disabled_extended_checks())
     categories: dict[str, list[dict[str, Any]]] = {}
     for check_id, name, category in get_registry().list_checks():
+        if is_saas and check_id not in SAAS_AVC_GROUP:
+            continue
         label = category.name.replace("_", " ").title()
         categories.setdefault(label, []).append({
             "check_id": check_id,
@@ -316,9 +326,19 @@ async def view_avc_modules(request: Request, saved: int = Query(0)) -> HTMLRespo
             "enabled": check_id not in disabled,
             # Privacy-sensitive modules (currently just RBAC) stay opt-in
             # even at "factory default" — annotated so the template can
-            # explain why this one starts unchecked unlike the rest.
+            # explain why this one starts unchecked unlike the rest. RBAC is
+            # never in SAAS_AVC_GROUP, so this only ever shows in non-SaaS tiers.
             "factory_disabled": check_id in FACTORY_DISABLED_EXTENDED_CHECKS,
         })
+
+    if is_saas:
+        # Count/default only over the visible group — a non-group check that
+        # happens to be globally disabled (e.g. RBAC) must not skew these.
+        disabled_count = len(disabled & SAAS_AVC_GROUP)
+        is_default = not (disabled & SAAS_AVC_GROUP)
+    else:
+        disabled_count = len(disabled)
+        is_default = (disabled == set(FACTORY_DISABLED_EXTENDED_CHECKS))
 
     return _templates.TemplateResponse(
         request,
@@ -327,9 +347,10 @@ async def view_avc_modules(request: Request, saved: int = Query(0)) -> HTMLRespo
             request,
             atlas_version=ATLAS_VERSION,
             categories=categories,
-            disabled_count=len(disabled),
+            disabled_count=disabled_count,
             total_count=sum(len(v) for v in categories.values()),
-            is_default=(disabled == set(FACTORY_DISABLED_EXTENDED_CHECKS)),
+            is_default=is_default,
+            is_saas=is_saas,
             flash={"kind": "success", "message": "Additional Validation Modules saved."} if saved else None,
         ),
     )
@@ -337,6 +358,7 @@ async def view_avc_modules(request: Request, saved: int = Query(0)) -> HTMLRespo
 
 @router.post("/avc-modules")
 async def save_avc_modules(request: Request) -> RedirectResponse:
+    from platform_atlas.core.config import SAAS_AVC_GROUP
     from platform_atlas.validation.extended_validation import get_registry
 
     # Raw getlist() — a FastAPI List[str] Form param is unreliable for a
@@ -345,9 +367,22 @@ async def save_avc_modules(request: Request) -> RedirectResponse:
     form = await request.form()
     selected = set(form.getlist("check_ids"))
 
-    all_ids = [check_id for check_id, _, _ in get_registry().list_checks()]
-    disabled = [cid for cid in all_ids if cid not in selected]
-    config_svc.set_disabled_extended_checks(disabled)
+    tier = (config_svc.resolve_active_tier() or "").strip().lower()
+    if tier == "saas":
+        # SaaS controls ONLY the whitelisted group. Intersecting the submitted
+        # enables with SAAS_AVC_GROUP is the server-side guard: a tampered POST
+        # naming a non-group check can never enable it. The disabled-state of
+        # every non-group check (RBAC, Mongo/Redis AVC, …) is preserved exactly
+        # as-is so switching a SaaS env active doesn't rewrite global state.
+        existing = set(config_svc.get_disabled_extended_checks())
+        non_group_disabled = existing - SAAS_AVC_GROUP
+        enabled_group = selected & SAAS_AVC_GROUP
+        disabled_group = SAAS_AVC_GROUP - enabled_group
+        config_svc.set_disabled_extended_checks(sorted(non_group_disabled | disabled_group))
+    else:
+        all_ids = [check_id for check_id, _, _ in get_registry().list_checks()]
+        disabled = [cid for cid in all_ids if cid not in selected]
+        config_svc.set_disabled_extended_checks(disabled)
 
     # Reload in-process context (same as the main /config save) so the next
     # validation run in this process picks up the change immediately.
@@ -368,9 +403,19 @@ async def reset_avc_modules(request: Request) -> RedirectResponse:
     enable everything, or resetting would silently turn RBAC collection on.
     Separate action from the checkbox save above — mirrors the CLI's
     dedicated "Reset all AVC modules to default" menu item.
+
+    Under SaaS "default" means all 8 group checks enabled — reset simply drops
+    the group from the disabled list and leaves every non-group check's global
+    state untouched (it never blanket-writes FACTORY_DISABLED, which would flip
+    RBAC/infra AVC state the SaaS page doesn't even control).
     """
-    from platform_atlas.core.config import FACTORY_DISABLED_EXTENDED_CHECKS
-    config_svc.set_disabled_extended_checks(sorted(FACTORY_DISABLED_EXTENDED_CHECKS))
+    from platform_atlas.core.config import FACTORY_DISABLED_EXTENDED_CHECKS, SAAS_AVC_GROUP
+    tier = (config_svc.resolve_active_tier() or "").strip().lower()
+    if tier == "saas":
+        existing = set(config_svc.get_disabled_extended_checks())
+        config_svc.set_disabled_extended_checks(sorted(existing - SAAS_AVC_GROUP))
+    else:
+        config_svc.set_disabled_extended_checks(sorted(FACTORY_DISABLED_EXTENDED_CHECKS))
     try:
         from platform_atlas.core.context import init_context
         init_context()

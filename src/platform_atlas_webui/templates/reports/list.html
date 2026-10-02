@@ -1,31 +1,13 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Reports — Platform Atlas{% endblock %}
 {% block crumb %}Reports{% endblock %}
 {% block content %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Reports</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">Compliance reports</h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Generated reports from completed audit sessions. Each report is a self-contained HTML file
-      you can open in any browser or share with your team and stakeholders.
-    </p>
-  </div>
-  {% if reports %}
-    {% set _env_unique = reports | map(attribute='environment') | list | unique | list %}
-    <div class="hidden md:flex items-center gap-6 text-[14px] text-text-3 pb-1 shrink-0">
-      <span class="inline-flex flex-col items-end leading-tight">
-        <b class="text-text font-semibold text-[20px] tracking-[-0.02em]">{{ reports | length }}</b>
-        <span class="uppercase tracking-wider text-[12px]">report{{ '' if reports|length == 1 else 's' }}</span>
-      </span>
-      <span class="inline-flex flex-col items-end leading-tight">
-        <b class="text-text font-semibold text-[20px] tracking-[-0.02em]">{{ _env_unique | length }}</b>
-        <span class="uppercase tracking-wider text-[12px]">environment{{ '' if _env_unique|length == 1 else 's' }}</span>
-      </span>
-    </div>
-  {% endif %}
-</header>
+{% set _env_unique = reports | map(attribute='environment') | list | unique | list %}
+{{ page_header("Compliance reports",
+    subtitle="Generated reports from completed audit sessions. Each report is a self-contained HTML file you can open in any browser or share with your team and stakeholders.",
+    meta=[reports|length ~ ' report' ~ ('' if reports|length == 1 else 's'), _env_unique|length ~ ' environment' ~ ('' if _env_unique|length == 1 else 's')] if reports else None) }}
 
 {% if not reports %}
   <section class="flex flex-col items-center justify-center py-14 px-6 text-center bg-surface border border-line rounded-lg">
@@ -36,7 +18,7 @@
       <line x1="9" y1="17" x2="13" y2="17"/>
     </svg>
     <strong class="text-[17px] mb-1.5">No reports yet</strong>
-    <span class="text-text-3 max-w-[460px] text-[15px]">
+    <span class="text-text-3 max-w-[460px]">
       Reports appear here once a session completes the full pipeline (capture → validate → report).
       Open a session to run each step, or use <em>Run full pipeline</em> to do it in one shot.
     </span>
@@ -72,7 +54,7 @@
     {% elif ns.f < 5 %}{% set env_health_class = 'text-warn' %}
     {% else %}{% set env_health_class = 'text-bad' %}{% endif %}
 
-    <section class="card mb-5">
+    <section class="card mb-5 overflow-hidden shadow-xs">
       <div class="card-head">
         <h3 class="flex items-center gap-2">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent shrink-0"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/></svg>
@@ -87,107 +69,111 @@
         {% endif %}
       </div>
 
-      {# Column headers #}
-      <div class="grid grid-cols-[8px_minmax(220px,1fr)_240px_140px_140px] gap-x-4 px-4 pt-3 pb-2 border-b border-line">
-        <span></span>
-        <span class="text-[13px] text-text-3 font-semibold uppercase tracking-wider">Session</span>
-        <span class="text-[13px] text-text-3 font-semibold uppercase tracking-wider">Compliance</span>
-        <span class="text-[13px] text-text-3 font-semibold uppercase tracking-wider">Updated</span>
-        <span class="text-[13px] text-text-3 font-semibold uppercase tracking-wider text-right">Actions</span>
-      </div>
-
-      {% for r in env_reports %}
-        {% set evaluated = (r.pass_count or 0) + (r.fail_count or 0) %}
-        {% if evaluated > 0 %}
-          {% set pass_pct = ((r.pass_count / evaluated) * 100) | int %}
-          {% if r.fail_count == 0 %}{% set health_token = 'ok' %}
-          {% elif r.fail_count < 5 %}{% set health_token = 'warn' %}
-          {% else %}{% set health_token = 'bad' %}{% endif %}
-        {% else %}
-          {% set pass_pct = 0 %}
-          {% set health_token = '' %}
-        {% endif %}
-
-        {% if evaluated == 0 %}{% set dot_class = 'idle' %}
-        {% elif r.fail_count == 0 %}{% set dot_class = 'ok' %}
-        {% else %}{% set dot_class = 'fail' %}{% endif %}
-
-        <div class="grid grid-cols-[8px_minmax(220px,1fr)_240px_140px_140px] gap-x-4 items-center px-4 py-4 border-b border-line last:border-b-0 hover:bg-surface-2 transition-colors duration-100">
-          <span class="status-dot {{ dot_class }}"></span>
-
-          <div class="min-w-0">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-[15px] font-medium">{{ r.name }}</span>
-              {% if r.is_active %}<span class="chip ok text-[12px] px-1.5 py-px"><span class="dot"></span>Active</span>{% endif %}
-              {% if r.tier == 'standard' %}
-                <span class="chip text-[12px] px-1.5 py-px" style="color:oklch(60% 0.18 220); border-color:oklch(60% 0.18 220/.3); background:oklch(60% 0.18 220/.07);">Standard</span>
-              {% elif r.tier == 'saas' %}
-                <span class="chip text-[12px] px-1.5 py-px" style="color:oklch(55% 0.2 340); border-color:oklch(55% 0.2 340/.3); background:oklch(55% 0.2 340/.07);">SaaS</span>
+      <div class="overflow-x-auto">
+        <table class="w-full border-collapse table-fixed">
+          <colgroup>
+            <col style="width:30px">
+            <col> {# Session — flexible, takes remaining space #}
+            <col style="width:96px">
+            <col style="width:170px">
+            <col style="width:190px">
+            <col style="width:118px">
+            <col style="width:90px">
+          </colgroup>
+          <thead>
+            <tr class="border-b border-line">
+              <th class="px-4 py-2"></th>
+              <th class="pr-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Session</th>
+              <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Tier</th>
+              <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Ruleset</th>
+              <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Compliance</th>
+              <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Updated</th>
+              <th class="pl-3 pr-4 py-2 text-right text-[13px] text-text-3 font-semibold uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in env_reports %}
+              {% set evaluated = (r.pass_count or 0) + (r.fail_count or 0) %}
+              {% if evaluated > 0 %}
+                {% set pass_pct = ((r.pass_count / evaluated) * 100) | int %}
+                {% if r.fail_count == 0 %}{% set health_token = 'ok' %}
+                {% elif r.fail_count < 5 %}{% set health_token = 'warn' %}
+                {% else %}{% set health_token = 'bad' %}{% endif %}
               {% else %}
-                <span class="chip text-[12px] px-1.5 py-px" style="color:oklch(70% 0.18 30); border-color:oklch(70% 0.18 30/.3); background:oklch(70% 0.18 30/.07);">Extended</span>
+                {% set pass_pct = 0 %}
+                {% set health_token = '' %}
               {% endif %}
-            </div>
-            {% if r.ruleset_id %}
-              <div class="text-[13px] text-text-3 font-mono mt-1 truncate">
-                {{ r.ruleset_id }}{% if r.ruleset_profile %} <span class="text-text-4">({{ r.ruleset_profile }})</span>{% endif %}
-              </div>
-            {% endif %}
-          </div>
 
-          {# Compliance — stacked: big %, breakdown chips, progress bar #}
-          <div class="min-w-0">
-            {% if evaluated > 0 %}
-              <div class="flex items-baseline gap-2.5 mb-2">
-                <span class="text-[20px] font-semibold tracking-[-0.025em] text-{{ health_token }} leading-none">{{ pass_pct }}%</span>
-                <span class="text-[13px] text-text-3 leading-none">
-                  <span class="text-ok font-semibold">{{ r.pass_count }}</span><span class="text-text-4"> pass</span>
-                  <span class="text-text-4 mx-0.5">·</span>
-                  <span class="text-bad font-semibold">{{ r.fail_count }}</span><span class="text-text-4"> fail</span>
-                  {% if r.skip_count %}
-                    <span class="text-text-4 mx-0.5">·</span>
-                    <span class="text-text-3 font-semibold">{{ r.skip_count }}</span><span class="text-text-4"> skip</span>
+              {% if evaluated == 0 %}{% set dot_class = 'idle' %}
+              {% elif r.fail_count == 0 %}{% set dot_class = 'ok' %}
+              {% else %}{% set dot_class = 'fail' %}{% endif %}
+
+              <tr class="border-b border-line last:border-b-0 transition-colors hover:bg-surface-2 {% if r.is_active %}bg-accent-soft{% endif %}">
+                <td class="px-4 py-3 align-middle">
+                  <span class="status-dot {{ dot_class }}"></span>
+                </td>
+
+                <td class="pr-3 py-3 align-middle min-w-0">
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="shrink-0 inline-grid place-items-center w-7 h-7 rounded-full bg-accent-soft text-accent text-[14px] font-semibold border border-line">
+                      {{ r.name[0]|upper if r.name else '?' }}
+                    </span>
+                    <a href="/reports/{{ r.name }}" class="text-[15px] font-medium text-inherit no-underline hover:text-accent truncate">{{ r.name }}</a>
+                    {% if r.is_active %}<span class="chip ok px-1.5 py-px shrink-0"><span class="dot"></span>Active</span>{% endif %}
+                  </div>
+                </td>
+
+                <td class="px-3 py-3 align-middle">
+                  {% if r.tier == 'standard' %}
+                    <span class="chip px-1.5 py-px" style="color:var(--tier-standard); border-color:color-mix(in oklab, var(--tier-standard) 30%, transparent); background:color-mix(in oklab, var(--tier-standard) 9%, transparent);">Standard</span>
+                  {% elif r.tier == 'saas' %}
+                    <span class="chip px-1.5 py-px" style="color:var(--tier-saas); border-color:color-mix(in oklab, var(--tier-saas) 30%, transparent); background:color-mix(in oklab, var(--tier-saas) 9%, transparent);">SaaS</span>
+                  {% else %}
+                    <span class="chip px-1.5 py-px" style="color:var(--tier-extended); border-color:color-mix(in oklab, var(--tier-extended) 30%, transparent); background:color-mix(in oklab, var(--tier-extended) 9%, transparent);">Extended</span>
                   {% endif %}
-                </span>
-              </div>
-              <div class="progress" style="height:5px;"><i style="width:{{ pass_pct }}%; background:var(--{{ health_token }});"></i></div>
-            {% else %}
-              <div class="text-[14px] leading-tight">
-                <div class="text-text-3">Not evaluated</div>
-                {% if r.skip_count %}
-                  <div class="text-text-4 text-[13px] mt-0.5">{{ r.skip_count }} rule{{ '' if r.skip_count == 1 else 's' }} skipped</div>
-                {% endif %}
-              </div>
-            {% endif %}
-          </div>
+                </td>
 
-          {# Updated — date + time, stacked #}
-          <div class="font-mono leading-tight">
-            {% if r.updated_at %}
-              <div class="text-[14px] text-text-2">{{ r.updated_at[:10] }}</div>
-              <div class="text-[13px] text-text-4 mt-0.5">{{ r.updated_at[11:16] }}</div>
-            {% else %}
-              <span class="text-text-4 text-[14px]">—</span>
-            {% endif %}
-          </div>
+                <td class="px-3 py-3 align-middle min-w-0">
+                  <div class="font-mono text-[14px] text-text-2 truncate" title="{{ r.ruleset_id or '' }}{% if r.ruleset_profile %} ({{ r.ruleset_profile }}){% endif %}">
+                    {{ r.ruleset_id or '—' }}{% if r.ruleset_profile %}<span class="text-text-4"> ({{ r.ruleset_profile }})</span>{% endif %}
+                  </div>
+                </td>
 
-          {# Actions — primary CTA opens the in-WebUI tabbed view; the
-             standalone HTML stays one click away for export/download. #}
-          <div class="flex items-center gap-3 justify-end">
-            <a class="btn sm primary inline-flex items-center gap-1"
-               href="/reports/{{ r.name }}"
-               title="Open the unified report (Compliance / Operational / Architecture)">
-              Open
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-            </a>
-            <a class="text-[14px] text-text-3 hover:text-accent no-underline whitespace-nowrap"
-               href="/reports/{{ r.name }}/html" target="_blank" rel="noopener"
-               title="Open the standalone HTML report in a new tab">HTML</a>
-            <a class="text-[14px] text-text-3 hover:text-accent no-underline whitespace-nowrap"
-               href="/sessions/{{ r.name }}"
-               title="Go to the audit session that produced this report">Session</a>
-          </div>
-        </div>
-      {% endfor %}
+                {# Compliance — big % plus a one-line breakdown. No progress bar:
+                   the colored percentage already encodes "how good" once; a bar
+                   underneath just repeated the same magnitude a third time
+                   (color, number, bar length all saying the same thing). #}
+                <td class="px-3 py-3 align-middle min-w-0">
+                  {% if evaluated > 0 %}
+                    <div class="flex items-baseline gap-2 min-w-0">
+                      <span class="text-[18px] font-semibold tracking-[-0.02em] text-{{ health_token }} leading-none shrink-0">{{ pass_pct }}%</span>
+                      <span class="text-[13px] text-text-3 leading-none truncate">
+                        <span class="text-ok font-semibold">{{ r.pass_count }}</span> pass
+                        <span class="text-text-4">·</span>
+                        <span class="text-bad font-semibold">{{ r.fail_count }}</span> fail
+                      </span>
+                    </div>
+                  {% else %}
+                    <div class="text-[14px] leading-tight">
+                      <span class="text-text-3">Not evaluated</span>
+                      {% if r.skip_count %}<span class="text-text-4"> · {{ r.skip_count }} skipped</span>{% endif %}
+                    </div>
+                  {% endif %}
+                </td>
+
+                <td class="px-3 py-3 align-middle text-[14px] text-text-3 whitespace-nowrap">
+                  {% if r.updated_at %}{{ r.updated_at[:10] }}{% else %}—{% endif %}
+                </td>
+
+                <td class="pl-3 pr-4 py-3 align-middle text-right">
+                  <a href="/reports/{{ r.name }}"
+                     class="inline-flex items-center h-7 px-3.5 rounded-full text-[14px] font-medium border border-line-2 bg-surface-2 text-text-2 no-underline hover:bg-surface-3 hover:text-text">Open</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </section>
   {% endfor %}
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Architecture and Observability — Platform Atlas{% endblock %}
 {% block crumb %}Architecture and Observability{% endblock %}
 {% block content %}
@@ -138,7 +139,7 @@
 .arch-field input[type=number] {
   width: 100%; padding: 7px 10px; font-size: 15px;
   background: var(--surface-2); border: 1px solid var(--line);
-  border-radius: var(--r); color: var(--text); font-family: inherit;
+  border-radius: var(--r-sm); color: var(--text); font-family: inherit;
   transition: border-color .15s;
 }
 .arch-field select:focus,
@@ -151,7 +152,7 @@
 .arch-confirm { display: flex; gap: 8px; }
 .arch-confirm-opt {
   padding: 6px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
-  border: 1px solid var(--line); border-radius: var(--r);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
   background: var(--surface-2); color: var(--text-3);
   transition: all .15s;
 }
@@ -165,7 +166,7 @@
 .arch-cb-opt {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 10px; cursor: pointer;
-  border: 1px solid var(--line); border-radius: var(--r);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
   background: var(--surface-2); font-size: 14px; color: var(--text-2);
   transition: all .15s;
 }
@@ -233,7 +234,7 @@
 .arch-env-block select {
   padding: 7px 10px; font-size: 15px;
   background: var(--surface-2); border: 1px solid var(--line);
-  border-radius: var(--r); color: var(--text); font-family: inherit;
+  border-radius: var(--r-sm); color: var(--text); font-family: inherit;
 }
 .arch-env-block select:focus { outline: none; border-color: var(--accent); }
 .arch-env-actions {
@@ -251,6 +252,19 @@
   flex-basis: 100%;
 }
 .arch-copy-hint strong { color: var(--text-2); }
+
+/* ── Auto-detect ──────────────────────────────────────────────────── */
+.arch-autofill-btn {
+  background: var(--accent); color: #fff; border-color: transparent;
+}
+.arch-autofill-btn:hover { filter: brightness(1.08); }
+.arch-autofill-hint { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+.arch-field-auto {
+  display: inline-block; margin-left: 6px; font-size: 11px; font-style: italic;
+  font-weight: 500; color: var(--accent);
+}
+.arch-skip.suggested:not(.active) { border-color: var(--accent); }
+.arch-skip.suggested:not(.active) .arch-skip-box { border-color: var(--accent); }
 
 /* ── Copy flash messages ──────────────────────────────────────────── */
 .arch-flash {
@@ -308,25 +322,11 @@
 .aw-detail  { font-size: 13px; color: var(--text-3); width: 100%; padding-left: 2px; }
 </style>
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow">
-      <span class="dot"></span> {{ 'SaaS Gateway' if arch_is_saas else 'Extended Mode' }}
-      <span class="arch-env-pill" title="Editing answers for this environment">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-        {{ target_env }}
-      </span>
-    </div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">Architecture and Observability</h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch] leading-relaxed">
-      Describe your Itential deployment — topology, deployment types, server specs,
-      and operational details that Atlas cannot gather automatically.
-      Answers are scoped <strong>per environment</strong> and saved to
-      <code>~/.atlas/architecture/{{ target_env }}.json</code>.{% if show_copy_ui %}
-      If two environments are mostly the same, fill one out and copy it onto the other.{% endif %}
-    </p>
-  </div>
-</header>
+{% set arch_copy_note = " If two environments are mostly the same, fill one out and copy it onto the other." if show_copy_ui else "" %}
+{{ page_header("Architecture and Observability",
+    subtitle="Describe your Itential deployment — topology, deployment types, server specs, and operational details that Atlas cannot gather automatically. Answers are scoped <strong>per environment</strong> and saved to <code>~/.atlas/architecture/" ~ target_env ~ ".json</code>." ~ arch_copy_note,
+    meta=['<span class="dot"></span>' ~ ('SaaS Gateway' if arch_is_saas else 'Extended Mode'),
+          '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>' ~ target_env]) }}
 
 {# ── Copy flash messages ── #}
 {% if copied_from %}
@@ -408,6 +408,23 @@
         </div>
       </div>
     {% endif %}
+  {% endif %}
+
+  {% if can_autofill %}
+    <form method="post"
+          action="/architecture/autofill?env={{ target_env | urlencode }}"
+          class="arch-env-block" id="arch-autofill-form"
+          onsubmit="return confirm('Run read-only checks over SSH against this environment’s nodes — server specs, OS, container/VM/Kubernetes signals, SELinux, FIPS, MTU, and monitoring/log/vulnerability-scanner services? Nothing is written or changed on any node. Detected values are saved as suggestions only — they never overwrite an answer you’ve already entered.');">
+      <label class="arch-env-label">Auto-detect</label>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn arch-autofill-btn" id="arch-autofill-btn"
+              style="padding:7px 14px; font-size:14px; white-space:nowrap;">
+        Run auto-detect
+      </button>
+      <div class="arch-autofill-hint">
+        {% if arch_autofill_at %}Last ran {{ arch_autofill_at }} · {% endif %}Read-only SSH checks, Extended tier only.
+      </div>
+    </form>
   {% endif %}
 </div>
 
@@ -1444,6 +1461,14 @@
   // ── Saved data from server ───────────────────────────────────────────
   const SAVED = {{ arch_data_json | safe }};
 
+  // Free, zero-cost topology/config-derived suggestions (no SSH — node/
+  // replica counts, same-datacenter-as-Platform, etc.) and which sections
+  // the topology confidently rules out. SAVED.autofill (SSH auto-detect
+  // results, if a prior run exists) and these are both lower-priority than
+  // SAVED.completed — see mergeSectionData() below.
+  const TOPOLOGY_SEED = {{ arch_topology_seed_json | safe }};
+  const SUGGESTED_SKIPS = {{ arch_suggested_skips_json | safe }};
+
   // SaaS scoping — mirrors the Jinja-rendered sections so progress math only
   // counts what's actually on the page. false/'' for Standard/Extended.
   const IS_SAAS = {{ arch_is_saas | tojson }};
@@ -1962,12 +1987,45 @@
     }
   }
 
-  function restoreSection(sec, data) {
+  // Shallow-merge section data across layers, lowest priority first — later
+  // layers win per leaf key, including within one level of `parent` nesting
+  // (server_specs/deployment). Falsy/absent layers are skipped.
+  function mergeSectionData() {
+    const merged = {};
+    Array.prototype.slice.call(arguments).forEach(layer => {
+      if (!layer) return;
+      Object.keys(layer).forEach(key => {
+        const val = layer[key];
+        if (val && typeof val === 'object' && !Array.isArray(val)) {
+          merged[key] = Object.assign({}, merged[key] || {}, val);
+        } else {
+          merged[key] = val;
+        }
+      });
+    });
+    return merged;
+  }
+
+  // Auto-detected field labels get a small badge — reused for both the
+  // topology-derived layer and a prior SSH auto-detect run, since both are
+  // suggestions the user hasn't confirmed, not answers they typed.
+  // Holds inputId strings, applied by applyAutoBadges() after all sections
+  // have been restored.
+  const AUTO_FIELD_KEYS = [];
+
+  function restoreSection(sec, data, confirmedData) {
     if (!data) return;
+    confirmedData = confirmedData || {};
     sec.fields.forEach(f => {
       const src = f.parent ? data[f.parent] : data;
       if (!src) return;
       setValue(f.inputId, f.type, src[f.key]);
+      const confirmedSrc = f.parent ? confirmedData[f.parent] : confirmedData;
+      const wasConfirmed = confirmedSrc && confirmedSrc[f.key] !== undefined
+        && confirmedSrc[f.key] !== null && confirmedSrc[f.key] !== '';
+      const hasValue = src[f.key] !== undefined && src[f.key] !== null && src[f.key] !== ''
+        && !(Array.isArray(src[f.key]) && src[f.key].length === 0);
+      if (hasValue && !wasConfirmed) AUTO_FIELD_KEYS.push(f.inputId);
     });
     // GW5 clusters
     if (sec.id === 'gateway5' && data.clusters) {
@@ -1985,16 +2043,44 @@
     }
   }
 
+  function applyAutoBadges() {
+    AUTO_FIELD_KEYS.forEach(inputId => {
+      const el = document.getElementById(inputId);
+      const wrap = el ? el.closest('.arch-field') : null;
+      const label = wrap ? wrap.querySelector('.arch-field-label') : null;
+      if (label && !label.querySelector('.arch-field-auto')) {
+        const badge = document.createElement('span');
+        badge.className = 'arch-field-auto';
+        badge.textContent = 'Auto-detected';
+        label.appendChild(badge);
+      }
+    });
+  }
+
   function restoreAll() {
     const completed = SAVED.completed || {};
+    const autofill  = SAVED.autofill  || {};
     const skipped   = new Set(SAVED.skipped || []);
+    const suggestedSkips = new Set(SUGGESTED_SKIPS || []);
 
     SECTIONS.forEach(sec => {
-      const isSkipped = skipped.has(sec.id);
+      const isSkipped = skipped.has(sec.id) || suggestedSkips.has(sec.id);
       if (isSkipped) {
         _skipped.add(sec.id);
         const skipEl = document.getElementById('skip-' + sec.id);
-        if (skipEl) skipEl.classList.add('active');
+        if (skipEl) {
+          skipEl.classList.add('active');
+          if (suggestedSkips.has(sec.id) && !skipped.has(sec.id)) {
+            skipEl.classList.add('suggested');
+            const labelEl = skipEl.querySelector('span');
+            if (labelEl && !skipEl.querySelector('.arch-field-auto')) {
+              const badge = document.createElement('span');
+              badge.className = 'arch-field-auto';
+              badge.textContent = 'Auto-detected';
+              skipEl.appendChild(badge);
+            }
+          }
+        }
         const body = document.getElementById('body-' + sec.id);
         if (body) body.style.display = 'none';
         return;
@@ -2004,8 +2090,10 @@
       const clean = Object.assign({}, sdata);
       delete clean.present;
       delete clean.deployed_on_kubernetes;
-      restoreSection(sec, clean);
+      const merged = mergeSectionData(TOPOLOGY_SEED[sec.id], autofill[sec.id], clean);
+      restoreSection(sec, merged, clean);
     });
+    applyAutoBadges();
 
     // fire conditional logic based on restored values
     const k8sHpa = document.getElementById('f-k8s-hpa-enabled');

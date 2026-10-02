@@ -127,7 +127,7 @@ def template_context(request: Request, **extra) -> dict[str, Any]:
 
     # Prefs come from disk so PATCH /api/settings/appearance is reflected
     # on the very next render without a context refresh.
-    theme, mode = "itential", "dark"
+    theme, mode = "modern", "dark"
     scale = 1.0
     upgrade_panel_dismissed = False
     # Cmd+K palette defaults ON — fresh installs and any config that

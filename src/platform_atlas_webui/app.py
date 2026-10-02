@@ -52,6 +52,7 @@ _ERROR_TEMPLATES = get_templates()
 # body message; these supply the heading and a default body line.
 _ERROR_COPY: dict[int, tuple[str, str]] = {
     403: ("Access denied", "You don't have permission to view this page."),
+    409: ("Another job is running", "Only one Atlas job can run at a time. Wait for the current job to finish, then try again."),
     404: ("Page not found", "The page you're looking for doesn't exist or has moved."),
     405: ("Method not allowed", "That action isn't supported on this page."),
     500: ("Something went wrong", "Atlas hit an unexpected error. Try again, or head back to the dashboard."),
@@ -73,6 +74,7 @@ def _wants_html_error(request: Request) -> bool:
 
 # Paths the setup-redirect middleware should leave alone.
 _SETUP_BYPASS_PREFIXES: tuple[str, ...] = (
+    "/auth",  # launch-nonce login must work before config.json exists (SEC-01)
     "/setup",
     "/static",
     "/health",
@@ -82,11 +84,11 @@ _SETUP_BYPASS_PREFIXES: tuple[str, ...] = (
 )
 
 # Paths that must be reachable without an auth cookie.
-# /setup is included so first-run users can reach the wizard before any
-# session cookie exists — without this, /setup -> 401 -> redirect-loop deadlock.
+# /setup is deliberately NOT here (SEC-01): first-run users log in through the
+# normal single-use launch nonce (/auth?nonce=..., printed by the launcher even
+# when config.json doesn't exist yet) and then land on /setup with a real session.
 _AUTH_BYPASS_PREFIXES: tuple[str, ...] = (
     "/auth",
-    "/setup",
     "/static",
     "/health",
     "/_docs",
@@ -96,6 +98,17 @@ _AUTH_BYPASS_PREFIXES: tuple[str, ...] = (
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    # The WebUI has no TTY, ever — a request handler must never block on a
+    # terminal password prompt if the active OS keyring turns out to be a
+    # password-protected file keyring (e.g. keyrings.alt.file.EncryptedKeyring,
+    # the documented headless-SecretService workaround). Force this off
+    # explicitly rather than relying on isatty() auto-detection, which could
+    # misfire if the server happens to be run in a foreground dev terminal.
+    # Locked credentials are surfaced honestly on /config/credentials instead,
+    # with an unlock endpoint that feeds the password in directly.
+    from platform_atlas.core.credentials import set_interactive_unlock_enabled
+    set_interactive_unlock_enabled(False)
+
     if is_initialized():
         try:
             from platform_atlas.core.init_env import sync_bundled_files

@@ -1,0 +1,55 @@
+{# Shared page header — replaces the hand-copied eyebrow+h1+subtitle+actions
+   block that used to be independently rebuilt (with drift) on ~26 templates.
+   That drift was the single biggest reason pages read as "the same generic
+   layout" rather than one considered decision: every page had its own idea
+   of what the title should look like.
+
+   Usage:
+     {% from "partials/_page_header.html" import page_header %}
+     {% call page_header("Environments", subtitle="Each environment is an overlay with its own URI, topology, tier, and credentials.", meta=["4 configured · 1 active"]) %}
+       <a class="btn primary" href="/environments/new">+ New environment</a>
+     {% endcall %}
+
+   Omit the {% call %}/{% endcall %} wrapper entirely for a page with no
+   header actions — call the macro directly with {{ page_header(...) }}.
+
+   `title` is plain text (auto-escaped). `subtitle` and each `meta` entry
+   render as trusted HTML — they may embed <a>/<strong>/<code> the way the
+   old hand-written subtitles did. Never pass user-controlled text through
+   `subtitle`/`meta` unescaped. A meta entry is plain content by default;
+   prefix it with `<span class="dot"></span>` yourself (CSS already themed
+   for ok/warn/bad via inline `style="background:var(--ok)"` etc.) when the
+   pill is reporting a live status rather than a static fact like a path.
+
+   For a header whose title AND subtitle are technical mono identifiers
+   (a run ID, not prose) rather than a real page title, don't force it
+   through this macro — hand-write the `.page-header`/`.page-header-top`/
+   `.page-header-text`/`.page-header-actions` classes directly instead (see
+   continuous/run_detail.html for the pattern). Those class names are the
+   same ones this macro renders, so both approaches stay visually aligned. #}
+{% macro page_header(title, subtitle=None, meta=None) %}
+<header class="page-header">
+  {# Crystal watermark — a faint, slow crystal behind the title block.
+     Mounted by atlas-motion.js (atlas-facets.js, "watermark" variant);
+     decorative only, and inert without JS. See atlas-studio.css §16. #}
+  <div class="ph-watermark" data-atlas-facets data-facets-variant="watermark" aria-hidden="true">
+    <div class="facets-probe"><i data-c="a"></i><i data-c="b"></i><i data-c="lo"></i><i data-c="hi"></i></div>
+  </div>
+  <div class="page-header-top">
+    <div class="page-header-text">
+      <div class="page-header-title-row">
+        <h1>{{ title }}</h1>
+        {% if meta %}
+          {% for item in meta %}
+            <span class="page-header-meta">{{ item | safe }}</span>
+          {% endfor %}
+        {% endif %}
+      </div>
+      {% if subtitle %}<p>{{ subtitle | safe }}</p>{% endif %}
+    </div>
+    {% if caller is defined %}
+      <div class="page-header-actions">{{ caller() }}</div>
+    {% endif %}
+  </div>
+</header>
+{% endmacro %}

@@ -182,7 +182,20 @@ def _check_extended_credentials() -> dict:
         "connected": False,
         "error": None,
         "credentials": [],
+        "store_is_file": False,
+        "store_label": "OS Keyring",
     }
+
+    # Reflect the ACTUAL local secret-store substrate (OS keyring vs. the
+    # encrypted file) so the setup banner never claims "OS Keyring" for a file
+    # store — same honesty rule the credentials page follows.
+    try:
+        from platform_atlas.core.credentials import active_secret_store
+        _store = active_secret_store()
+        result["store_label"] = _store.display_name
+        result["store_is_file"] = bool(getattr(_store, "is_file", False))
+    except Exception:  # noqa: BLE001 — a display helper must never break the page
+        pass
 
     # Build per-key status list. All CredentialKey members are shown; Extended-only
     # ones are highlighted as required for this tier switch.

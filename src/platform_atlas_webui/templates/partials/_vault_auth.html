@@ -1,0 +1,157 @@
+{# ── Shared HashiCorp Vault connection form ──────────────────────────────
+   ONE definition of the Vault URL + auth-method matrix (token / approle /
+   approle-wrapped / token-file / token-env) + KV mount/path/namespace/TLS
+   fields. Previously duplicated between config/credentials.html and the
+   setup wizard's ob-vault block. Posts to `va_action` and, on success,
+   the route redirects back with a flash.
+
+   The caller sets these vars immediately before {% include %}:
+     vc         VaultConfig dataclass (edit pre-fill) or None (fresh)
+     va_action  form POST action (e.g. '/config/credentials/vault-config')
+     va_submit  submit-button label (default 'Test connection & save')
+     va_intro   optional intro <p> HTML shown above the form (or omit)
+
+   `csrf_token` and `csp_nonce` come from the parent scope. The auth-method
+   switcher JS is defined here (guarded) so any consumer inherits it. #}
+
+{% set _cur_auth = (vc.auth_method.value if vc else 'token') %}
+
+<form class="form vault-auth-form" method="post" action="{{ va_action }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  {% if va_intro %}<p class="vault-auth-intro">{{ va_intro | safe }}</p>{% endif %}
+
+  <div class="field">
+    <label for="vault_url">Vault URL</label>
+    <input id="vault_url" name="vault_url" type="url"
+           placeholder="https://vault.example.com:8200"
+           value="{{ vc.url if vc else '' }}" required>
+  </div>
+
+  <div class="field">
+    <label for="vault_auth_method">Authentication method</label>
+    <select id="vault_auth_method" name="vault_auth_method"
+            onchange="atlasVaultAuthSwitch(this.value)">
+      <option value="token"           {% if _cur_auth == 'token' %}selected{% endif %}>Token — static token stored in your credential store</option>
+      <option value="approle"         {% if _cur_auth == 'approle' %}selected{% endif %}>AppRole — role_id + static secret_id (dynamic short-lived token)</option>
+      <option value="approle_wrapped" {% if _cur_auth == 'approle_wrapped' %}selected{% endif %}>AppRole (Wrapped) — role_id + one-time wrapping token</option>
+      <option value="token_file"      {% if _cur_auth == 'token_file' %}selected{% endif %}>Token file — Vault Agent sink path</option>
+      <option value="token_env"       {% if _cur_auth == 'token_env' %}selected{% endif %}>Token env — VAULT_TOKEN environment variable</option>
+    </select>
+  </div>
+
+  {# Token auth #}
+  <div id="vault-auth-token" class="field" {% if _cur_auth != 'token' %}hidden{% endif %}>
+    <label for="vault_token">Vault token</label>
+    <input id="vault_token" name="vault_token" type="password"
+           placeholder="hvs.xxxxxxxxxxxx" autocomplete="new-password">
+    <span class="hint">Leave blank to keep the existing token.</span>
+  </div>
+
+  {# AppRole auth — shared by both 'approle' and 'approle_wrapped' #}
+  <div id="vault-auth-approle" {% if _cur_auth not in ('approle', 'approle_wrapped') %}hidden{% endif %}>
+    <div class="field mb-2.5">
+      <label for="vault_role_id">Role ID</label>
+      <input id="vault_role_id" name="vault_role_id" type="text" class="mono"
+             placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+             value="{{ vc.role_id or '' if vc else '' }}">
+    </div>
+    <div id="vault-approle-secret-id" {% if _cur_auth != 'approle' %}hidden{% endif %}>
+      <div class="field">
+        <label for="vault_secret_id">Secret ID</label>
+        <input id="vault_secret_id" name="vault_secret_id" type="password"
+               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="new-password">
+        <span class="hint">Leave blank to keep the existing secret ID. Each AppRole login generates a fresh dynamic token.</span>
+      </div>
+    </div>
+    <div id="vault-approle-wrapping-token" {% if _cur_auth != 'approle_wrapped' %}hidden{% endif %}>
+      <div class="field">
+        <label for="vault_wrapping_token">Wrapping token</label>
+        <input id="vault_wrapping_token" name="vault_wrapping_token" type="password"
+               placeholder="hvs.CAESXXXXXXXXX" autocomplete="new-password">
+        <span class="hint">One-time-use token from your Vault admin or pipeline. It unwraps to the AppRole secret_id and is consumed on first use.</span>
+      </div>
+    </div>
+  </div>
+
+  {# Token file — Vault Agent sink path #}
+  <div id="vault-auth-token-file" {% if _cur_auth != 'token_file' %}hidden{% endif %}>
+    <div class="field">
+      <label for="vault_token_file_path">Token file path</label>
+      <input id="vault_token_file_path" name="vault_token_file_path" type="text" class="mono"
+             placeholder="/run/vault-agent/atlas.token"
+             value="{{ vc.token_file_path or '' if vc else '' }}">
+      <span class="hint">Atlas reads the token Vault Agent writes to this path. The agent handles renewal automatically.</span>
+    </div>
+  </div>
+
+  {# Token env — informational only #}
+  <div id="vault-auth-token-env" {% if _cur_auth != 'token_env' %}hidden{% endif %}>
+    <div class="flash flash--info m-0 text-[14px]">
+      Atlas will read <code>VAULT_TOKEN</code> from the environment at runtime.
+      Make sure the variable is set before starting the WebUI process.
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3.5">
+    <div class="field">
+      <label for="vault_mount_point">KV v2 mount point</label>
+      <input id="vault_mount_point" name="vault_mount_point" type="text" class="mono"
+             placeholder="secret" value="{{ vc.mount_point if vc else 'secret' }}">
+    </div>
+    <div class="field">
+      <label for="vault_secret_path">Secret path</label>
+      <input id="vault_secret_path" name="vault_secret_path" type="text" class="mono"
+             placeholder="platform-atlas" value="{{ vc.secret_path if vc else 'platform-atlas' }}">
+      <span class="hint">Atlas reads from <code>&lt;mount&gt;/data/&lt;path&gt;</code>.</span>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="vault_namespace">Vault namespace <span class="font-normal text-text-3">(optional, Enterprise only)</span></label>
+    <input id="vault_namespace" name="vault_namespace" type="text" class="mono"
+           placeholder="admin/platform"
+           value="{{ vc.namespace or '' if vc else '' }}">
+  </div>
+
+  <div class="field field--row">
+    <input id="vault_verify_ssl" name="vault_verify_ssl" type="checkbox" value="1"
+           {% if not vc or vc.verify_ssl %}checked{% endif %}>
+    <label for="vault_verify_ssl">Verify Vault TLS certificate</label>
+  </div>
+
+  <div class="form-actions mt-1">
+    <button type="submit" class="btn primary">{{ va_submit | default('Test connection &amp; save') | safe }}</button>
+  </div>
+</form>
+
+<script nonce="{{ csp_nonce }}">
+  // Vault auth-method field switcher — defined once, idempotent. Toggles the
+  // top-level auth section and the AppRole sub-fields with the [hidden] attr
+  // (base.html forces [hidden]{display:none!important}).
+  window.atlasVaultAuthSwitch = window.atlasVaultAuthSwitch || function (method) {
+    var sections = {
+      'token':           'vault-auth-token',
+      'approle':         'vault-auth-approle',
+      'approle_wrapped': 'vault-auth-approle',   // shares the approle container
+      'token_file':      'vault-auth-token-file',
+      'token_env':       'vault-auth-token-env',
+    };
+    var shown = new Set();
+    Object.keys(sections).forEach(function (key) {
+      var id = sections[key];
+      if (shown.has(id)) return;
+      shown.add(id);
+      var el = document.getElementById(id);
+      if (!el) return;
+      var isApprole = (id === 'vault-auth-approle');
+      el.hidden = isApprole
+        ? !(method === 'approle' || method === 'approle_wrapped')
+        : key !== method;
+    });
+    var secretIdDiv    = document.getElementById('vault-approle-secret-id');
+    var wrappingTokDiv = document.getElementById('vault-approle-wrapping-token');
+    if (secretIdDiv)    secretIdDiv.hidden    = (method !== 'approle');
+    if (wrappingTokDiv) wrappingTokDiv.hidden = (method !== 'approle_wrapped');
+  };
+</script>

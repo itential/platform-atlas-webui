@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 
 # -- Windows UTF-8 bootstrap ----------------------------------------------
@@ -73,6 +74,26 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
         help="Regenerate the self-signed TLS certificate and exit.",
     )
     p.add_argument(
+        "--no-tls",
+        action="store_true",
+        help=(
+            "Run over plain HTTP instead of HTTPS. Only supported with --mcp-server "
+            "(the browser UI's session cookies require HTTPS). The bearer token then "
+            "travels unencrypted — only use this on a trusted network, or where the "
+            "TLS layer is handled by something in front of Atlas (e.g. a reverse proxy)."
+        ),
+    )
+    p.add_argument(
+        "--no-auth",
+        action="store_true",
+        help=(
+            "Disable bearer-token auth entirely. Only supported with --mcp-server "
+            "(the browser UI's session cookies are a separate auth mechanism). Every "
+            "request is accepted unauthenticated — only use this on a trusted network, "
+            "or where something in front of Atlas (e.g. a reverse proxy) handles auth."
+        ),
+    )
+    p.add_argument(
         "--reset-token",
         action="store_true",
         help="Regenerate the OS-user binding token (invalidates existing browser sessions).",
@@ -95,6 +116,20 @@ def _add_run_args(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Detach to the background, write a PID file, log to ~/.atlas/webui.log.",
     )
+    p.add_argument(
+        "--mcp-server",
+        action="store_true",
+        help=(
+            "Run the Atlas MCP server (read-only tool-call API for FlowAI/Gateway5) "
+            "instead of the browser UI. A separate mode, process, and daemon from the "
+            "default browser UI — the two can run independently or side by side."
+        ),
+    )
+    p.add_argument(
+        "--reset-mcp-token",
+        action="store_true",
+        help="Regenerate the MCP server's bearer token (only meaningful with --mcp-server).",
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -109,9 +144,14 @@ def _build_parser() -> argparse.ArgumentParser:
         title="Process control",
     )
 
-    # stop / status / restart operate on the PID file
-    sub.add_parser("stop", help="Stop the running daemonized WebUI (SIGTERM via PID file)")
-    sub.add_parser("status", help="Show whether a daemonized WebUI is running")
+    # stop / status / restart operate on the PID file. Each accepts
+    # --mcp-server to target the MCP daemon's PID file instead of the
+    # browser UI's — the two run as fully independent daemons.
+    stop_p = sub.add_parser("stop", help="Stop the running daemonized WebUI (SIGTERM via PID file)")
+    stop_p.add_argument("--mcp-server", action="store_true", help="Stop the MCP server daemon instead.")
+
+    status_p = sub.add_parser("status", help="Show whether a daemonized WebUI is running")
+    status_p.add_argument("--mcp-server", action="store_true", help="Check the MCP server daemon instead.")
 
     restart_p = sub.add_parser(
         "restart",
@@ -129,6 +169,11 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="Host to use in the URL (default: 127.0.0.1 or whatever the running daemon is bound to)")
     login_p.add_argument("--port", type=int, default=None,
                          help="Port to use in the URL (default: 8765 or whatever the running daemon is bound to)")
+
+    sub.add_parser(
+        "print-mcp-token",
+        help="Print the Atlas MCP server's bearer token (for `iagctl mcp server add --header`).",
+    )
 
     return parser
 
@@ -153,11 +198,11 @@ def _resolve_settings(args: argparse.Namespace) -> WebUISettings:
 
 
 def _is_compatible_atlas(version: str) -> bool:
-    """Return True if *version* satisfies the >=2.0.0,<3.0 constraint."""
+    """Return True if *version* satisfies the >=3.0.0,<4.0 constraint."""
     try:
         parts = version.split(".")
         major, minor = int(parts[0]), int(parts[1])
-        return (major, minor) >= (2, 0) and major < 3
+        return (major, minor) >= (3, 0) and major < 4
     except (ValueError, IndexError):
         return True  # unparseable — don't block startup
 
@@ -176,11 +221,38 @@ def _run_server(args: argparse.Namespace) -> int:
         )
         return 2
 
+    # SEC-01: never expose an uninitialized install beyond localhost.
+    if settings.allow_remote:
+        from platform_atlas_webui.services.setup import is_initialized as _is_init
+        if not _is_init():
+            print(
+                "Refusing --allow-remote while Atlas is not initialized. Finish first-run "
+                "setup on localhost (without --allow-remote), then restart with it.",
+                file=sys.stderr,
+            )
+            return 2
+
     # --reload + --daemon doesn't make sense: the reloader spawns a child
     # process that would re-run main() and try to daemonize again.
     if args.daemon and settings.reload:
         print(
             "Cannot combine --daemon with --reload. Pick one.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if getattr(args, "no_tls", False):
+        print(
+            "--no-tls is only supported with --mcp-server — the browser UI's "
+            "session cookies are marked Secure and require HTTPS to function.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if getattr(args, "no_auth", False):
+        print(
+            "--no-auth is only supported with --mcp-server — the browser UI uses "
+            "session-cookie auth, not a bearer token.",
             file=sys.stderr,
         )
         return 2
@@ -205,7 +277,7 @@ def _run_server(args: argparse.Namespace) -> int:
     print(f"\nPlatform Atlas WebUI v{WEBUI_VERSION}\n", file=sys.stderr)
 
     # Verify the platform-atlas CLI library is present and version-compatible.
-    # The package declares platform-atlas >=2.0.0,<3.0 as a hard dependency, so
+    # The package declares platform-atlas >=3.0.0,<4.0 as a hard dependency, so
     # pip normally guarantees this — but an in-place upgrade or manual install
     # can leave a mismatched version behind. Showing it here also gives operators
     # an immediate sanity-check that the right library is backing the WebUI.
@@ -217,16 +289,16 @@ def _run_server(args: argparse.Namespace) -> int:
             print(f" v{ATLAS_VERSION}  ✓\n", file=sys.stderr)
         else:
             print(
-                f" v{ATLAS_VERSION}  ✗ (expected >=2.0.0,<3.0 — run: pip install "
-                f"\"platform-atlas>=2.0.0,<3.0\")\n",
+                f" v{ATLAS_VERSION}  ✗ (expected >=3.0.0,<4.0 — run: pip install "
+                f"\"platform-atlas>=3.0.0,<4.0\")\n",
                 file=sys.stderr,
             )
             return 1
     except ImportError:
         print(
             "\n\n  CLI  ERROR: platform-atlas library not found.\n"
-            "       The WebUI requires platform-atlas >=2.0.0,<3.0.\n"
-            "       Install it with: pip install \"platform-atlas>=2.0.0,<3.0\"\n",
+            "       The WebUI requires platform-atlas >=3.0.0,<4.0.\n"
+            "       Install it with: pip install \"platform-atlas>=3.0.0,<4.0\"\n",
             file=sys.stderr,
         )
         return 1
@@ -239,7 +311,7 @@ def _run_server(args: argparse.Namespace) -> int:
         print("  TLS  Generating self-signed certificate...", end="", flush=True, file=sys.stderr)
 
     try:
-        fingerprint, newly_generated = tls_mod.ensure_cert(reset=args.reset_tls)
+        fingerprint, newly_generated = tls_mod.ensure_cert(reset=args.reset_tls, extra_sans={settings.host})
     except Exception as exc:
         print(
             f"\n\n  TLS  ERROR: Could not load or generate certificate: {exc}\n"
@@ -373,43 +445,274 @@ def _run_server(args: argparse.Namespace) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# MCP server mode (--mcp-server) — a separate mode, process, and daemon
+# from the browser UI above. See design/MCP/*.md (platform-atlas repo).
+# ─────────────────────────────────────────────────────────────────────
+
+def _resolve_mcp_settings(args: argparse.Namespace) -> WebUISettings:
+    """Like _resolve_settings, but with the MCP server's own defaults/env
+    vars — distinct default port so both modes can run on one host at once."""
+    host = args.host or os.environ.get("ATLAS_MCP_HOST", "127.0.0.1")
+    port = args.port if args.port is not None else int(os.environ.get("ATLAS_MCP_PORT", "8766"))
+    allow_remote = args.allow_remote or os.environ.get("ATLAS_MCP_ALLOW_REMOTE", "0") in ("1", "true", "True")
+    log_level = args.log_level or os.environ.get("ATLAS_MCP_LOG_LEVEL", "info")
+    if host in ("0.0.0.0", "::") and not allow_remote:
+        host = "127.0.0.1"
+    return WebUISettings(host=host, port=port, reload=False, log_level=log_level, allow_remote=allow_remote)
+
+
+def _run_mcp_server(args: argparse.Namespace) -> int:
+    """Foreground (or about-to-fork) launch path for --mcp-server mode."""
+    settings = _resolve_mcp_settings(args)
+    quiet = getattr(args, "quiet", False)
+
+    if settings.host in ("0.0.0.0", "::") and not settings.allow_remote:
+        print(
+            "Refusing to bind to a public interface without --allow-remote "
+            "(or ATLAS_MCP_ALLOW_REMOTE=1).",
+            file=sys.stderr,
+        )
+        return 2
+
+    if getattr(args, "reload", False):
+        print("--reload is not supported in --mcp-server mode.", file=sys.stderr)
+        return 2
+
+    no_tls = getattr(args, "no_tls", False)
+    if no_tls and args.reset_tls:
+        print("Cannot combine --no-tls with --reset-tls — there's no certificate to reset.", file=sys.stderr)
+        return 2
+
+    no_auth = getattr(args, "no_auth", False)
+    if no_auth and getattr(args, "reset_mcp_token", False):
+        print("Cannot combine --no-auth with --reset-mcp-token — there's no token to reset.", file=sys.stderr)
+        return 2
+
+    try:
+        import uvicorn
+    except ImportError:
+        print(
+            "uvicorn is not installed. Install the WebUI extras: "
+            "pip install platform-atlas-webui",
+            file=sys.stderr,
+        )
+        return 1
+
+    from platform_atlas_webui import __version__ as WEBUI_VERSION
+    from platform_atlas_webui.security import tls as tls_mod
+
+    print(f"\nPlatform Atlas MCP Server v{WEBUI_VERSION}\n", file=sys.stderr)
+
+    print("  CLI  Checking platform-atlas library...", end="", flush=True, file=sys.stderr)
+    try:
+        from platform_atlas.core._version import __version__ as ATLAS_VERSION
+        if _is_compatible_atlas(ATLAS_VERSION):
+            print(f" v{ATLAS_VERSION}  ✓\n", file=sys.stderr)
+        else:
+            print(
+                f" v{ATLAS_VERSION}  ✗ (expected >=3.0.0,<4.0 — run: pip install "
+                f"\"platform-atlas>=3.0.0,<4.0\")\n",
+                file=sys.stderr,
+            )
+            return 1
+    except ImportError:
+        print(
+            "\n\n  CLI  ERROR: platform-atlas library not found.\n"
+            "       The WebUI requires platform-atlas >=3.0.0,<4.0.\n"
+            "       Install it with: pip install \"platform-atlas>=3.0.0,<4.0\"\n",
+            file=sys.stderr,
+        )
+        return 1
+
+    # ── TLS — shared cert with the browser UI (same host identity) ─────────
+    if no_tls:
+        print(
+            "  TLS  DISABLED (--no-tls) — traffic, including the bearer token, is "
+            "unencrypted.\n"
+            "       Only use this on a trusted network or behind a TLS-terminating "
+            "reverse proxy.\n",
+            file=sys.stderr,
+        )
+    else:
+        _cert_exists = tls_mod.CERT_FILE.is_file() and not args.reset_tls
+        if _cert_exists:
+            print("  TLS  Checking certificate...", end="", flush=True, file=sys.stderr)
+        else:
+            print("  TLS  Generating self-signed certificate...", end="", flush=True, file=sys.stderr)
+        try:
+            fingerprint, newly_generated = tls_mod.ensure_cert(reset=args.reset_tls, extra_sans={settings.host})
+        except Exception as exc:
+            print(
+                f"\n\n  TLS  ERROR: Could not load or generate certificate: {exc}\n"
+                "       Run with --reset-tls to regenerate.\n",
+                file=sys.stderr,
+            )
+            return 3
+        if newly_generated:
+            print(
+                f" done\n"
+                f"       Path:        {tls_mod.CERT_FILE}\n"
+                f"       Fingerprint: {fingerprint}\n",
+                file=sys.stderr,
+            )
+        else:
+            print(f" valid (expires {tls_mod.expiry_date()})\n", file=sys.stderr)
+        if args.reset_tls:
+            print("  TLS certificate regenerated. Restart without --reset-tls to launch.", file=sys.stderr)
+            return 0
+
+    # ── Logging ──────────────────────────────────────────────────────────
+    from platform_atlas_webui import daemon as daemon_mod
+    from platform_atlas_webui.security.redact import install_uvicorn_access_filter
+    install_uvicorn_access_filter()
+
+    _log_file = daemon_mod.MCP_LOG_FILE
+    _fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    _handlers: list[logging.Handler] = [logging.FileHandler(str(_log_file), encoding="utf-8")]
+    if not quiet:
+        _handlers.append(logging.StreamHandler())
+    logging.basicConfig(level=settings.log_level.upper(), format=_fmt, handlers=_handlers, force=True)
+
+    # ── Bearer token ─────────────────────────────────────────────────────
+    # The raw value is only ever shown on first generation, on
+    # --reset-mcp-token, or via the dedicated `print-mcp-token` command —
+    # never on an ordinary restart, so it doesn't end up repeated in logs.
+    scheme = "http" if no_tls else "https"
+    mcp_url = f"{scheme}://{settings.host}:{settings.port}/mcp"
+
+    if no_auth:
+        print(
+            "  Auth DISABLED (--no-auth) — every request is accepted unauthenticated, "
+            "no bearer token required.\n"
+            "       Only use this on a trusted network or behind an auth-terminating "
+            "reverse proxy.\n",
+            file=sys.stderr,
+        )
+        print(f"  Listening on {mcp_url}", file=sys.stderr)
+        print(
+            f"    iagctl mcp server add atlas {mcp_url} --transport streamable-http\n",
+            file=sys.stderr,
+        )
+    else:
+        from platform_atlas_webui.security.tokens import MCP_TOKEN_FILE, load_mcp_token, reset_mcp_token
+
+        if getattr(args, "reset_mcp_token", False):
+            reset_mcp_token()
+            reveal_token = True
+            print("  Auth Regenerating MCP bearer token...", end="", flush=True, file=sys.stderr)
+        else:
+            reveal_token = not MCP_TOKEN_FILE.is_file()
+            print(
+                f"  Auth {'Generating' if reveal_token else 'Verifying'} MCP bearer token...",
+                end="", flush=True, file=sys.stderr,
+            )
+        token_hex = load_mcp_token().hex()
+        print(" done\n", file=sys.stderr)
+
+        # No trailing slash: that's the canonical path (a bare 200), while
+        # "/mcp/" 307-redirects to it — give registrants the direct URL rather
+        # than relying on the caller (e.g. Gateway5) to follow the redirect.
+        print(f"  Listening on {mcp_url}", file=sys.stderr)
+        if reveal_token:
+            print(
+                f"  Bearer token: {token_hex}\n"
+                f"  Register with Gateway5 (see README for the recommended\n"
+                f"  iagctl create secret + {{{{ secret \"...\" }}}} form instead of pasting the\n"
+                f"  raw token below):\n"
+                f"    iagctl mcp server add atlas {mcp_url} --transport streamable-http \\\n"
+                f"      --header \"Authorization=Bearer {token_hex}\"\n",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "  Bearer token unchanged — run `platform-atlas-webui print-mcp-token` to view it.\n",
+                file=sys.stderr,
+            )
+    if quiet:
+        print(f"  Logs        {_log_file}", file=sys.stderr)
+    print(file=sys.stderr)
+
+    # ── Daemonize (optional) ────────────────────────────────────────────
+    if args.daemon:
+        if not daemon_mod.is_supported():
+            print(
+                "  --daemon is POSIX-only. On Windows (or under systemd), run "
+                "the MCP server in the foreground under your service supervisor.",
+                file=sys.stderr,
+            )
+            return 2
+        print(
+            f"  Detaching to background ─ pid: {daemon_mod.MCP_PID_FILE}  log: {_log_file}\n",
+            file=sys.stderr,
+        )
+        try:
+            daemon_mod.daemonize(pidfile=daemon_mod.MCP_PID_FILE, logfile=_log_file)
+        except daemon_mod.DaemonError as exc:
+            print(f"  ✘ {exc}", file=sys.stderr)
+            return 4
+
+    # ── Server ───────────────────────────────────────────────────────────
+    from platform_atlas_webui.mcp.app import create_mcp_app
+
+    common_kwargs: dict = {
+        "host": settings.host,
+        "port": settings.port,
+        "log_level": "warning" if quiet else settings.log_level,
+    }
+    if not no_tls:
+        common_kwargs["ssl_certfile"] = str(tls_mod.CERT_FILE)
+        common_kwargs["ssl_keyfile"] = str(tls_mod.KEY_FILE)
+    if quiet:
+        common_kwargs["access_log"] = False
+
+    print("  Starting MCP server...", end="", flush=True, file=sys.stderr)
+    app = create_mcp_app(no_auth=no_auth)
+    print(" ready\n", file=sys.stderr)
+    uvicorn.run(app, **common_kwargs)
+    return 0
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Subcommand handlers
 # ─────────────────────────────────────────────────────────────────────
 
-def _handle_stop() -> int:
+def _handle_stop(*, mcp: bool = False) -> int:
     from platform_atlas_webui import daemon as daemon_mod
+    label = "MCP server" if mcp else "Atlas WebUI"
     if not daemon_mod.is_supported():
         print("Daemon mode is POSIX-only.", file=sys.stderr)
         return 2
+    pidfile = daemon_mod.MCP_PID_FILE if mcp else None
     try:
-        stopped, pid = daemon_mod.stop_daemon()
+        stopped, pid = daemon_mod.stop_daemon(pidfile)
     except daemon_mod.DaemonError as exc:
         print(f"✘ {exc}", file=sys.stderr)
         return 1
     if stopped:
-        print(f"✓ Stopped Atlas WebUI (PID {pid}).", file=sys.stderr)
+        print(f"✓ Stopped {label} (PID {pid}).", file=sys.stderr)
         return 0
     if pid is not None:
         print(
-            f"No running WebUI; cleaned up stale PID file (was PID {pid}).",
+            f"No running {label}; cleaned up stale PID file (was PID {pid}).",
             file=sys.stderr,
         )
     else:
-        print("No running WebUI; nothing to stop.", file=sys.stderr)
+        print(f"No running {label}; nothing to stop.", file=sys.stderr)
     return 0
 
 
-def _handle_status() -> int:
+def _handle_status(*, mcp: bool = False) -> int:
     from platform_atlas_webui import daemon as daemon_mod
+    label = "MCP server" if mcp else "Atlas WebUI"
     if not daemon_mod.is_supported():
         print("Daemon mode is POSIX-only.", file=sys.stderr)
         return 2
-    running, pid = daemon_mod.status()
-    pid_path = daemon_mod.pid_file()
-    log_path = daemon_mod.log_file()
+    pid_path = daemon_mod.MCP_PID_FILE if mcp else daemon_mod.pid_file()
+    log_path = daemon_mod.MCP_LOG_FILE if mcp else daemon_mod.log_file()
+    running, pid = daemon_mod.status(pid_path)
     if running:
         print(
-            f"● Atlas WebUI is running\n"
+            f"● {label} is running\n"
             f"    PID:      {pid}\n"
             f"    PID file: {pid_path}\n"
             f"    Log:     {log_path}",
@@ -418,24 +721,25 @@ def _handle_status() -> int:
         return 0
     if pid is not None:
         print(
-            f"○ Atlas WebUI is NOT running (stale PID file referenced {pid}).\n"
+            f"○ {label} is NOT running (stale PID file referenced {pid}).\n"
             f"    PID file: {pid_path}",
             file=sys.stderr,
         )
         return 3
-    print("○ Atlas WebUI is NOT running.", file=sys.stderr)
+    print(f"○ {label} is NOT running.", file=sys.stderr)
     return 3
 
 
 def _handle_restart(args: argparse.Namespace) -> int:
     """Stop the existing daemon (if any), then start a new one daemonized."""
-    rc = _handle_stop()
+    mcp = getattr(args, "mcp_server", False)
+    rc = _handle_stop(mcp=mcp)
     if rc not in (0, 3):
         return rc
     # Force daemon mode for restart — the whole point of restart is to
     # leave a backgrounded process behind.
     args.daemon = True
-    return _run_server(args)
+    return _run_mcp_server(args) if mcp else _run_server(args)
 
 
 def _handle_login_url(args: argparse.Namespace) -> int:
@@ -457,6 +761,19 @@ def _handle_login_url(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_print_mcp_token() -> int:
+    """Print the Atlas MCP server's bearer token, generating it if needed.
+
+    Deliberately not printed on every ``--mcp-server`` startup (see
+    ``_run_mcp_server``) — the raw token only appears on first generation,
+    on ``--reset-mcp-token``, or via this dedicated, explicit command.
+    """
+    from platform_atlas_webui.security.tokens import load_mcp_token
+
+    print(load_mcp_token().hex())
+    return 0
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────────────
@@ -468,16 +785,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if action is None:
         # Bare invocation — original "run server" behavior, with optional
-        # --daemon detach.
-        return _run_server(args)
+        # --daemon detach. --mcp-server switches to the MCP server mode
+        # entirely (separate process/app from the browser UI).
+        return _run_mcp_server(args) if getattr(args, "mcp_server", False) else _run_server(args)
     if action == "stop":
-        return _handle_stop()
+        return _handle_stop(mcp=getattr(args, "mcp_server", False))
     if action == "status":
-        return _handle_status()
+        return _handle_status(mcp=getattr(args, "mcp_server", False))
     if action == "restart":
         return _handle_restart(args)
     if action == "login-url":
         return _handle_login_url(args)
+    if action == "print-mcp-token":
+        return _handle_print_mcp_token()
     # argparse already rejects unknown subcommands; this branch is
     # defensive only.
     print(f"Unknown action: {action}", file=sys.stderr)

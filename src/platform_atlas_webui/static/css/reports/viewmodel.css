@@ -337,15 +337,15 @@ html[data-mode="light"] .vm-backdrop__wash--info   { opacity: 0.5; }
  * Hero — health rating + lede + 4 stat tiles + score ring
  * ────────────────────────────────────────────────────────────────── */
 .vm-hero {
-  padding: 32px;
+  padding: 40px;
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 36px;
+  gap: 44px;
   align-items: center;
 }
 .vm-hero-text { min-width: 0; }
 .vm-hero-title {
-  margin-top: 6px;
+  margin-top: 8px;
   font-family: var(--vm-sans);
   font-size: clamp(56px, 8vw, 96px);
   font-weight: 600;
@@ -353,8 +353,21 @@ html[data-mode="light"] .vm-backdrop__wash--info   { opacity: 0.5; }
   letter-spacing: -0.02em;
   color: var(--vm-fg);
 }
+/* One-line verdict, set from paintHeroHeadline() — sits between the big
+   rating word and the detailed lede so the reader gets the plain-English
+   takeaway before the numbers. Deliberately smaller than the display
+   numeral above it but heavier than the lede below it. */
+.vm-hero-headline {
+  margin: 18px 0 0;
+  max-width: 560px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.006em;
+  color: var(--vm-fg);
+}
 .vm-hero-lede {
-  margin: 14px 0 0;
+  margin: 10px 0 0;
   max-width: 560px;
   font-size: 14.5px;
   line-height: 1.55;
@@ -366,7 +379,7 @@ html[data-mode="light"] .vm-backdrop__wash--info   { opacity: 0.5; }
 }
 
 .vm-stat-grid {
-  margin-top: 24px;
+  margin-top: 28px;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
@@ -378,7 +391,7 @@ html[data-mode="light"] .vm-backdrop__wash--info   { opacity: 0.5; }
   max-width: none;
 }
 .vm-stat {
-  padding: 14px 16px;
+  padding: 16px 18px;
   display: flex; flex-direction: column; gap: 6px;
   transition: transform .25s var(--vm-ease),
               background .2s ease,
@@ -422,7 +435,10 @@ html[data-mode="light"] .vm-backdrop__wash--info   { opacity: 0.5; }
 }
 .vm-ring-arc {
   fill: none;
-  stroke: var(--accent);
+  /* Tone-colored by paintHeroHeadline() (ok/warn/bad) via the
+     --vm-dial-tone custom property on .vm-hero-ring — falls back to the
+     theme accent so the ring still renders correctly before JS runs. */
+  stroke: var(--vm-dial-tone, var(--accent));
   stroke-width: 6;
   stroke-linecap: round;
 }
@@ -455,8 +471,19 @@ html[data-mode="light"] .vm-backdrop__wash--info   { opacity: 0.5; }
   margin-left: 2px;
   line-height: 1;
 }
+/* Grade letter — tone-colored by paintHeroHeadline() (ok/warn/bad), the
+   same three-way split the ring's arc color and the hero headline use.
+   Sits between the number and the "Severity-weighted" caption so the
+   ring reads as an instrument grading, not just a percentage. */
+.vm-ring-grade {
+  margin-top: 4px;
+  font-family: var(--vm-sans);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
 .vm-ring-sub {
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: 9.5px;
 }
 
@@ -2461,4 +2488,471 @@ html[data-mode="light"] .vm-backdrop__wash--info   { opacity: 0.5; }
 .vm-resources-bar-link svg {
   flex-shrink: 0;
   opacity: 0.65;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 3.0 — Modern redesign of the report view
+ *
+ * One section, appended, so the whole visual pass reads (and reverts) in
+ * one place. It changes presentation only: every data hook, Alpine
+ * binding and JS-generated class keeps working as before. It also carries
+ * the export modal's restyle (export.css stays as it was), because this
+ * stylesheet is loaded on the same page.
+ *
+ * Direction: the same system as the rest of the WebUI — opaque Modern
+ * surfaces with hairlines instead of the old frosted glass, Hanken Grotesk
+ * for text and Sora for headline numbers, sentence-case labels, brass for
+ * selection, sky for information.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Tokens: map the report's own token set onto the theme ── */
+.vm-root {
+  --vm-sans: var(--ui);
+  --vm-panel-bg: var(--surface);
+  --vm-panel-bg-raised: var(--surface);
+  --vm-panel-border: var(--line);
+  --vm-divider: var(--line);
+  --vm-divider-2: var(--line-2);
+  --vm-r-pill-sm: 999px;
+  --vm-r-input: var(--r-md);
+  --vm-r-panel: var(--r-lg);
+  font-feature-settings: normal;
+  color: var(--text-2);
+}
+/* The page ground already carries the brass/sky washes; the report's own
+   backdrop would double them. */
+.vm-root .vm-backdrop { display: none; }
+.vm-root .card { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* Sentence case for every small label the report used to set in caps. */
+.vm-root .vm-smallcap,
+.vm-root .vm-status,
+.vm-root .vm-sev-tag,
+.vm-root .vm-rules-table thead th,
+.vm-detail-panel .vm-smallcap,
+.vm-detail-panel .vm-status,
+.vm-detail-panel .vm-sev-tag,
+.vm-detail-panel .vm-detail-cmp-label {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+.vm-root .vm-smallcap { font-size: 12.5px; font-weight: 600; color: var(--text-3); }
+
+
+/* ── Hero: the report's one header ──
+   Navy in every theme (like the dashboard masthead), with the crystal facets
+   behind it. Everything inside reads a dark token set, so status colours set
+   inline by viewmodel.js (e.g. the grade) resolve to their lifted variants. */
+.vm-hero-x {
+  --text: #E9EDF5; --text-2: #AAB5CA; --text-3: #8C97AE; --text-4: #7E8AA3;
+  --ok: #5CCB8F; --warn: #F2B544; --bad: #F2737C; --info: #4DB4EA;
+  --line: rgba(150, 172, 214, .12);
+  --mast-accent: color-mix(in oklab, var(--accent) 62%, #fff);
+  --facet-a: var(--mast-accent); --facet-b: #4DB4EA;
+  position: relative; overflow: hidden; isolation: isolate;
+  margin-bottom: 16px;
+  border-radius: var(--r-xl, 20px);
+  background:
+    radial-gradient(90% 120% at 82% 38%, #1a2946 0%, transparent 60%),
+    linear-gradient(170deg, #16213A 0%, #0F1729 58%, #0B1120 100%);
+  border: 1px solid rgba(150, 172, 214, .12);
+  box-shadow: 0 30px 70px -44px rgba(8, 12, 24, .9);
+  color: var(--text);
+}
+:root[data-theme="modern"] .vm-hero-x { --mast-accent: #E0A867; }
+:root[data-theme="itential"] .vm-hero-x { --mast-accent: #4DB4EA; --facet-b: #E0A867; }
+:root[data-theme="carbon"] .vm-hero-x { --mast-accent: #E4E4E4; --facet-b: #9AB3C2; }
+
+/* Top row: identity on the left, actions on the right. */
+.vm-hx-top {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 16px;
+  padding: 22px 30px 0;
+}
+.vm-hx-eyebrow { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px 9px; font-size: 13.5px; color: var(--text-2); min-width: 0; }
+.vm-hx-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--mast-accent); box-shadow: 0 0 0 4px color-mix(in oklab, var(--mast-accent) 25%, transparent); flex-shrink: 0; }
+.vm-hx-session { font-family: var(--mono); font-size: 13px; color: #fff; }
+.vm-hx-sep { color: rgba(255, 255, 255, .32); }
+.vm-hero-x [data-vm-kicker] { text-transform: capitalize; }
+.vm-hx-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.vm-hx-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 34px; padding: 0 13px;
+  border-radius: var(--r-md); border: 1px solid rgba(255, 255, 255, .18);
+  background: rgba(255, 255, 255, .06);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  color: #fff; font: 600 13.5px var(--ui); text-decoration: none; cursor: pointer;
+  transition: background-color var(--st-fast, .15s) ease, border-color var(--st-fast, .15s) ease, transform 80ms ease;
+}
+.vm-hx-btn:hover { background: rgba(255, 255, 255, .12); border-color: rgba(255, 255, 255, .28); }
+.vm-hx-btn:active { transform: scale(.97); }
+.vm-hx-btn:focus-visible { outline: 2px solid var(--mast-accent); outline-offset: 2px; }
+.vm-hx-btn.is-primary {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--mast-accent) 86%, #fff), var(--mast-accent));
+  color: #111a2c; border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 10px 24px -12px color-mix(in oklab, var(--mast-accent) 60%, transparent);
+}
+.vm-hx-btn.is-primary:hover { background: color-mix(in oklab, var(--mast-accent) 86%, #fff); }
+
+/* Body: the tab's copy on the left, the score on the right. */
+.vm-hx-body {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 40px;
+  padding: 22px 30px 24px;
+}
+.vm-hero-x .vm-hx-copy { max-width: 660px; min-width: 0; }
+
+/* Per-tab slices share one grid cell and cross-fade, so the hero keeps the
+   height of its tallest slice and never jumps when the tab changes. */
+.vm-hx-stack, .vm-hx-ledger-stack { display: grid; }
+.vm-hx-stack > .vm-hx-slice, .vm-hx-ledger-stack > .vm-hx-ledger {
+  grid-area: 1 / 1;
+  opacity: 0; visibility: hidden; transform: translateY(6px);
+  transition: opacity .28s ease, transform .45s cubic-bezier(.16, 1, .3, 1), visibility 0s linear .28s;
+}
+.vm-hx-stack > .vm-hx-slice.is-on, .vm-hx-ledger-stack > .vm-hx-ledger.is-on {
+  opacity: 1; visibility: visible; transform: none;
+  transition: opacity .35s ease .06s, transform .5s cubic-bezier(.16, 1, .3, 1) .06s, visibility 0s;
+}
+.vm-hx-title {
+  margin: 0 0 10px;
+  font-family: var(--display); font-weight: 600;
+  font-size: clamp(32px, 1.6vw + 18px, 46px); line-height: 1.04; letter-spacing: -0.032em;
+  color: #fff;
+}
+.vm-hx-headline { margin: 0 0 6px; font-size: 16.5px; font-weight: 600; color: #fff; }
+.vm-hx-lede { margin: 0; max-width: 58ch; font-size: 15px; line-height: 1.6; color: var(--text-2); }
+.vm-hx-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  margin: 16px 0 0; font-size: 14px; color: var(--text-2);
+}
+.vm-hx-code {
+  font-family: var(--mono); font-size: 12.5px; color: #F2E6D2;
+  background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 6px; padding: 1px 7px;
+}
+
+/* Score: the gauge sits on a soft dark disc so it reads over the crystal. */
+.vm-hx-score { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.vm-hero-x .vm-hero-ring { width: 184px; height: 184px; isolation: isolate; }
+.vm-hero-x .vm-hero-ring::before {
+  content: ""; position: absolute; inset: -8%; z-index: -1; border-radius: 50%;
+  background: radial-gradient(circle, rgba(10, 16, 30, .82) 0 56%, rgba(10, 16, 30, 0) 72%);
+}
+.vm-hero-x .vm-ring-track { stroke: rgba(233, 237, 245, .10); }
+.vm-hero-x .vm-ring-num { font-family: var(--display); color: #fff; letter-spacing: -0.035em; }
+.vm-hero-x .vm-ring-pct { color: var(--text-2); }
+.vm-hero-x .vm-ring-grade { font-weight: 600; }
+.vm-hx-rating { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: -8px; text-align: center; }
+.vm-hx-rating-val { font-family: var(--display); font-size: 20px; font-weight: 600; letter-spacing: -0.015em; color: #fff; }
+.vm-hx-rating-cap { font-size: 12px; color: var(--text-3); }
+
+/* Ledger: the active tab's key numbers, on a glass strip. */
+.vm-hx-ledger-stack {
+  position: relative; z-index: 1;
+  border-top: 1px solid rgba(255, 255, 255, .10);
+  background: rgba(8, 12, 24, .42);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.vm-hx-ledger { display: flex; flex-wrap: wrap; }
+.vm-hx-ledger-inner { display: contents; }
+.vm-hx-ledger-inner[hidden] { display: none; }
+.vm-hx-empty { display: flex; }
+.vm-hx-ledger-inner:not([hidden]) ~ .vm-hx-empty { display: none; }
+.vm-hx-stat {
+  position: relative;
+  display: flex; flex-direction: column; gap: 4px;
+  flex: 1 1 160px; min-width: 0;
+  padding: 14px 24px 16px;
+  border-left: 1px solid rgba(255, 255, 255, .08);
+}
+.vm-hx-ledger > .vm-hx-stat:first-child,
+.vm-hx-ledger-inner > .vm-hx-stat:first-child { border-left: 0; }
+.vm-hx-stat[data-tone]::before {
+  content: ""; position: absolute; left: 24px; top: -1px; width: 26px; height: 2px; border-radius: 0 0 2px 2px;
+  background: var(--text-3);
+}
+.vm-hx-stat[data-tone="ok"]::before   { background: var(--ok); }
+.vm-hx-stat[data-tone="bad"]::before  { background: var(--bad); }
+.vm-hx-stat[data-tone="warn"]::before { background: var(--warn); }
+.vm-hx-k { font-size: 12.5px; font-weight: 600; color: var(--text-3); }
+.vm-hx-v {
+  font-family: var(--display); font-size: 28px; font-weight: 600; line-height: 1.05;
+  letter-spacing: -0.025em; color: #fff; font-variant-numeric: tabular-nums;
+}
+.vm-hx-stat[data-tone="ok"] .vm-hx-v   { color: var(--ok); }
+.vm-hx-stat[data-tone="bad"] .vm-hx-v  { color: var(--bad); }
+.vm-hx-stat[data-tone="warn"] .vm-hx-v { color: var(--warn); }
+.vm-hx-stat[data-tone="mute"] .vm-hx-v { color: var(--text-2); }
+.vm-hx-fact { display: block; margin-top: 7px; font-family: var(--mono); font-size: 13.5px; color: #fff; overflow-wrap: anywhere; }
+.vm-hx-empty .vm-hx-fact { font-family: var(--ui); color: var(--text-2); }
+.vm-hx-wide { flex-grow: 2; }
+/* viewmodel.js writes the tier upper-cased; show it as a word. */
+.vm-hx-tier { text-transform: lowercase; }
+.vm-hx-tier::first-letter { text-transform: uppercase; }
+
+@media (max-width: 980px) {
+  .vm-hx-body { grid-template-columns: 1fr; }
+  .vm-hx-score { flex-direction: row; gap: 18px; justify-self: start; }
+  .vm-hx-rating { align-items: flex-start; text-align: left; margin-top: 0; }
+  .vm-hero-x .vm-hero-ring { width: 150px; height: 150px; }
+}
+@media (max-width: 760px) {
+  .vm-hx-top { padding: 20px 20px 0; }
+  .vm-hx-body { padding: 12px 20px 20px; }
+  .vm-hx-ledger, .vm-hx-ledger-inner:not([hidden]) { display: grid; grid-template-columns: 1fr 1fr; grid-column: 1 / -1; }
+  .vm-hx-stat { border-left: 0; border-top: 1px solid rgba(255, 255, 255, .08); padding: 12px 20px 14px; }
+  .vm-hx-stat[data-tone]::before { left: 20px; }
+  .vm-hx-wide { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vm-hx-stack > .vm-hx-slice, .vm-hx-ledger-stack > .vm-hx-ledger { transition: none; transform: none; }
+}
+
+
+/* ── Tabs: a segmented bar with a sliding raised pill ──
+   The JS positions [data-vm-tab-indicator] with translateX + width, so
+   drawing it as a full-height pill needed no script change. */
+.vm-root .vm-tabs {
+  position: sticky; top: calc(var(--st-top-h, 60px) + 8px); z-index: 30;
+  display: flex; gap: 2px;
+  width: fit-content; max-width: 100%;
+  margin: 0 0 18px; padding: 5px;
+  overflow-x: auto; scrollbar-width: none;
+  background: var(--st-glass-strong, var(--surface));
+  -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--r-md) + 5px);
+  box-shadow: var(--st-elev-2);
+}
+.vm-root .vm-tabs::-webkit-scrollbar { display: none; }
+.vm-root .vm-tab {
+  position: relative; z-index: 1;
+  height: 38px; padding: 0 14px; gap: 8px;
+  border: 0; border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px; font-weight: 500; white-space: nowrap;
+  transition: color var(--st-fast, .15s) ease;
+}
+.vm-root .vm-tab::after { display: none; }
+.vm-root .vm-tab:hover { color: var(--text); }
+.vm-root .vm-tab svg { color: var(--text-3); transition: color var(--st-fast, .15s) ease; }
+/* Same weight in both states: a bolder active tab is wider than the width
+   the script just measured, which left the pill ~2px short. Colour and the
+   pill carry the emphasis instead. */
+.vm-root .vm-tab, .vm-root .vm-tab.is-active { font-weight: 550; }
+.vm-root .vm-tab.is-active { color: var(--text); }
+.vm-root .vm-tab.is-active svg { color: var(--accent); }
+.vm-root .vm-tab-indicator {
+  top: 5px; bottom: 5px; left: 0; height: auto;
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 16%, var(--surface-2)), color-mix(in oklab, var(--accent) 7%, var(--surface-2)));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent), var(--st-elev-1);
+}
+.vm-root .vm-tab-count {
+  height: 20px; min-width: 24px; padding: 0 7px;
+  border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  color: var(--text-3); font-size: 11.5px;
+}
+.vm-root .vm-tab.is-active .vm-tab-count { background: var(--action); color: var(--action-ink); border-color: transparent; }
+
+
+/* ── Cards and heads ── */
+.vm-root .card { border-radius: var(--r-lg); }
+.vm-root .card-head h3 { font-size: 15.5px; }
+.vm-root .vm-count, .vm-root .card-head .sub {
+  text-transform: none; letter-spacing: 0;
+  font-size: 13px; font-weight: 500; color: var(--text-3);
+}
+
+/* Segmented control (Breakdown: Category / Severity). */
+.vm-seg {
+  display: inline-flex; gap: 2px; padding: 3px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.vm-seg-btn {
+  height: 28px; padding: 0 12px; border: 0; border-radius: calc(var(--r-md) - 3px);
+  background: transparent; color: var(--text-3);
+  font: 500 13px var(--ui); cursor: pointer;
+  transition: background-color var(--st-fast, .15s) ease, color var(--st-fast, .15s) ease;
+}
+.vm-seg-btn:hover { color: var(--text); }
+.vm-seg-btn.is-active { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--st-elev-1), inset 0 0 0 1px var(--line); }
+
+
+/* ── Rules table ──
+   The table was meant to fill the right rail's height and scroll inside
+   its card, but the left grid column sized to the full table (125 rows ≈
+   a 7,000px page). A zero flex-basis with the same 580px floor restores
+   the intent; the header row stays pinned while the body scrolls. */
+.vm-root .vm-split-left, .vm-root .vm-split-left > .vm-rules-card { min-height: 0; }
+.vm-root .vm-rules-table-wrap { flex: 1 1 0; height: 0; min-height: 580px; overflow-y: auto; }
+.vm-root .vm-rules-table thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--line);
+  font-size: 12.5px; font-weight: 600; color: var(--text-3);
+}
+.vm-root .vm-rules-table td { border-color: var(--line); }
+.vm-root .vm-rules-table td.vm-col-rule { font-size: 12.5px; }
+
+/* Status badges: dot + label chips. */
+.vm-root .vm-status, .vm-detail-panel .vm-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px 2px 8px;
+  font-family: var(--ui); font-size: 12.5px; font-weight: 600;
+  border-radius: 999px;
+}
+.vm-root .vm-status::before, .vm-detail-panel .vm-status::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0;
+}
+.vm-root .vm-sev-tag, .vm-detail-panel .vm-sev-tag { font-family: var(--ui); font-size: 12px; font-weight: 600; }
+/* Severity and category values arrive lower-case from viewmodel.js (the old
+   CSS upper-cased them); capitalise them instead. */
+.vm-root .vm-sev-tag, .vm-detail-panel .vm-sev-tag,
+.vm-detail-crumb-cat, .vm-root .vm-priority-cat { text-transform: capitalize !important; letter-spacing: 0 !important; }
+
+/* "View" becomes a quiet ghost button that lights on row hover. */
+.vm-root .vm-view-btn {
+  height: 28px; padding: 0 10px; font-size: 12.5px; font-weight: 600;
+  border-radius: 8px; background: transparent; border-color: var(--line-2); color: var(--text-2);
+}
+.vm-root tr:hover .vm-view-btn, .vm-root .vm-view-btn:hover {
+  background: var(--accent-soft); border-color: color-mix(in oklab, var(--accent) 40%, transparent); color: var(--text);
+}
+
+/* Search + status filter. */
+.vm-root .vm-search {
+  height: 34px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--line-2); color: var(--text);
+}
+.vm-root .vm-filter-chips { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 3px; }
+.vm-root .vm-chip { font-size: 12.5px; height: 26px; padding: 0 10px; border-radius: calc(var(--r-md) - 3px); }
+.vm-root .vm-chip, .vm-root .vm-chip.is-active { font-weight: 550; }
+.vm-root .vm-chip.is-active { color: var(--text); }
+.vm-root .vm-filter-pill { top: 3px; border-radius: calc(var(--r-md) - 3px); background: var(--surface); box-shadow: var(--st-elev-1), inset 0 0 0 1px var(--line); }
+
+
+/* ── Priority actions ── */
+.vm-root .vm-priority-item {
+  background: var(--surface-2); border-color: var(--line);
+  border-radius: var(--r-md); padding: 11px 14px 11px 18px;
+}
+.vm-root .vm-priority-item:hover { border-color: var(--line-2); }
+.vm-root .vm-priority-item::before { top: 10px; bottom: 10px; width: 3px; }
+.vm-root .vm-priority-title { font-weight: 600; color: var(--text); }
+
+
+/* ── Breakdown bars ──
+   A second, generic .vm-bar-row/.vm-bar-label pair (inline-flex, 44px
+   right-aligned mono labels) was leaking into these rows and squashing the
+   category name into its count ("platform38/40"). Scoped here so the label
+   sits above its bar again. */
+.vm-root .vm-bars .vm-bar-row { display: block; min-width: 0; padding: 10px 0; }
+.vm-root .vm-bars .vm-bar-row + .vm-bar-row { border-top: 1px solid var(--line); }
+.vm-root .vm-bars .vm-bar-label {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  min-width: 0; margin-bottom: 7px; text-align: left;
+  font-family: var(--ui); font-size: 13.5px;
+}
+.vm-root .vm-bars .vm-bar-name { font-weight: 600; text-transform: capitalize; }
+.vm-root .vm-bars .vm-bar-track { height: 7px; border-radius: 999px; background: var(--surface-3); }
+
+
+/* ── Sub-tabs (MongoDB pipelines, extended-check categories) ── */
+.vm-root .vm-subtab-bar { gap: 6px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.vm-root .vm-subtab {
+  height: 32px; padding: 0 12px; gap: 8px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface-2); color: var(--text-2);
+  font-size: 13px; font-weight: 500;
+}
+.vm-root .vm-subtab::after { display: none; }
+.vm-root .vm-subtab:hover { color: var(--text); border-color: var(--line-2); }
+.vm-root .vm-subtab.is-active {
+  background: var(--accent-soft); color: var(--text); font-weight: 600;
+  border-color: color-mix(in oklab, var(--accent) 38%, transparent);
+}
+.vm-root .vm-subtab.is-error { border-color: color-mix(in oklab, var(--bad) 35%, transparent); }
+.vm-root .vm-subtab-count { border-radius: 999px; font-size: 11.5px; }
+
+
+/* ── Collapsibles, log cards, extended checks ── */
+.vm-root .vm-collapse, .vm-root .vm-log-card, .vm-root .vm-extended-card {
+  border-radius: var(--r-md); border-color: var(--line); background: var(--surface-2);
+}
+.vm-root .vm-log-card-eyebrow, .vm-root .vm-extended-card-cat { text-transform: none; letter-spacing: 0; }
+
+
+/* ── Resources bar ── */
+.vm-root .vm-resources-bar { border-radius: var(--r-lg); border-color: var(--line); background: var(--surface); }
+.vm-root .vm-resources-bar-label { text-transform: none; letter-spacing: 0; font-weight: 600; }
+.vm-root .vm-resources-bar-link { border-radius: 999px; }
+
+
+/* ── Rule-detail slide-over ──
+   Positioned against the current shell: below the 60px topbar and beside
+   the sidebar in each of its states (full, rail, drawer). It was pinned to
+   the 3.0 shell's 52px / 248px, which left a gap under the new topbar. */
+.vm-detail-panel { top: var(--st-top-h, 60px); left: var(--st-side-w, 256px); }
+:root[data-rail="true"] .vm-detail-panel { left: var(--st-rail-w, 72px); }
+@media (max-width: 1180px) { :root:not([data-rail="false"]) .vm-detail-panel { left: var(--st-rail-w, 72px); } }
+@media (max-width: 760px) { .vm-detail-panel { left: 0; } }
+.vm-detail-card {
+  background: var(--surface);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  border-left: 1px solid var(--line-2);
+  box-shadow: var(--st-elev-3);
+}
+.vm-detail-head { padding: 22px 24px 18px; }
+.vm-detail-name { font-family: var(--display); font-size: 20px; letter-spacing: -0.02em; }
+.vm-detail-rule-id { font-family: var(--mono); }
+.vm-detail-card-section { background: var(--surface-2); border-color: var(--line); border-radius: var(--r-md); }
+.vm-detail-section-head { background: transparent; border-bottom-color: var(--line); }
+.vm-detail-section-head h4 { font-size: 13.5px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--text); }
+.vm-detail-cmp-label { font-size: 12.5px; font-weight: 600; color: var(--text-3); }
+.vm-detail-cmp-value { border-radius: 8px; }
+.vm-detail-close { border-radius: var(--r-md); background: var(--surface-2); border-color: var(--line); }
+.vm-detail-close:hover { color: var(--text); border-color: var(--line-2); }
+.vm-detail-nav { background: var(--surface); border-top-color: var(--line); }
+.vm-detail-nav-btn {
+  height: 34px; padding: 0 12px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--line-2); color: var(--text); font-weight: 600;
+}
+.vm-detail-nav-btn:hover:not(:disabled) { background: var(--surface-3); }
+.vm-detail-nav-pos { font-family: var(--mono); color: var(--text-3); }
+
+
+/* ── Report Export modal (export.css left unchanged) ── */
+.rx-modal .rx-backdrop {
+  background: color-mix(in oklab, #060A14 58%, transparent);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.rx-modal .rx-card {
+  max-width: 500px;
+  border-radius: var(--r-xl, 20px);
+  border-color: var(--line-2);
+  box-shadow: var(--st-elev-3);
+}
+.rx-modal .rx-head { padding: 22px 22px 10px; }
+.rx-modal .rx-title { font-family: var(--display); font-size: 18px; font-weight: 600; letter-spacing: -0.015em; }
+.rx-modal .rx-sub { color: var(--text-2); font-size: 14px; line-height: 1.55; }
+.rx-modal .rx-body { padding: 10px 22px 6px; }
+.rx-modal .rx-field-label { font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--text); }
+.rx-modal .rx-seg { background: var(--surface-2); border-radius: var(--r-md); }
+.rx-modal .rx-check { background: var(--surface-2); border-radius: var(--r-md); padding: 13px 14px; }
+.rx-modal .rx-check:hover { border-color: var(--line-2); }
+.rx-modal .rx-check-title { font-weight: 600; color: var(--text); }
+.rx-modal .rx-meta { border-radius: var(--r-md); }
+.rx-modal .rx-foot { padding: 16px 22px 22px; }
+.rx-modal .rx-x { border-radius: var(--r-md); }
+
+/* Large / hero report headers use Onest (via --hero); this also overrides
+   the horizon theme's serif on .vm-hero-title. Numbers/small titles stay. */
+.vm-hero-title,
+.vm-hx-title {
+  font-family: var(--hero) !important;
 }

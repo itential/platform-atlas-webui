@@ -14,6 +14,7 @@ from markupsafe import escape
 from platform_atlas.core._version import __version__ as ATLAS_VERSION
 
 from platform_atlas_webui.dependencies import get_templates, template_context
+from platform_atlas_webui.services import baseline as baseline_svc
 from platform_atlas_webui.services import config as _cfg_svc
 from platform_atlas_webui.services import environments as env_svc
 from platform_atlas_webui.services import ssh_keys as ssh_keys_svc
@@ -44,13 +45,28 @@ def _missing_credentials(env: dict) -> list[dict]:
     backend = data.get("credential_backend") or "keyring"
 
     # The same required-set the credentials page uses; keep them in sync.
-    # SaaS has no statically required credentials — the GW4 API password is
-    # contextual (preflight checks it when a GW4 API target is configured).
-    if tier == "saas":
-        return []
+    # SaaS is now Platform-anchored — it REQUIRES the Platform OAuth secret,
+    # same as Standard/Extended (the limited adapter/application AVC set it runs
+    # pulls from Platform OAuth). Only Extended additionally requires the Mongo
+    # and Redis connection URIs; the GW4 API password stays contextual (preflight
+    # checks it when a GW4 API target is configured).
     required_keys = [CredentialKey.PLATFORM_SECRET]
-    if tier != "standard":
+    if tier == "extended":
         required_keys += [CredentialKey.MONGO_URI, CredentialKey.REDIS_URI]
+    if tier == "saas":
+        # A SaaS gateway audit collects gateway SSH. Password auth can't work
+        # without a stored SSH password, so require it whenever the env has an
+        # SSH gateway node using password auth. Key auth needs no stored secret
+        # (an unencrypted key / agent, or an optional passphrase), so it isn't
+        # forced here — the passphrase stays optional.
+        deployment = data.get("deployment") or {}
+        ssh_nodes = [
+            n for n in (deployment.get("nodes") or [])
+            if isinstance(n, dict) and (n.get("transport") or "ssh") == "ssh"
+        ]
+        default_auth = ((deployment.get("ssh_defaults") or {}).get("auth_method") or "key").lower()
+        if any((n.get("ssh_auth_method") or default_auth).lower() == "password" for n in ssh_nodes):
+            required_keys.append(CredentialKey.SSH_PASSWORD)
 
     try:
         bt = CredentialBackendType(backend)
@@ -73,8 +89,11 @@ def _missing_credentials(env: dict) -> list[dict]:
 
 
 @router.get("", response_class=HTMLResponse)
-async def list_environments(request: Request, from_tier: str = Query("")) -> HTMLResponse:
+async def list_environments(
+    request: Request, from_tier: str = Query(""), activate_error: str = Query("")
+) -> HTMLResponse:
     items = env_svc.list_environments()
+    flash = {"kind": "error", "message": activate_error} if activate_error else None
     return _templates.TemplateResponse(
         request,
         "environments/list.html",
@@ -83,6 +102,7 @@ async def list_environments(request: Request, from_tier: str = Query("")) -> HTM
             atlas_version=ATLAS_VERSION,
             environments=items,
             from_tier=from_tier,
+            flash=flash,
         ),
     )
 
@@ -242,6 +262,8 @@ async def view_environment(
         raise HTTPException(status_code=404, detail=f"Environment '{name}' not found")
     missing_creds = _missing_credentials(env)
     topology = env_svc.topology_summary(env.get("data"))
+    baseline = await run_in_threadpool(baseline_svc.baseline_summary, name)
+    baseline_candidates = await run_in_threadpool(baseline_svc.list_baseline_candidates, name)
     flash = None
     if passphrase_error:
         flash = {
@@ -261,6 +283,8 @@ async def view_environment(
             just_created=bool(just_created),
             missing_creds=missing_creds,
             topology=topology,
+            baseline=baseline,
+            baseline_candidates=baseline_candidates,
             flash=flash,
         ),
     )
@@ -301,6 +325,7 @@ async def save_environment(
     saas_gw5_source_path: str = Form(""),
     saas_gw5_conf_path: str = Form(""),
     saas_iag_host: str = Form(""),
+    saas_gw5_iag_host: str = Form(""),
     saas_ssh_user: str = Form(""),
     saas_ssh_port: str = Form(""),
     saas_ssh_key: str = Form(""),
@@ -314,7 +339,6 @@ async def save_environment(
     vault_secret_store: str = Form("keyring"),
     gateway4_uri: str = Form(""),
     gateway4_username: str = Form(""),
-    legacy_profile: str = Form(""),
     ssh_key: str = Form(""),
     values_yaml_path: str = Form(""),
     iag5_values_yaml_path: str = Form(""),
@@ -390,7 +414,6 @@ async def save_environment(
                                else None),
         "gateway4_uri": gateway4_uri,
         "gateway4_username": gateway4_username,
-        "legacy_profile": legacy_profile or None,
         "ssh_key": ssh_key,
         "values_yaml_path": values_yaml_path,
         "iag5_values_yaml_path": iag5_values_yaml_path,
@@ -429,6 +452,9 @@ async def save_environment(
     # still submit). Map them onto the generic keys the topology builder reads.
     if posted_tier == "saas":
         payload["iag_host"] = saas_iag_host
+        # Separate SSH host for GW5 when GW4+GW5 live on different servers
+        # (blank ⇒ same host as GW4, or single-gateway env).
+        payload["gw5_iag_host"] = saas_gw5_iag_host
         payload["ssh_user"] = saas_ssh_user
         payload["ssh_port"] = saas_ssh_port
         payload["ssh_key"] = (saas_ssh_key or ssh_key).strip()
@@ -504,11 +530,14 @@ def _safe_next_url(value: str) -> str:
     """Return ``value`` if it's a same-origin path, else ``''``.
 
     Blocks open-redirect tricks: protocol-relative ``//evil``, backslash
-    smuggling, or fully-qualified URLs. Only accepts paths starting with a
-    single ``/`` followed by a non-slash character.
+    smuggling, or fully-qualified URLs. Accepts any path starting with a
+    single ``/`` — including the bare root ``/`` (the dashboard's own URL),
+    which a stricter length check used to reject, silently bouncing the
+    topbar environment switcher to ``/environments`` instead of back to the
+    dashboard.
     """
     value = (value or "").strip()
-    if len(value) < 2 or not value.startswith("/"):
+    if not value.startswith("/"):
         return ""
     if value.startswith("//") or value.startswith("/\\"):
         return ""
@@ -525,12 +554,29 @@ async def activate_environment(name: str, next: str = Form("")):
         env_svc.set_active(name)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # The disk write above always "succeeds" from the user's point of view —
+    # the picker shows the new env as active. But the in-process AtlasContext
+    # singleton only picks it up if this reload succeeds too; if it doesn't,
+    # every other route (preflight included) keeps reading the OLD context
+    # until the daemon is restarted. That used to fail silently here with no
+    # log line and no user-visible signal — surface it on both fronts now.
+    reload_error = ""
     try:
         from platform_atlas.core.context import init_context
         init_context()
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Context reload failed after activating environment '%s'", name)
+        reload_error = (
+            f"Switched to '{name}', but the WebUI couldn't reload it: {exc}. "
+            f"Other pages may still show the previous environment until you "
+            f"restart the WebUI (platform-atlas-webui restart)."
+        )
+
     target = _safe_next_url(next) or "/environments"
+    if reload_error:
+        sep = "&" if "?" in target else "?"
+        target += f"{sep}{urlencode({'activate_error': reload_error})}"
     return RedirectResponse(url=target, status_code=303)
 
 
@@ -594,3 +640,27 @@ async def delete_environment(name: str):
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse(url="/environments", status_code=303)
+
+
+@router.post("/{name}/baseline")
+async def set_environment_baseline(name: str, session_name: str = Form(...)):
+    """Pin (or update) this environment's validation baseline.
+
+    The session's validation results are copied into the baseline store, so
+    it survives that session later being deleted or overwritten. Rejects a
+    session from a different environment — same guard as the CLI's
+    ``env baseline set``.
+    """
+    try:
+        await run_in_threadpool(baseline_svc.set_baseline, name, session_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url=f"/environments/{name}", status_code=303)
+
+
+@router.post("/{name}/baseline/delete")
+async def clear_environment_baseline(name: str):
+    """Remove this environment's pinned baseline. The source session (if it
+    still exists) is untouched."""
+    await run_in_threadpool(baseline_svc.clear_baseline, name)
+    return RedirectResponse(url=f"/environments/{name}", status_code=303)

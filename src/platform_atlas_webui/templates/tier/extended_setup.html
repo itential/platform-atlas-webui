@@ -1,43 +1,26 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Extended Setup — Platform Atlas{% endblock %}
 {% block crumb %}<a href="/tier" class="text-inherit hover:text-accent">Tier</a> <span class="sep">›</span> Extended setup{% endblock %}
 {% block content %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Configuration</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
-      {% if pending %}Extended setup, <em class="not-italic text-accent">not yet active</em>
-      {% else %}Extended mode, <em class="not-italic text-accent">credential check</em>{% endif %}
-    </h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      {% if pending %}
-        Atlas is still running in <strong>Standard mode</strong> — the tier only switches to Extended once every
-        required credential below is verified present and you click <strong>Finish upgrade</strong>. Leaving this
-        page any other way keeps your environment in Standard, unchanged.
-      {% else %}
-        Before running Extended captures, Atlas needs access to MongoDB, Redis, and SSH credentials.
-        Verify they are available below, then continue.
-      {% endif %}
-    </p>
-  </div>
-  <div class="flex items-center gap-2">
-    <form action="/tier/revert-to-standard" method="post" class="inline"
-          data-confirm-action data-confirm-kind="danger"
-          data-confirm-title="{% if pending %}Cancel upgrade?{% else %}Revert to Standard?{% endif %}"
-          data-confirm-message="{% if pending %}Cancel the Extended upgrade? Nothing will have changed — you're still in Standard mode.{% else %}Revert to Standard mode?{% endif %}"
-          data-confirm-label="{% if pending %}Cancel upgrade{% else %}Revert{% endif %}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="btn danger" type="submit">{% if pending %}Cancel upgrade{% else %}Revert to Standard{% endif %}</button>
-    </form>
-  </div>
-</header>
+{% set es_subtitle = "Atlas is still running in <strong>Standard mode</strong> — the tier only switches to Extended once every required credential below is verified present and you click <strong>Finish upgrade</strong>. Leaving this page any other way keeps your environment in Standard, unchanged." if pending else "Before running Extended captures, Atlas needs access to MongoDB, Redis, and SSH credentials. Verify they are available below, then continue." %}
+{% call page_header("Extended setup" if pending else "Extended mode",
+    subtitle=es_subtitle,
+    meta=["not yet active" if pending else "credential check"]) %}
+  <form action="/tier/revert-to-standard" method="post" class="inline"
+        data-confirm-action data-confirm-kind="danger"
+        data-confirm-title="{% if pending %}Cancel upgrade?{% else %}Revert to Standard?{% endif %}"
+        data-confirm-message="{% if pending %}Cancel the Extended upgrade? Nothing will have changed — you're still in Standard mode.{% else %}Revert to Standard mode?{% endif %}"
+        data-confirm-label="{% if pending %}Cancel upgrade{% else %}Revert{% endif %}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn danger" type="submit">{% if pending %}Cancel upgrade{% else %}Revert to Standard{% endif %}</button>
+  </form>
+{% endcall %}
 
 {# ── Backend info banner ── #}
-<div class="flash {% if cred_status.error %}flash--error{% else %}flash--info{% endif %}"
-     style="display:flex; align-items:flex-start; gap:12px; margin-bottom:20px;">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-       stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;">
+<div class="flash {% if cred_status.error %}flash--error{% else %}flash--info{% endif %} mb-5 flex items-start gap-3">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-0.5">
     {% if cred_status.error %}
       <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
     {% else %}
@@ -47,299 +30,73 @@
   <div>
     {% if cred_status.backend == 'vault' %}
       <strong>Credential backend: HashiCorp Vault</strong>
-      {% if cred_status.vault_url %}
-        <span style="font-size:14px; color:var(--text-2); margin-left:8px; font-family:var(--mono);">{{ cred_status.vault_url }}</span>
-      {% endif %}
+      {% if cred_status.vault_url %}<span class="text-[14px] text-text-2 ml-2 font-mono">{{ cred_status.vault_url }}</span>{% endif %}
       <br>
       {% if cred_status.error %}
-        <span style="font-size:14px; color:var(--bad);">{{ cred_status.error }}</span>
-        <span style="display:block; font-size:14px; margin-top:4px;">
-          Atlas could not connect to Vault. Verify your Vault configuration in the environment settings, then click <strong>Re-check</strong>.
-        </span>
+        <span class="text-[14px] text-bad">{{ cred_status.error }}</span>
+        <span class="block text-[14px] mt-1">Atlas could not connect to Vault. Verify your Vault configuration in the environment settings, then click <strong>Re-check</strong>.</span>
       {% else %}
-        <span style="font-size:14px;">
-          Reading from <code>{{ cred_status.vault_path }}</code>.
-          Atlas reads Vault credentials — it cannot write to Vault.
+        <span class="text-[14px]">
+          Reading from <code>{{ cred_status.vault_path }}</code>. Atlas reads Vault credentials — it cannot write to Vault.
           Add any missing keys directly in your Vault KV store{% if cred_status.env_name %} under the <code>{{ cred_status.env_name }}</code> path{% endif %}, then click <strong>Re-check</strong>.
         </span>
       {% endif %}
     {% else %}
-      <strong>Credential backend: OS Keyring</strong>
+      <strong>Credential backend: {{ cred_status.store_label | default('OS Keyring') }}</strong>
       {% if cred_status.error %}
-        <br><span style="font-size:14px; color:var(--bad);">{{ cred_status.error }}</span>
+        <br><span class="text-[14px] text-bad">{{ cred_status.error }}</span>
       {% else %}
-        <br>
-        <span style="font-size:14px;">
-          Add or update credentials inline below — Atlas writes them to your OS keyring and re-validates immediately.
-        </span>
+        <br><span class="text-[14px]">Add or update credentials inline below — Atlas writes them to your credential store and re-validates immediately.</span>
       {% endif %}
     {% endif %}
   </div>
 </div>
 
 {# ── SSH key path ── #}
-<section class="card" style="margin-bottom:20px;">
+<section class="card mb-5">
   <div class="card-head">
     <h3>SSH key</h3>
     <span class="sub">path to your private key file</span>
   </div>
   <div class="card-body">
-    <form method="post" action="/tier/extended/setup/ssh-key" style="display:flex; gap:10px; align-items:flex-end;">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="field" style="flex:1; margin:0;">
-        <label for="ssh_key" style="font-size:14px;">SSH private key path</label>
-        <input id="ssh_key" name="ssh_key" type="text"
-               placeholder="~/.ssh/id_rsa"
-               value="{{ ssh_key_path }}"
-               style="font-family:var(--mono); font-size:15px;">
-        <span class="hint" style="font-size:13px;">Used for all Extended-tier SSH connections. The passphrase (if any) is stored separately in your credential backend.</span>
+    <form method="post" action="/tier/extended/setup/ssh-key" class="flex gap-2.5 items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="field flex-1 m-0">
+        <label for="ssh_key">SSH private key path</label>
+        <input id="ssh_key" name="ssh_key" type="text" class="mono" placeholder="~/.ssh/id_rsa" value="{{ ssh_key_path }}">
+        <span class="hint">Used for all Extended-tier SSH connections. The passphrase (if any) is stored separately in your credential backend.</span>
       </div>
-      <button type="submit" class="btn" style="flex-shrink:0; margin-bottom:1px;">Save</button>
+      <button type="submit" class="btn shrink-0 mb-px">Save</button>
     </form>
   </div>
 </section>
 
-{% set show_actions = cred_status.backend == 'keyring' and not cred_status.error %}
 {% set total_count = cred_status.credentials | length %}
 {% set present_count = cred_status.credentials | selectattr('present') | list | length %}
 {% set required_missing = cred_status.credentials | rejectattr('present') | selectattr('required') | list | length %}
 
-{# ── Credential cards ── #}
-<style nonce="{{ csp_nonce }}">
-  .cred-stack { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-
-  .cred-card {
-    position: relative;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    padding: 16px 18px 16px 22px;
-    transition: border-color .15s ease, background-color .15s ease, transform .15s ease;
-  }
-  .cred-card::before {
-    content: "";
-    position: absolute; left: 0; top: 12px; bottom: 12px;
-    width: 3px; border-radius: 0 3px 3px 0;
-    background: var(--line-2);
-    transition: background-color .15s ease;
-  }
-  .cred-card:hover { border-color: var(--line-2); }
-
-  .cred-card.is-ok::before { background: var(--ok); }
-  .cred-card.is-alert::before { background: var(--bad); }
-  .cred-card.is-alert {
-    background: linear-gradient(180deg, oklch(from var(--bad) l c h / .04) 0%, var(--surface) 60%);
-    border-color: oklch(from var(--bad) l c h / .25);
-  }
-
-  .cred-head {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; margin-bottom: 8px;
-  }
-  .cred-meta { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .cred-pill {
-    font-size: 12px; font-weight: 600;
-    letter-spacing: .06em; text-transform: uppercase;
-    padding: 3px 9px; border-radius: 999px;
-    border: 1px solid var(--line-2);
-    color: var(--text-3); background: var(--surface-2);
-  }
-  .cred-pill.is-required { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-soft); }
-
-  .cred-status-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 13px; font-weight: 500;
-    padding: 4px 10px; border-radius: 999px;
-    border: 1px solid var(--line);
-  }
-  .cred-status-pill.is-ok   { color: var(--ok);  border-color: oklch(from var(--ok) l c h / .35);  background: var(--ok-soft); }
-  .cred-status-pill.is-bad  { color: var(--bad); border-color: oklch(from var(--bad) l c h / .35); background: var(--bad-soft); }
-  .cred-status-pill.is-idle { color: var(--text-3); }
-
-  .cred-title { font-size: 17px; font-weight: 600; margin: 0 0 4px; color: var(--text); letter-spacing: -0.01em; }
-  .cred-key { font-family: var(--mono); font-size: 13px; color: var(--text-4); margin-left: 8px; font-weight: 400; }
-  .cred-desc { font-size: 14px; color: var(--text-2); margin: 0 0 14px; line-height: 1.55; max-width: 70ch; }
-
-  .cred-actions { display: flex; align-items: center; gap: 8px; }
-  .cred-actions .btn { height: 32px; padding: 0 14px; font-size: 14px; }
-  .cred-actions .btn svg { margin-right: 6px; }
-
-  .cred-form-wrap {
-    display: none;
-    opacity: 0; transform: translateY(-4px);
-    transition: opacity .18s ease-out, transform .18s ease-out;
-    margin-top: 4px;
-  }
-  .cred-form-wrap.is-open { opacity: 1; transform: translateY(0); }
-
-  .cred-form {
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 16px 18px;
-    display: flex; flex-direction: column; gap: 12px;
-  }
-  .cred-form-label-row {
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 13px; font-weight: 600; letter-spacing: .06em;
-    text-transform: uppercase; color: var(--text-3);
-  }
-  .cred-reveal {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: none; border: none; padding: 0;
-    color: var(--text-3); cursor: pointer;
-    font-size: 13px; letter-spacing: .04em; text-transform: uppercase; font-weight: 500;
-  }
-  .cred-reveal:hover { color: var(--text); }
-
-  .cred-input {
-    width: 100%; box-sizing: border-box;
-    background: var(--bg); color: var(--text);
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
-    padding: 11px 14px;
-    font-family: var(--mono); font-size: 16px;
-    transition: border-color .12s, box-shadow .12s;
-  }
-  .cred-input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
-  }
-  .cred-input::placeholder { color: var(--text-4); }
-
-  .cred-form-hint { font-size: 13px; color: var(--text-3); margin: 0; line-height: 1.5; }
-  .cred-form-hint code { font-family: var(--mono); font-size: 13px; padding: 1px 5px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; color: var(--text-2); }
-
-  .cred-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); margin-top: 2px; }
-  .cred-form-actions .btn { height: 34px; padding: 0 16px; font-size: 14px; }
-
-  /* Reduced motion: skip the slide */
-  @media (prefers-reduced-motion: reduce) {
-    .cred-form-wrap { transition: none; transform: none; }
-    .cred-card { transition: none; }
-  }
-</style>
-
-<section style="margin-bottom: 8px; display:flex; align-items:flex-end; justify-content:space-between; gap:16px;">
-  <div>
-    <h3 style="margin:0 0 2px; font-size:16px; font-weight:600; color:var(--text);">Credentials</h3>
-    <p style="margin:0; font-size:14px; color:var(--text-3);">
-      <strong style="color:var(--text-2);">{{ present_count }}</strong> of {{ total_count }} stored
-      {% if required_missing %}· <span style="color:var(--bad);">{{ required_missing }} required missing</span>{% endif %}
-      {% if cred_status.env_name %} · scope <code style="font-family:var(--mono); font-size:13px;">platform-atlas/{{ cred_status.env_name }}</code>{% endif %}
-    </p>
+{# ── Credentials (shared editor) ── #}
+<section class="card mb-5">
+  <div class="card-head">
+    <h3>Credentials</h3>
+    <span class="sub">
+      {{ present_count }} of {{ total_count }} stored{% if required_missing %} · <span class="text-bad">{{ required_missing }} required missing</span>{% endif %}{% if cred_status.env_name %} · scope <code>platform-atlas/{{ cred_status.env_name }}</code>{% endif %}
+    </span>
   </div>
+
+  {% set creds = cred_status.credentials %}
+  {% set ce_set_action = '/tier/extended/setup/credential' %}
+  {% set ce_delete_action = '' %}
+  {% set ce_writable = (cred_status.backend != 'vault') and not cred_status.error %}
+  {% set ce_store_is_file = cred_status.store_is_file | default(false) %}
+  {% set ce_env_name = cred_status.env_name %}
+  {% set ce_backend = cred_status.backend %}
+  {% set ce_format_check = false %}
+  {% include "partials/_cred_editor.html" %}
 </section>
 
-<div class="cred-stack">
-  {% for c in cred_status.credentials %}
-    {% set is_present = c.present %}
-    {% set is_missing = (c.present is not none) and (not c.present) %}
-    {% set is_required_missing = c.required and is_missing %}
-    {% set card_state = 'is-ok' if is_present else ('is-alert' if is_required_missing else '') %}
-
-    <article class="cred-card {{ card_state }}">
-      <div class="cred-head">
-        <div class="cred-meta">
-          <span class="cred-pill{% if c.required %} is-required{% endif %}">
-            {% if c.required %}Required{% else %}Optional{% endif %}
-          </span>
-          <span class="cred-pill">{{ c.tier_note }}</span>
-        </div>
-        <div>
-          {% if c.present is none %}
-            <span class="cred-status-pill is-idle">Unknown</span>
-          {% elif is_present %}
-            <span class="cred-status-pill is-ok">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              Stored
-            </span>
-          {% elif c.required %}
-            <span class="cred-status-pill is-bad">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              Missing
-            </span>
-          {% else %}
-            <span class="cred-status-pill is-idle">Not set</span>
-          {% endif %}
-        </div>
-      </div>
-
-      <h4 class="cred-title">
-        {{ c.display }}
-        <span class="cred-key">{{ c.key }}</span>
-      </h4>
-      <p class="cred-desc">{{ c.description }}</p>
-
-      {% if show_actions %}
-        <div class="cred-actions" data-cred-collapsed>
-          <button type="button" class="btn{% if is_required_missing %} primary{% endif %}"
-                  onclick="atlasCredOpen('cred-form-{{ loop.index }}')">
-            {% if is_present %}
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 12 13 12"/></svg>
-              Replace value
-            {% else %}
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-              Set credential
-            {% endif %}
-          </button>
-        </div>
-
-        <div id="cred-form-{{ loop.index }}" class="cred-form-wrap" data-cred-form>
-          <form method="post" action="/tier/extended/setup/credential" class="cred-form">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="key" value="{{ c.key }}">
-
-            <div>
-              <div class="cred-form-label-row">
-                <label for="cred-val-{{ loop.index }}">{{ c.display }}</label>
-                <button type="button" class="cred-reveal" tabindex="-1"
-                        onclick="atlasCredReveal('cred-val-{{ loop.index }}', this)">
-                  <svg class="icon-eye-off" width="13" height="13" viewBox="0 0 24 24" fill="none"
-                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                    <line x1="1" y1="1" x2="23" y2="23"/>
-                  </svg>
-                  <svg class="icon-eye" width="13" height="13" viewBox="0 0 24 24" fill="none"
-                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                  <span class="cred-reveal-label">Show</span>
-                </button>
-              </div>
-              <input type="password" name="value" id="cred-val-{{ loop.index }}"
-                     class="cred-input" placeholder="{{ c.placeholder }}"
-                     autocomplete="new-password" required
-                     style="margin-top:8px;">
-            </div>
-
-            <p class="cred-form-hint">
-              {% if is_present %}Replaces the existing value in your OS keyring under <code>platform-atlas{% if cred_status.env_name %}/{{ cred_status.env_name }}{% endif %}</code>.
-              {% else %}Stored in your OS keyring under <code>platform-atlas{% if cred_status.env_name %}/{{ cred_status.env_name }}{% endif %}</code> — never written to disk.
-              {% endif %}
-            </p>
-
-            <div class="cred-form-actions">
-              <button type="button" class="btn"
-                      onclick="atlasCredClose('cred-form-{{ loop.index }}')">Cancel</button>
-              <button type="submit" class="btn primary">
-                Save &amp; verify
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:6px; margin-right:0;"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-              </button>
-            </div>
-          </form>
-        </div>
-      {% endif %}
-    </article>
-  {% endfor %}
-</div>
-
 {# ── Action buttons ── #}
-<div style="display:flex; gap:12px; align-items:center;">
-
+<div class="flex gap-3 items-center">
   <a class="btn" href="/tier/extended/setup" title="Re-check credential status">
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
     Re-check
@@ -347,7 +104,7 @@
 
   {% if pending %}
     {% if all_required_present %}
-      <form action="/tier/extended/setup/finish" method="post" style="display:inline;">
+      <form action="/tier/extended/setup/finish" method="post" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn primary" type="submit">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -366,99 +123,33 @@
     </a>
   {% endif %}
 
-  <span style="flex:1;"></span>
+  <span class="flex-1"></span>
 
-  <form action="/tier/revert-to-standard" method="post" style="display:inline;"
+  <form action="/tier/revert-to-standard" method="post" class="inline"
         data-confirm-action data-confirm-kind="danger"
         data-confirm-title="{% if pending %}Cancel upgrade?{% else %}Revert to Standard?{% endif %}"
         data-confirm-message="{% if pending %}Cancel the Extended upgrade? Nothing will have changed — you're still in Standard mode.{% else %}Revert to Standard mode?{% endif %}"
         data-confirm-label="{% if pending %}Cancel upgrade{% else %}Revert{% endif %}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="btn danger" type="submit">{% if pending %}Cancel upgrade{% else %}Revert to Standard{% endif %}</button>
   </form>
-
 </div>
 
 {% if cred_status.backend == 'vault' and not cred_status.error %}
-<div style="margin-top:20px; padding:14px 16px; background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-lg); font-size:14px; color:var(--text-2); line-height:1.7;">
-  <strong style="display:block; margin-bottom:6px; color:var(--text);">Adding Vault secrets</strong>
+<div class="mt-5 px-4 py-3.5 bg-surface-2 border border-line rounded-lg text-[14px] text-text-2 leading-relaxed">
+  <strong class="block mb-1.5 text-text">Adding Vault secrets</strong>
   Add the missing keys to your Vault KV v2 store at <code>{{ cred_status.vault_path }}</code>:
-  <ul style="margin:8px 0 0; padding-left:18px;">
+  <ul class="mt-2 pl-4.5 list-disc">
     {% for c in cred_status.credentials %}
       {% if not c.present and c.extended_only %}
         <li><code>{{ c.key }}</code> — {{ c.display }}</li>
       {% endif %}
     {% endfor %}
   </ul>
-  <div style="margin-top:10px; font-family:var(--mono); font-size:13px; background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:10px 12px; color:var(--text-2);">
-    vault kv patch {{ cred_status.vault_path.replace('/data/', '/') }} \<br>
-    {% for c in cred_status.credentials %}{% if not c.present and c.extended_only %}  &nbsp;&nbsp;{{ c.key }}="&lt;value&gt;" \<br>{% endif %}{% endfor %}
-  </div>
+  <div class="mt-2.5 font-mono text-[13px] bg-bg border border-line rounded-md px-3 py-2.5 text-text-2 whitespace-pre-wrap">vault kv patch {{ cred_status.vault_path.replace('/data/', '/') }} \
+{% for c in cred_status.credentials %}{% if not c.present and c.extended_only %}  {{ c.key }}="&lt;value&gt;" \
+{% endif %}{% endfor %}</div>
 </div>
 {% endif %}
-
-<script nonce="{{ csp_nonce }}">
-(function () {
-  'use strict';
-
-  function siblingCollapsed(form) {
-    var card = form.closest('.cred-card');
-    return card ? card.querySelector('[data-cred-collapsed]') : null;
-  }
-
-  window.atlasCredOpen = function (id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    var collapsed = siblingCollapsed(el);
-    if (collapsed) collapsed.style.display = 'none';
-    el.style.display = 'block';
-    // Force a reflow so the transition fires from the initial state
-    void el.offsetWidth;
-    el.classList.add('is-open');
-    var inp = el.querySelector('input[type="password"]');
-    if (inp) {
-      // Wait for the slide to start before focusing — feels less abrupt
-      setTimeout(function () { inp.focus(); }, 60);
-    }
-  };
-
-  window.atlasCredClose = function (id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.classList.remove('is-open');
-    var collapsed = siblingCollapsed(el);
-    var hide = function () {
-      el.style.display = 'none';
-      if (collapsed) collapsed.style.display = '';
-    };
-    // Honour reduced-motion (transitions are disabled there, so transitionend never fires)
-    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduceMotion) { hide(); return; }
-    var done = false;
-    el.addEventListener('transitionend', function once () {
-      if (done) return;
-      done = true;
-      el.removeEventListener('transitionend', once);
-      hide();
-    });
-    // Safety net in case transitionend doesn't fire
-    setTimeout(function () { if (!done) { done = true; hide(); } }, 260);
-  };
-
-  window.atlasCredReveal = function (inputId, btn) {
-    var inp = document.getElementById(inputId);
-    if (!inp) return;
-    var isHidden = inp.type === 'password';
-    inp.type = isHidden ? 'text' : 'password';
-    var eyeOff = btn.querySelector('.icon-eye-off');
-    var eyeOn  = btn.querySelector('.icon-eye');
-    var label  = btn.querySelector('.cred-reveal-label');
-    if (eyeOff) eyeOff.style.display = isHidden ? 'none' : '';
-    if (eyeOn)  eyeOn.style.display  = isHidden ? ''     : 'none';
-    if (label)  label.textContent    = isHidden ? 'Hide' : 'Show';
-  };
-
-}());
-</script>
 
 {% endblock %}

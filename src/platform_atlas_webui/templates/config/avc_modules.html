@@ -1,42 +1,33 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Additional Validation Modules — Platform Atlas{% endblock %}
 {% block crumb %}<a href="/config" class="text-text-3 hover:text-accent no-underline">Settings</a> <span class="text-text-4 mx-1">/</span> Additional Validation Modules{% endblock %}
 {% block content %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Settings</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
-      Additional Validation Modules
-    </h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Turn off individual extended validation checks — too slow, too invasive, or not
-      relevant to this environment. This is application-wide (not per-environment) and
-      shared with the CLI's <code>config edit</code> &gt; Advanced menu: a check disabled
-      here shows disabled there too, and vice versa. A disabled check appears in the
-      report as <strong>Module Deactivated</strong> instead of a normal result, so it's
-      clear the missing data was a deliberate choice. Every module defaults to enabled
-      <strong>except RBAC Authorization</strong>, which stays opt-in since it pulls the
-      full accounts/groups/roles graph from Platform 6 — privacy-sensitive, so it's
-      disabled until you check it yourself.
-      {% if disabled_count %}
-        <strong>{{ disabled_count }}</strong> of {{ total_count }} module(s) currently disabled.
-      {% else %}
-        All {{ total_count }} modules are currently enabled.
-      {% endif %}
-    </p>
+{% call page_header("Additional Validation Modules",
+    subtitle="Turn off individual extended validation checks — too slow, too invasive, or not relevant to this environment. This is application-wide (not per-environment) and shared with the CLI's <code>config edit</code> &gt; Advanced menu: a check disabled here shows disabled there too, and vice versa. A disabled check appears in the report as <strong>Module Deactivated</strong> instead of a normal result, so it's clear the missing data was a deliberate choice. Every module defaults to enabled <strong>except RBAC Authorization</strong>, which stays opt-in since it pulls the full accounts/groups/roles graph from Platform 6 — privacy-sensitive, so it's disabled until you check it yourself.",
+    meta=[(disabled_count ~ ' of ' ~ total_count ~ ' disabled') if disabled_count else ('all ' ~ total_count ~ ' enabled')]) %}
+  {% if not is_default %}
+    <form method="post" action="/config/avc-modules/reset" class="inline"
+          data-confirm-action data-confirm-message="Reset all Additional Validation Modules to their default state? (RBAC Authorization stays off.)">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn" data-loading-label="Resetting…">Reset all to default</button>
+    </form>
+  {% endif %}
+  <a class="btn" href="/config">← Settings</a>
+{% endcall %}
+
+{% if is_saas %}
+<div class="flash flash--info mb-4 flex items-start gap-3">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+  <div class="text-[14px]">
+    <strong>SaaS tier</strong> — only the whitelisted adapter and application checks are shown.
+    These read from Platform OAuth and need no infrastructure access. You can turn any of them
+    off, but SaaS environments can never enable checks outside this set. <strong>Reset to
+    default</strong> re-enables all of them.
   </div>
-  <div class="flex items-center gap-2 shrink-0">
-    {% if not is_default %}
-      <form method="post" action="/config/avc-modules/reset" class="inline"
-            data-confirm-action data-confirm-message="Reset all Additional Validation Modules to their default state? (RBAC Authorization stays off.)">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="btn" data-loading-label="Resetting…">Reset all to default</button>
-      </form>
-    {% endif %}
-    <a class="btn" href="/config">← Settings</a>
-  </div>
-</header>
+</div>
+{% endif %}
 
 <form class="form" method="post" action="/config/avc-modules">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

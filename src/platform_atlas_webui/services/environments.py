@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat as _stat_mod
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -100,44 +102,44 @@ def _build_saas_topology(payload: dict[str, Any]) -> dict | None:
 
     nodes: list[dict[str, Any]] = []
     if kind in ("gateway4", "gw4-gw5"):
+        # Gateway 4 is ALWAYS audited over SSH (in addition to its REST API) —
+        # the gateway SSH host is required, no API-only path.
         host = (payload.get("iag_host") or "").strip()
-        wants_ssh = (payload.get("saas_gw4_ssh") or "").strip().lower() in ("1", "on", "true", "yes")
-        if wants_ssh and not host:
+        if not host:
             raise ValueError(
-                "Gateway SSH collection is enabled but no gateway SSH host was given."
+                "A SaaS Gateway 4 environment requires an SSH host for the gateway "
+                "server — it is audited over SSH in addition to its REST API."
             )
-        if wants_ssh and host:
-            nodes.append(_gw_ssh_node(host, ["system", "gateway4", "filesystem"]))
-        if kind == "gateway4" and not nodes:
-            return None  # API-only GW4 — no topology needed
+        nodes.append(_gw_ssh_node(host, ["system", "gateway4", "filesystem"]))
 
     if kind in ("gateway5", "gw4-gw5"):
         source = (payload.get("gateway5_source") or "").strip().lower()
         path = (payload.get("gateway5_source_path") or "").strip()
         conf_path = (payload.get("gateway5_conf_path") or "").strip()
         same_host = (payload.get("saas_gw5_same_host") or "").strip().lower() in ("1", "on", "true", "yes")
-        host = (payload.get("iag_host") or "").strip()
+        gw4_host = (payload.get("iag_host") or "").strip()
         if source in ("compose", "helm") and path:
+            # Local Compose/Helm file — parsed with no SSH/host access.
             nodes.append({
                 "role": "iag", "host": "gateway5-file", "label": "iag5-file",
                 "transport": "gateway5_file", "gateway5_source_path": path,
                 "modules": ["gateway5"],
             })
-        elif same_host and nodes:
-            # Reuse the GW4 SSH node host; clone with GW5 modules.
-            gw4_node = nodes[0]
-            gw5_node = dict(gw4_node)
-            gw5_node["label"] = "iag5-01"
-            gw5_node["modules"] = ["system", "gateway5", "filesystem"]
-            if source == "conf":
-                gw5_node["gateway5_conf_path"] = conf_path
-            nodes.append(gw5_node)
-        elif source == "conf" and host:
-            node = _gw_ssh_node(host, ["system", "gateway5", "filesystem"])
-            node["gateway5_conf_path"] = conf_path
-            nodes.append(node)
-        elif host:
-            nodes.append(_gw_ssh_node(host, ["system", "gateway5", "filesystem"]))
+        else:
+            # SSH-based GW5 (printenv or the server gateway.conf). Host resolution:
+            #  * GW4+GW5, same host → reuse the Gateway 4 host
+            #  * GW4+GW5, separate  → the dedicated Gateway 5 SSH host
+            #  * GW5-only           → the single gateway host
+            if kind == "gw4-gw5":
+                gw5_host = gw4_host if same_host else (payload.get("gw5_iag_host") or "").strip()
+            else:
+                gw5_host = gw4_host
+            if gw5_host:
+                node = _gw_ssh_node(gw5_host, ["system", "gateway5", "filesystem"])
+                node["label"] = "iag5-01"
+                if source == "conf":
+                    node["gateway5_conf_path"] = conf_path
+                nodes.append(node)
         gw5_count = sum(1 for n in nodes if "gateway5" in n.get("modules", []))
         if kind == "gateway5" and not gw5_count:
             raise ValueError(
@@ -146,16 +148,19 @@ def _build_saas_topology(payload: dict[str, Any]) -> dict | None:
             )
         if kind == "gw4-gw5" and not gw5_count:
             raise ValueError(
-                "A GW4+GW5 environment needs a Gateway 5 source — an SSH host, "
+                "A GW4+GW5 environment needs a Gateway 5 source — a separate SSH host, "
                 "the same host as Gateway 4, or a Compose / Helm file path."
             )
 
     if not nodes:
-        return None  # API-only (should only happen for GW4-only after the block above)
+        return None  # Platform-only SaaS (no gateway) — no gateway topology.
 
     deployment: dict[str, Any] = {
         "mode": "gateway_only",
-        "capture_scope": "primary_only",
+        # GW4 and GW5 both use the "iag" role, so primary_only (one node per
+        # role) would silently drop the second gateway of a GW4+GW5 env. Use
+        # all_nodes whenever more than one gateway node is present.
+        "capture_scope": "all_nodes" if len(nodes) > 1 else "primary_only",
         "nodes": nodes,
     }
     if any(n.get("transport") == "ssh" for n in nodes):
@@ -239,6 +244,21 @@ def build_topology_from_form(payload: dict[str, Any], existing: dict | None = No
             raise ValueError(
                 "ControlMaster SSH destination is required when 'Platform connection type' "
                 "is ControlMaster."
+            )
+
+    if iap_cm_socket:
+        # SEC-02: the socket path must not point at an existing non-socket file
+        # (e.g. ~/.ssh/authorized_keys). A missing path is fine (ssh creates it).
+        if "\0" in iap_cm_socket:
+            raise ValueError("ControlMaster socket path contains invalid characters.")
+        try:
+            _mode = os.lstat(iap_cm_socket).st_mode
+        except OSError:
+            _mode = None
+        if _mode is not None and not _stat_mod.S_ISSOCK(_mode):
+            raise ValueError(
+                f"ControlMaster socket path '{iap_cm_socket}' already exists and is not a socket. "
+                "Choose a path that does not exist yet (ssh will create the socket there)."
             )
 
     fallback_host = _host_from_uri(payload.get("platform_uri") or "") or "localhost"
@@ -464,16 +484,19 @@ def cm_socket_status(env_data: dict | None) -> list[dict]:
         if not path:
             results.append({"label": label, "status": "missing", "path": "", "target": target, "ssh_cmd": ""})
             continue
-        p = Path(path)
-        if not p.exists():
+        # lstat (no symlink following): only a real socket may be probed or
+        # ever considered for cleanup. Regular files/dirs/symlinks are
+        # reported as "not_socket" and are never deleted (SEC-02).
+        try:
+            mode = os.lstat(path).st_mode
+        except FileNotFoundError:
             results.append({"label": label, "status": "missing", "path": path, "target": target, "ssh_cmd": ssh_cmd})
             continue
-        try:
-            if not _stat.S_ISSOCK(p.stat().st_mode):
-                results.append({"label": label, "status": "stale", "path": path, "target": target, "ssh_cmd": ssh_cmd})
-                continue
         except OSError:
-            results.append({"label": label, "status": "stale", "path": path, "target": target, "ssh_cmd": ssh_cmd})
+            results.append({"label": label, "status": "not_socket", "path": path, "target": target, "ssh_cmd": ssh_cmd})
+            continue
+        if not _stat.S_ISSOCK(mode):
+            results.append({"label": label, "status": "not_socket", "path": path, "target": target, "ssh_cmd": ssh_cmd})
             continue
         try:
             chk = _sp.run(
@@ -500,6 +523,11 @@ def clean_stale_sockets(env_data: dict | None) -> dict:
         if s["status"] == "stale" and s["path"]:
             p = Path(s["path"])
             try:
+                # Re-check at delete time (no symlink following): never
+                # unlink anything that is not a real socket.
+                if not _stat_mod.S_ISSOCK(os.lstat(p).st_mode):
+                    errors.append(f"Refusing to remove {s['path']}: not a socket")
+                    continue
                 p.unlink(missing_ok=True)
                 cleaned += 1
             except OSError as exc:
@@ -544,28 +572,6 @@ def store_ssh_passphrase(env_name: str, backend: str, passphrase: str) -> None:
     substrate.set(scoped_service_name(env_name), CredentialKey.SSH_PASSPHRASE.value, passphrase)
 
 
-def active_env_allows_legacy() -> bool:
-    """Return True when the active environment has the legacy_profile field set.
-
-    When True, the WebUI shows 2023.x rulesets and profiles. When False (the
-    default for all new installs) those legacy options are hidden so users
-    are not confused by ruleset choices that don't apply to their deployment.
-    """
-    from platform_atlas.core.paths import ATLAS_CONFIG_FILE, ATLAS_ENVIRONMENTS_DIR
-    try:
-        cfg = json.loads(ATLAS_CONFIG_FILE.read_text(encoding="utf-8")) if ATLAS_CONFIG_FILE.is_file() else {}
-        env_name = cfg.get("active_environment") or ""
-        if not env_name:
-            return False
-        env_file = ATLAS_ENVIRONMENTS_DIR / f"{env_name}.json"
-        if not env_file.is_file():
-            return False
-        env_data = json.loads(env_file.read_text(encoding="utf-8"))
-        return bool(env_data.get("legacy_profile"))
-    except Exception:
-        return False
-
-
 def list_environments() -> list[dict[str, Any]]:
     """Return all environment definitions as a list of plain dicts."""
     if not ATLAS_ENVIRONMENTS_DIR.is_dir():
@@ -603,10 +609,15 @@ def get_environment(name: str) -> dict[str, Any] | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+    try:
+        active_name = ctx().active_environment
+    except Exception:
+        active_name = None
     return {
         "name": name,
         "data": data,
         "tier": data.get("tier") or "extended",
+        "is_active": name == active_name,
     }
 
 
@@ -649,7 +660,7 @@ def save_environment(payload: dict[str, Any]) -> Environment:
         "name", "description", "platform_uri",
         "platform_client_id", "credential_backend", "vault_secret_store", "tier",
         "saas_gateway_kind", "gateway_kind",
-        "gateway4_uri", "gateway4_username", "legacy_profile",
+        "gateway4_uri", "gateway4_username",
         "ssh_key",
         "values_yaml_path", "iag5_values_yaml_path",
         "kubectl_context", "kubectl_namespace", "use_kubectl", "kubectl_binary_path",
@@ -699,28 +710,27 @@ def save_environment(payload: dict[str, Any]) -> Environment:
     if not base.get("gateway_kind"):
         base.pop("gateway_kind", None)
 
-    # Legacy (2023.x) is a Platform concept — a SaaS environment audits a
-    # standalone gateway and never carries the marker. Stripping it here
-    # (not just hiding the form control) also self-heals stale data and
-    # keeps the 2023 rulesets/profiles hidden for gateway-only envs.
-    if (base.get("tier") or "").strip().lower() == "saas":
-        base.pop("legacy_profile", None)
-
     # saas_gateway_kind only means something for SaaS envs — keep it out of
-    # other tiers' overlays, and insist on it for SaaS (strictly one gateway
-    # per environment, fixed at create time).
+    # other tiers' overlays. The gateway is now OPTIONAL for SaaS (Platform-only
+    # is valid); when a gateway IS chosen it must be a known kind, and a GW4
+    # audit needs the API URL. An empty kind = Platform-only → drop the marker.
     if (base.get("tier") or "").strip().lower() != "saas":
         base.pop("saas_gateway_kind", None)
-    elif (base.get("saas_gateway_kind") or "").strip().lower() not in ("gateway4", "gateway5", "gw4-gw5"):
-        raise ValueError(
-            "A SaaS environment needs a gateway kind — Gateway 4, Gateway 5, or both."
-        )
-    elif (base.get("saas_gateway_kind") or "").strip().lower() in ("gateway4", "gw4-gw5") \
-            and not (base.get("gateway4_uri") or "").strip():
-        raise ValueError(
-            "A SaaS Gateway 4 environment needs the Gateway 4 API URL — the "
-            "API is the primary audit source (SSH is the optional supplement)."
-        )
+    else:
+        _saas_kind = (base.get("saas_gateway_kind") or "").strip().lower()
+        if not _saas_kind:
+            # Platform-only SaaS — no gateway to audit.
+            base.pop("saas_gateway_kind", None)
+        elif _saas_kind not in ("gateway4", "gateway5", "gw4-gw5"):
+            raise ValueError(
+                "A SaaS environment's gateway must be Gateway 4, Gateway 5, both, "
+                "or none (Platform only)."
+            )
+        elif _saas_kind in ("gateway4", "gw4-gw5") and not (base.get("gateway4_uri") or "").strip():
+            raise ValueError(
+                "A SaaS Gateway 4 environment needs the Gateway 4 API URL — the "
+                "API is the primary audit source (SSH is the optional supplement)."
+            )
 
     # use_kubectl arrives as a string from the form
     base["use_kubectl"] = bool(base.get("use_kubectl")) and base.get("use_kubectl") not in ("0", "off", "false", "False", "")
@@ -760,8 +770,11 @@ def save_environment(payload: dict[str, Any]) -> Environment:
 
 
 def delete_environment(name: str) -> None:
+    from platform_atlas.core import baseline_store
+
     mgr = get_environment_manager()
     mgr.remove(name)
+    baseline_store.clear(name)
 
 
 def set_active(name: str) -> None:

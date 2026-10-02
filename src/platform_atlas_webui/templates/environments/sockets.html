@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}SSH Sockets — {{ environment.name }} — Platform Atlas{% endblock %}
 {% block crumb %}
   <a href="/environments" class="text-inherit hover:text-accent">Environments</a>
@@ -8,22 +9,12 @@
 {% endblock %}
 
 {% block content %}
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> SSH Sockets · {{ environment.name }}</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
-      ControlMaster Sockets
-    </h1>
-    <p class="text-[16px] text-text-2 max-w-[70ch]">
-      Manage the SSH ControlMaster sockets for this environment. Stale sockets
-      cause <em class="not-italic text-text">"socket exists but is not responding"</em> errors during capture.
-      Open sockets by running the command shown for each node in your terminal.
-    </p>
-  </div>
-  <div class="flex items-center gap-2 shrink-0">
-    <a class="btn" href="/environments/{{ environment.name }}/sockets">Refresh</a>
-    {% set stale_count = sockets | selectattr('status', 'equalto', 'stale') | list | length %}
-    {% if stale_count > 0 %}
+{% set stale_count = sockets | selectattr('status', 'equalto', 'stale') | list | length %}
+{% call page_header("ControlMaster Sockets",
+    subtitle='Manage the SSH ControlMaster sockets for this environment. Stale sockets cause <em class="not-italic text-text">"socket exists but is not responding"</em> errors during capture. Open sockets by running the command shown for each node in your terminal.',
+    meta=['<code>' ~ environment.name ~ '</code>']) %}
+  <a class="btn" href="/environments/{{ environment.name }}/sockets">Refresh</a>
+  {% if stale_count > 0 %}
       <form action="/environments/{{ environment.name }}/sockets/clean" method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn danger" type="submit"
@@ -31,11 +22,10 @@
           Clean {{ stale_count }} stale
         </button>
       </form>
-    {% else %}
-      <button class="btn" disabled title="No stale sockets to clean">Clean stale</button>
-    {% endif %}
-  </div>
-</header>
+  {% else %}
+    <button class="btn" disabled title="No stale sockets to clean">Clean stale</button>
+  {% endif %}
+{% endcall %}
 
 {# ── Status summary banner ─────────────────────────────── #}
 {% set ok_count = sockets | selectattr('status', 'equalto', 'ok') | list | length %}
@@ -48,6 +38,8 @@
       {% set _dot = 'bg-ok' %}{% set _text = 'text-ok' %}{% set _label = 'Open' %}
     {% elif s.status == 'stale' %}
       {% set _dot = 'bg-warn' %}{% set _text = 'text-warn' %}{% set _label = 'Stale' %}
+    {% elif s.status == 'not_socket' %}
+      {% set _dot = 'bg-bad' %}{% set _text = 'text-bad' %}{% set _label = 'Not a socket' %}
     {% elif s.status == 'missing' %}
       {% set _dot = 'bg-bad' %}{% set _text = 'text-bad' %}{% set _label = 'Not found' %}
     {% else %}
@@ -89,6 +81,10 @@
             {% elif s.status == 'stale' %}
               <span class="inline-flex items-center gap-1.5 text-warn font-medium">
                 <span class="w-1.5 h-1.5 rounded-full bg-warn shrink-0"></span>Stale
+              </span>
+            {% elif s.status == 'not_socket' %}
+              <span class="inline-flex items-center gap-1.5 text-bad font-medium">
+                <span class="w-1.5 h-1.5 rounded-full bg-bad shrink-0"></span>Not a socket (path is not a socket; never deleted)
               </span>
             {% elif s.status == 'missing' %}
               <span class="inline-flex items-center gap-1.5 text-bad font-medium">

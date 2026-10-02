@@ -1,30 +1,36 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Preflight — Platform Atlas{% endblock %}
 {% block crumb %}Preflight{% endblock %}
+
+{# One stroke-SVG icon family for this page — 24x24 viewBox, ~2.3 stroke,
+   matching the pipeline job page's icon style (job-stream.js PP2_CHECK/PP2_X,
+   jobs/detail.html's phase-stepper icons). Used for both the phase-preview
+   list below and each target card's transport badge. #}
+{% macro pf_icon(name, size=15) -%}
+{%- if name == 'key' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg>
+{%- elif name == 'plug' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h3a5 5 0 0 1 0 10h-3M9 17H6A5 5 0 0 1 6 7h3"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+{%- elif name == 'server' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+{%- elif name == 'hexagon' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+{%- elif name == 'cloud' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+{%- elif name == 'terminal' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+{%- elif name == 'monitor' -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+{%- endif -%}
+{%- endmacro %}
+
 {% block content %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Connectivity check</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
-      Preflight, <em class="not-italic text-accent">before you capture</em>
-    </h1>
-    {% if is_saas %}
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Verifies SSH and gateway connectivity to the gateway in the active SaaS
-      environment — no Platform, MongoDB, or Redis checks.
-    </p>
-    {% else %}
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Verifies SSH, MongoDB, Redis, Platform OAuth, and gateway connectivity to every
-      target in the active environment. <b>Standard mode</b> skips SSH/Mongo/Redis automatically.
-    </p>
-    {% endif %}
-  </div>
-  <div class="flex items-center gap-2">
-    <a class="btn" href="/jobs">Recent jobs</a>
-  </div>
-</header>
+{% set pf_subtitle = "Verifies SSH and gateway connectivity to the gateway in the active SaaS environment — no Platform, MongoDB, or Redis checks." if is_saas else "Verifies SSH, MongoDB, Redis, Platform OAuth, and gateway connectivity to every target in the active environment. <b>Standard mode</b> skips SSH/Mongo/Redis automatically." %}
+{% call page_header("Preflight", subtitle=pf_subtitle) %}
+  <a class="btn" href="/jobs">Recent jobs</a>
+{% endcall %}
 
 <section class="preflight-bar">
   <div class="preflight-bar__meta">
@@ -58,20 +64,10 @@
   {% endif %}
 </section>
 
-{% if job %}
-{# Hidden plumbing — the shared SSE client (job-stream.js) connects to this
-   element by id and routes events to the per-card state updaters in the
-   preflight inline-script below. No visible UI from this div on /preflight. #}
-<div class="job-stream mode-human" id="job-stream" hidden
-     data-job-id="{{ job.id }}"
-     data-job-kind="preflight"
-     data-started-at="{{ job_started_at_epoch }}"></div>
-<script src="{{ url_for('static', path='js/job-stream.js') }}?v={{ asset_version }}" defer></script>
-{% endif %}
-
 {% if targets %}
   <section class="targets-grid">
     {% for t in targets %}
+      {% set ticon = {'ssh': 'terminal', 'control_master': 'terminal', 'kubernetes': 'hexagon', 'api': 'cloud', 'local': 'monitor'}.get(t.transport, 'terminal') %}
       <article class="target-card" data-target-name="{{ t.name }}"
                data-target-role="{{ t.role or '' }}"
                data-target-modules="{{ t.modules | join(',') }}"
@@ -81,7 +77,7 @@
           {% if t.primary %}
             <span class="target-card__primary" title="Runs protocol-level collectors">primary</span>
           {% endif %}
-          <span class="target-card__transport">{{ t.transport }}</span>
+          <span class="target-card__transport"><span class="target-card__transport-icon">{{ pf_icon(ticon, 12) }}</span>{{ t.transport }}</span>
           <span class="pf-status-badge" hidden></span>
 
           {# Live ping — small Test button per target. POSTs to
@@ -127,6 +123,8 @@
             {{ t.host or 'kubernetes cluster' }}
           {% elif t.transport == 'local' %}
             {{ t.host or 'localhost' }}
+          {% elif t.transport == 'api' %}
+            {% if 'gateway4_api' in t.modules %}Gateway4 API{% elif 'platform' in t.modules %}Platform OAuth{% else %}{{ t.host or 'API' }}{% endif %}
           {% else %}
             {{ t.host or '—' }}
           {% endif %}
@@ -143,6 +141,105 @@
         {% endif %}
       </article>
     {% endfor %}
+  </section>
+
+  {# ── Checks panel ─────────────────────────────────────────────────
+     Idle: a static preview of the phases this environment implies.
+     Running/completed: the same live pf-list/pf-current/hero elements
+     job-stream.js already knows how to drive on /jobs/<id> — brought
+     inline here so results never require leaving this page. #}
+  <section class="card pf-panel"{% if job %} data-pf-logs="hidden"{% endif %}>
+    <div class="card-head">
+      <h3>Checks</h3>
+      <span class="sub">{% if job %}live results{% else %}what preflight will verify{% endif %}</span>
+    </div>
+    <div class="card-body" style="padding: 0;">
+      <div class="preflight-checks">
+        <h4>Preflight checks</h4>
+
+        {% if job %}
+          <div id="pf-list"></div>
+          <div class="pf-current" id="pf-current" hidden>
+            <span class="pf-current-label">Checking</span>
+            <span id="pf-current-text">Standing by&hellip;</span>
+          </div>
+
+          <div class="pf-hero pf-hero--ok" id="pf-hero-success" hidden>
+            <div class="pf-hero-ring pf-hero-ring--ok">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="pf-hero-body">
+              <div class="pf-hero-title">All checks passed</div>
+              <div class="pf-hero-sub" id="pf-hero-success-sub"></div>
+            </div>
+            <a class="btn primary sm" href="/sessions/new">Start capture &rarr;</a>
+          </div>
+
+          <div class="pf-hero pf-hero--bad" id="pf-hero-fail" hidden>
+            <div class="pf-hero-ring pf-hero-ring--bad">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </div>
+            <div class="pf-hero-body">
+              <div class="pf-hero-title" id="pf-hero-fail-title">Some checks failed</div>
+              <div class="pf-hero-sub" id="pf-hero-fail-sub"></div>
+              <div class="pf-hint-block" id="pf-hint-block"></div>
+            </div>
+          </div>
+
+          <button type="button" class="pf-toggle-logs" id="pf-toggle-logs"
+                  aria-expanded="false">Show full output logs &darr;</button>
+        {% else %}
+          <div class="pf-preview">
+            {% for p in phase_preview %}
+              <div class="pf-preview-row">
+                <span class="pf-preview-icon">{{ pf_icon(p.icon) }}</span>
+                <span class="pf-preview-label">{{ p.label }}</span>
+                <span class="pf-preview-count">{{ p.count }} check{{ '' if p.count == 1 else 's' }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+      {% if job %}
+      <div class="stream-mode" id="stream-mode" data-mode="human">
+        <span class="stream-mode-label">Output mode</span>
+        <div class="stream-mode-pills" role="tablist" aria-label="Output verbosity">
+          <button type="button" class="stream-mode-pill is-active"
+                  data-mode="human" role="tab" aria-selected="true">Human-friendly</button>
+          <button type="button" class="stream-mode-pill"
+                  data-mode="raw" role="tab" aria-selected="false">Raw progress logs</button>
+        </div>
+        <span class="stream-mode-hint" id="stream-mode-hint">curated narrative only</span>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if job %}
+  {# Hidden plumbing — the shared SSE client (job-stream.js) connects to this
+     element by id and routes events to the per-card state updaters and the
+     checks panel above. No visible UI from this div on /preflight. #}
+  <div class="job-stream mode-human" id="job-stream" hidden
+       data-job-id="{{ job.id }}"
+       data-job-kind="preflight"
+       data-started-at="{{ job_started_at_epoch }}"
+       data-active-env="{{ active_env }}"></div>
+  <script src="{{ url_for('static', path='js/job-stream.js') }}?v={{ asset_version }}" defer></script>
+  {% endif %}
+
+{% elif targets_error %}
+  <section class="card">
+    <div class="card-body">
+      <div class="empty" style="border:0; padding: 12px 0;">
+        <strong>Couldn't compute targets for <code>{{ active_env }}</code></strong>
+        <span style="color: var(--text-3);">{{ targets_error }}</span>
+        <div style="margin-top:10px;">
+          <a class="btn sm" href="/preflight">Retry</a>
+          <a class="btn sm" href="/environments/{{ active_env }}">View environment</a>
+        </div>
+      </div>
+    </div>
   </section>
 {% else %}
   <section class="card">

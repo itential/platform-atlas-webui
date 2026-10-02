@@ -8,8 +8,8 @@ from typing import Any
 
 from platform_atlas.core.session_manager import get_session_manager
 
-# In-process cache for get_session_summary() — avoids re-reading the Parquet
-# file on every mini-report fetch. Keyed by session name; TTL prevents stale
+# In-process cache for get_session_summary() — avoids re-reading the
+# validation results file on every mini-report fetch. Keyed by session name; TTL prevents stale
 # data from lingering if the user re-runs validation. Only populated when
 # validation_completed so in-progress sessions always read fresh.
 _summary_cache: dict[str, tuple[dict[str, Any], float]] = {}
@@ -507,12 +507,12 @@ def get_session_summary(name: str, *, max_failures: int = 12) -> dict[str, Any] 
     """Lightweight summary for the post-pipeline mini-report.
 
     Combines session metadata with a top-N slice of failing rules read from
-    the validation parquet. Severity ordering matches the report — critical
+    the validation results file. Severity ordering matches the report — critical
     first, then warning, then info — so the UI renders by-importance without
     sorting client-side.
 
     Result is cached for _SUMMARY_CACHE_TTL seconds once validation is complete
-    so repeated fetches (e.g. SSE close + frontend poll) skip the Parquet read.
+    so repeated fetches (e.g. SSE close + frontend poll) skip the file read.
     """
     mgr = get_session_manager()
     try:
@@ -528,25 +528,27 @@ def get_session_summary(name: str, *, max_failures: int = 12) -> dict[str, Any] 
             return result
 
     evaluated = (m.pass_count or 0) + (m.fail_count or 0)
-    compliance_pct = round((m.pass_count / evaluated) * 100) if evaluated else 0
+    # Flat pass rate is only the fallback. The headline number the hero shows is
+    # the severity-weighted score (computed below from the rows), so the inline
+    # pipeline result agrees with the CLI-generated report, which headlines the
+    # same weighted figure.
+    flat_pct = round((m.pass_count / evaluated) * 100) if evaluated else 0
+    weighted_score = float(flat_pct)
 
     failures: list[dict[str, Any]] = []
     if m.validation_completed and s.validation_file.exists():
         try:
-            import pandas as pd
-            # Read only the columns needed for the summary — avoids deserializing
-            # the full DataFrame (which can be 100+ MB for large audits).
-            df = pd.read_parquet(
-                s.validation_file,
-                columns=["status", "severity", "rule_number", "name", "category",
-                         "path", "expected", "actual", "recommendations"],
-            )
-            fail_df = df[df["status"].astype(str).str.upper() == "FAIL"]
+            from platform_atlas.reporting.scoring import weighted_pass_percent
+            from platform_atlas.validation.results import load_validation_results
+            results = load_validation_results(s.validation_file)
+            # Severity-weighted compliance — the exact method the CLI report
+            # headlines with (critical=5 / warning=2 / info=1, skips excluded
+            # from the denominator). Shared module so the two never diverge.
+            weighted_score = weighted_pass_percent(results.rows)
             sev_order = {"critical": 0, "warning": 1, "info": 2}
-            fail_df = fail_df.assign(
-                _ord=fail_df["severity"].astype(str).str.lower().map(sev_order).fillna(3)
-            ).sort_values("_ord").head(max_failures)
-            for _, row in fail_df.iterrows():
+            fails = [row for row in results.rows if str(row.get("status", "")).upper() == "FAIL"]
+            fails.sort(key=lambda row: sev_order.get(str(row.get("severity", "")).lower(), 3))
+            for row in fails[:max_failures]:
                 failures.append({
                     "rule_number": str(row.get("rule_number", "")),
                     "name": str(row.get("name", "")),
@@ -558,9 +560,9 @@ def get_session_summary(name: str, *, max_failures: int = 12) -> dict[str, Any] 
                     "recommendations": str(row.get("recommendations", "")),
                 })
         except Exception:  # noqa: BLE001
-            # Parquet read can fail if the file was just written and not yet
-            # flushed, or if pyarrow isn't available — fall through with an
-            # empty failures list. The summary is still useful.
+            # Read can fail if the file was just written and not yet
+            # flushed — fall through with an empty failures list. The
+            # summary is still useful.
             pass
 
     result = {
@@ -576,7 +578,8 @@ def get_session_summary(name: str, *, max_failures: int = 12) -> dict[str, Any] 
         "fail_count": m.fail_count or 0,
         "skip_count": m.skip_count or 0,
         "total_rules": m.total_rules or 0,
-        "compliance_pct": compliance_pct,
+        "compliance_pct": round(weighted_score),
+        "weighted_score": weighted_score,
         "evaluated": evaluated,
         "failures": failures,
         "report_file_url": f"/reports/{m.name}" if s.report_file.exists() else None,

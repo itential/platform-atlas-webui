@@ -7,8 +7,9 @@
    <head> below resolves it to the OS mode before paint. #}
 {% set _pref_mode = prefs.mode | default('dark') %}
 {% set _effective_mode = 'dark' if _pref_mode == 'auto' else _pref_mode %}
+{% set _path = request.url.path %}
 <html lang="en"
-      data-theme="{{ prefs.theme | default('itential') }}"
+      data-theme="{{ prefs.theme | default('modern') }}"
       data-mode="{{ _effective_mode }}"
       data-mode-pref="{{ _pref_mode }}"
       data-palette-enabled="{{ 'true' if prefs.palette_enabled is not defined or prefs.palette_enabled else 'false' }}"
@@ -17,335 +18,193 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  {# Pre-paint mode resolver — runs synchronously before stylesheets apply
-     so the page never paints with the wrong mode for "auto" users. Reads
-     data-mode-pref; if it's "auto", overwrites data-mode based on the OS
-     prefers-color-scheme query. Kept tiny and defensive — no listeners,
-     no console, no try-block beyond a guard so older browsers without
-     matchMedia just stay on the server-rendered default. #}
+  {# Pre-paint resolver — runs synchronously before stylesheets apply.
+       1. "auto" mode → OS prefers-color-scheme (unchanged from 3.0).
+       2. Sidebar rail preference (collapsed/expanded) from localStorage, so
+          the shell never paints at the wrong width.
+       3. Motion gate: `motion-init` holds the main column invisible for the
+          one frame atlas-motion.js needs to stage its entrance. The timer is
+          the fail-safe — content always appears within 1.2s even if every
+          script on the page fails. Skipped entirely for reduced motion. #}
   <script nonce="{{ csp_nonce }}">
     (function () {
       var html = document.documentElement;
-      if (html.getAttribute('data-mode-pref') !== 'auto') return;
-      if (!window.matchMedia) return;
-      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      html.setAttribute('data-mode', prefersDark ? 'dark' : 'light');
+      if (html.getAttribute('data-mode-pref') === 'auto' && window.matchMedia) {
+        html.setAttribute('data-mode', window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      }
+      try {
+        var rail = localStorage.getItem('atlas-rail');
+        if (rail === 'true' || rail === 'false') html.setAttribute('data-rail', rail);
+      } catch (e) {}
+      var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!still) {
+        html.classList.add('motion-init');
+        setTimeout(function () { html.classList.remove('motion-init'); }, 1200);
+      }
     })();
   </script>
   <title>{% block title %}Platform Atlas{% endblock %}</title>
   <meta name="csrf-token" content="{{ csrf_token }}">
-  {# htmx reads this meta tag at boot, before any swaps happen — sets the
-     View Transitions API on every boosted nav, hx-get fragment, etc.
-     Setting it via an htmx:load listener (the previous approach) had a
-     race: any swap that happened before the listener fired would miss
-     transitions. The meta tag is read synchronously on htmx init. #}
-  <meta name="htmx-config" content='{"globalViewTransitions": true}'>
+  {# View Transitions are now driven explicitly: atlas-motion.js choreographs
+     page entrances with GSAP, and uses the View Transitions API only for the
+     light/dark circular reveal. Letting htmx cross-fade every swap as well
+     would double-animate every navigation. #}
+  <meta name="htmx-config" content='{"globalViewTransitions": false}'>
   <link rel="icon" type="image/png" href="{{ url_for('static', path='img/favicon.png') }}">
+
+  {# Styles: theme palettes + legacy components → Tailwind utilities (see
+     atlas.tw.css) → Studio design layer (shell, refined components, motion
+     hooks). Order matters; see the header comment in atlas-studio.css. #}
   <link rel="stylesheet" href="{{ url_for('static', path='css/atlas.css') }}?v={{ asset_version }}">
-
-  {# ── Tailwind CSS v4 (pre-compiled, no runtime JIT) ──────────────────
-     Source: webui/src/platform_atlas_webui/static/css/atlas.tw.css
-     Built by: scripts/build-release.sh (uses ./bin/tailwindcss CLI)
-
-     The source defines @theme inline tokens (bg, surface, accent, text-*,
-     atlas brand palette, fonts, glow shadows), the @custom-variant for
-     [data-mode="dark"], and intentionally omits the preflight/base layer
-     so atlas.css's reset stays the source of truth.
-
-     Loaded AFTER atlas.css so utility classes win on equal specificity
-     against component-class defaults. The asset_version query param
-     busts caches when the compiled output changes between releases. #}
   <link rel="stylesheet" href="{{ url_for('static', path='css/atlas.tw.compiled.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/atlas-studio.css') }}?v={{ asset_version }}">
 
   {# x-cloak hider — kept in <head> rather than <body>. body.innerHTML is
      replaced on every hx-boost navigation; <head> is stable, so the rule
      is always live and never flickers off mid-swap. #}
   <style>[x-cloak] { display: none !important; }</style>
-
-  {# Alpine.js — defer so it boots after DOM parsing, then auto-inits all
-     x-data via MutationObserver. Used for local interactivity (dropdowns,
-     tabs, toasts, modals, accordions) that HTMX deliberately leaves alone. #}
-  <script src="{{ url_for('static', path='js/alpine.min.js') }}?v={{ asset_version }}" defer></script>
-
-  <script src="{{ url_for('static', path='js/htmx.min.js') }}?v={{ asset_version }}" defer></script>
-  {# Per-user display scale — server-rendered so there's no flash. The Settings
-     slider live-updates --ui-scale via atlas.js and persists it. #}
   <style nonce="{{ csp_nonce }}">:root{ --ui-scale: {{ '%.3f'|format(prefs.scale | default(1)) }}; }</style>
+
+  {# Alpine (local interactivity) and htmx (boosted navigation). #}
+  <script src="{{ url_for('static', path='js/alpine.min.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='js/htmx.min.js') }}?v={{ asset_version }}" defer></script>
+
+  {# Motion — GSAP core + ScrollTrigger + SplitText, vendored (no CDN).
+     atlas-motion.js must load after them. The dashboard's crystal-facets
+     module (atlas-facets.js) is imported lazily by atlas-motion.js, only on
+     pages that render one. #}
+  <script src="{{ url_for('static', path='js/vendor/gsap/gsap.min.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='js/vendor/gsap/ScrollTrigger.min.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='js/vendor/gsap/SplitText.min.js') }}?v={{ asset_version }}" defer></script>
+
   <script src="{{ url_for('static', path='js/atlas.js') }}?v={{ asset_version }}" defer></script>
-  {# Command palette — vanilla IIFE. Loaded from <head> so it survives the
-     body-innerHTML swap that hx-boost performs on every internal nav; the
-     document-level keydown listener it installs stays attached for the
-     lifetime of the page session. #}
+  {# Command palette — loaded from <head> so its document-level keydown
+     listener survives the body swap hx-boost performs on every nav. #}
   <script src="{{ url_for('static', path='js/palette.js') }}?v={{ asset_version }}" defer></script>
+  <script src="{{ url_for('static', path='js/atlas-motion.js') }}?v={{ asset_version }}" defer></script>
 </head>
 {# hx-boost on <body> turns every same-origin <a> click and form submission
-   into an HTMX request that swaps body.innerHTML — keeps the URL synced via
-   pushState, fades between pages via View Transitions (config above), and
-   skips the white flash of a full page load. Anchors with target="_blank",
-   download, or hx-boost="false" opt out. #}
-{# SHELL LAYOUT — Tailwind utilities for grid scaffold + sticky topbar/side.
-   The leaf widgets (.pill / .pill--state-* / .flash / .upgrade / .brand-mark
-   / .theme-toggle icon-swap) intentionally stay on atlas.css because they
-   have CSS-only theme switching, multiple modifier variants, animation
-   states, and pseudo-elements that don't translate cleanly to utilities. #}
-<body hx-boost="true"
-      class="grid min-h-screen text-text bg-bg"
-      style="grid-template-columns: var(--sidebar-w) 1fr; grid-template-rows: 52px 1fr; grid-template-areas: 'brand topbar' 'side main';">
+   into an HTMX request that swaps body.innerHTML and keeps the URL synced
+   via pushState. Anchors with target="_blank", download, or
+   hx-boost="false" opt out. #}
+<body hx-boost="true" class="app text-text">
 
-  <div class="brand-cell flex items-center gap-2.5 px-4 border-r border-b border-line bg-bg-2 sticky top-0 z-[55]"
-       style="grid-area: brand;">
-    <a href="/" class="flex items-center gap-2.5 font-semibold tracking-[-0.01em] no-underline text-inherit">
-      <div class="brand-mark shrink-0" role="img" aria-label="Itential"></div>
-      <span class="text-[17px] font-display font-bold tracking-[-0.02em]">Platform Atlas</span>
-      <span class="font-mono text-[12px] text-text-3 ml-0.5">v{{ atlas_version | default('1.7.4') }}</span>
+  {# ── Sidebar (the "spine") ────────────────────────────────────────────
+     `.side` and `.brand-cell` are load-bearing: atlas.css re-declares the
+     theme tokens inside them so modern / itential render a
+     navy spine regardless of light/dark mode. #}
+  {% macro nav_link(href, label, active, badge=None) %}
+    <a href="{{ href }}" class="nav-link{% if active %} is-active{% endif %}"{% if active %} aria-current="page"{% endif %}>
+      {{ caller() }}
+      <span class="nav-link-label">{{ label }}</span>
+      {% if badge %}<span class="nav-badge">{{ badge }}</span>{% endif %}
     </a>
-  </div>
+  {% endmacro %}
 
-  <header class="flex items-center gap-2 px-[18px] border-b border-line bg-bg-2 sticky top-0 z-[55]"
-          style="grid-area: topbar;">
-    <nav class="flex items-center gap-2 text-text-3 text-[14px]">
-      <span>Workspace</span>
-      <span class="text-text-4">/</span>
-      <span class="text-text font-medium">{% block crumb %}{{ self.title()|default('') }}{% endblock %}</span>
-    </nav>
-    <div class="flex-1"></div>
-
-    {% if organization_name %}
-      <span class="pill">
-        <span class="dot"></span>
-        <span class="label">Org</span>
-        <span class="val">{{ organization_name }}</span>
-      </span>
-    {% endif %}
-
-    {# Inline environment switcher. Click the pill → dropdown of all
-       environments → click one → activate via POST → page boost-reloads.
-       The "View details" link goes to /environments/<name> as a Detail row
-       inside the dropdown so the previous click-to-detail behavior is
-       preserved (it just costs one extra click now). #}
-    <div x-data="{ open: false }" class="relative inline-flex">
-      {% if active_environment %}
-        <button type="button" @click="open = !open" @click.outside="open = false"
-                class="pill pill--env-link cursor-pointer"
-                title="Switch environment">
-          <span class="label">Env</span>
-          <span class="val mono">{{ active_environment }}</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-               class="opacity-60 transition-transform" :class="open && 'rotate-180'"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-      {% else %}
-        <button type="button" @click="open = !open" @click.outside="open = false"
-                class="pill pill--env-warn cursor-pointer text-warn"
-                title="No active environment — click to switch or create"
-                style="border-color: var(--warn); background: var(--warn-soft);">
-          <span class="dot" style="background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft);"></span>
-          <span class="label text-warn">Env</span>
-          <span class="val text-warn font-semibold">No active environment</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-               class="opacity-60 transition-transform" :class="open && 'rotate-180'"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-      {% endif %}
-
-      <div x-show="open" x-cloak
-           x-transition:enter="transition ease-out duration-150"
-           x-transition:enter-start="opacity-0 -translate-y-1"
-           x-transition:enter-end="opacity-100 translate-y-0"
-           class="absolute right-0 top-[34px] z-50 min-w-[260px] rounded-md bg-surface border border-line shadow-2xl overflow-hidden">
-        <div class="px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.07em] text-text-3 border-b border-line">
-          Switch environment
-        </div>
-        {% if env_dropdown %}
-          {% for e in env_dropdown %}
-            <form action="/environments/{{ e.name }}/activate" method="post" class="block">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button type="submit" data-loading-label="Activating…"
-                      class="w-full text-left px-3 py-2 text-[15px] flex items-center gap-2 hover:bg-surface-2 transition-colors
-                             {% if e.is_active %}bg-accent-soft text-accent{% else %}text-text-2{% endif %}">
-                <span class="w-1.5 h-1.5 rounded-full {% if e.is_active %}bg-ok{% else %}bg-text-4{% endif %}"></span>
-                <span class="font-mono truncate">{{ e.name }}</span>
-                {% if e.is_active %}<span class="ml-auto text-[12px] uppercase tracking-wider opacity-70">Active</span>{% endif %}
-              </button>
-            </form>
-          {% endfor %}
-        {% else %}
-          <div class="px-3 py-3 text-[14px] text-text-3">No environments yet.</div>
-        {% endif %}
-        <a href="/environments" class="block px-3 py-2 text-[14px] text-accent hover:bg-surface-2 border-t border-line">
-          Manage environments →
-        </a>
-        {% if active_environment %}
-          <a href="/environments/{{ active_environment }}"
-             class="block px-3 py-2 text-[14px] text-text-2 hover:bg-surface-2 border-t border-line">
-            View details for "{{ active_environment }}" →
-          </a>
-        {% endif %}
-      </div>
+  <aside class="side app-side" id="app-sidebar" aria-label="Primary">
+    <div class="brand-cell app-brand">
+      <a href="/" class="app-brand-link" aria-label="Platform Atlas — dashboard">
+        <div class="brand-mark" role="img" aria-label="Itential"></div>
+        <span class="app-brand-name">
+          <strong>Platform Atlas</strong>
+          <small>v{{ atlas_version | default('') }}</small>
+        </span>
+      </a>
+      <button type="button" class="app-rail-toggle" data-atlas-rail-toggle
+              aria-label="Collapse or expand the sidebar" title="Collapse sidebar  [">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
     </div>
 
-    {% if tier %}
-      {# Match the ORG / ENV pill structure so all three header pills read as one set.
-         Both Standard and Extended use the same neutral pill — the badge is a
-         state indicator, not a celebration of either choice. #}
-      <span class="pill" title="Active audit tier">
-        <span class="label">Tier</span>
-        <span class="val mono">{{ tier }}</span>
-      </span>
-    {% endif %}
+    <nav class="app-nav">
+      <span class="nav-glide" aria-hidden="true"></span>
+      <span class="nav-hover" aria-hidden="true"></span>
 
-    {% if continuous and continuous.enabled and not is_saas %}
-      {# Always-on reminder that continuous audit is running. State drives a
-         CSS class so all the color values live in atlas.css next to the rest
-         of the design system, not inline. #}
-      {% set _state = continuous.state %}
-      <a class="pill pill--continuous pill--state-{{ _state | lower }}{% if _state == 'ON' %} pill--pulse{% endif %}"
-         href="/continuous"
-         aria-label="Continuous audit status"
-         title="Continuous audit · last run {{ continuous.last_age }}{% if continuous.next_in %} · next in {{ continuous.next_in }}{% endif %}{% if continuous.os_scheduler_active %} · OS scheduler active{% endif %}">
-        <span class="dot"></span>
-        <span class="label">{% if continuous.os_scheduler_active %}OS · {% endif %}Continuous</span>
-        <span class="val mono">{{ _state }} · {{ continuous.last_age }}{% if continuous.next_in %} · <span class="pill-next">next {{ continuous.next_in }}</span>{% endif %}</span>
-      </a>
-
-      <a href="/alerts" class="theme-toggle alerts-bell"
-         aria-label="Drift alerts" title="Drift alerts ({{ continuous.unacked }} unacked)">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        {% if continuous.unacked and continuous.unacked > 0 %}
-          <span class="alerts-bell-count">{{ continuous.unacked }}</span>
-        {% endif %}
-      </a>
-    {% endif %}
-
-    <button type="button" class="theme-toggle" data-atlas-theme-toggle
-            aria-label="Toggle light/dark theme" title="Toggle light/dark theme">
-      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-      <svg class="icon-sun"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-    </button>
-
-    <a href="/config" class="theme-toggle no-underline{% if request.url.path == '/config' %} is-active text-accent border-accent{% endif %}"
-       aria-label="Settings" title="Settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    </a>
-  </header>
-
-  <aside class="side border-r border-line bg-bg-2 px-3 py-3.5 flex flex-col sticky top-[52px] overflow-y-auto"
-         style="grid-area: side; height: calc(100vh - 52px);">
-    <nav>
-      {# Nav-item macro — handles active state (background + accent ::before
-         indicator) and optional badge for unread counts. Keeps the 14
-         repeated nav rows DRY without sacrificing readability. #}
-      {% macro _nav_label(text) %}
-        <div class="text-[14px] tracking-[0.1em] uppercase font-semibold text-accent px-2.5 pt-1.5 pb-2 mb-1 flex items-center gap-1.5">
-          <span class="w-[5px] h-[5px] rounded-full bg-current opacity-65 shrink-0"></span>{{ text }}
-        </div>
-      {% endmacro %}
-      {% set _nav_base = "nav-link relative flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[16px] font-medium" %}
-      {% set _nav_idle = "text-text-2 hover:bg-surface hover:text-text [&>svg]:text-text-3" %}
-      {% set _nav_active = "is-active bg-surface-2 text-text [&>svg]:text-accent before:content-[''] before:absolute before:left-[-12px] before:top-2 before:bottom-2 before:w-0.5 before:bg-accent before:rounded-xs" %}
-
-      <div class="mb-3.5 first:mt-0">
-        {{ _nav_label('Overview') }}
-        <a href="/" class="{{ _nav_base }} {% if request.url.path == '/' %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-          <span>Dashboard</span>
-        </a>
-        <a href="/fleet" class="{{ _nav_base }} {% if request.url.path.startswith('/fleet') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-          <span>Fleet</span>
-        </a>
+      <div class="nav-group">
+        <span class="nav-group-label">Overview</span>
+        {% call nav_link('/', 'Dashboard', _path == '/') %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        {% endcall %}
+        {% call nav_link('/fleet', 'Fleet', _path.startswith('/fleet')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        {% endcall %}
       </div>
 
-      <div class="mb-3.5">
-        {{ _nav_label('Audit') }}
-        <a href="/sessions" class="{{ _nav_base }} {% if request.url.path.startswith('/sessions') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>
-          <span>Sessions</span>
-        </a>
-        <a href="/preflight" class="{{ _nav_base }} {% if request.url.path.startswith('/preflight') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M3 12h3l2-6 4 12 2-6h7"/></svg>
-          <span>Preflight</span>
-        </a>
-        <a href="/diff" class="{{ _nav_base }} {% if request.url.path.startswith('/diff') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M8 5h13M3 12h18M8 19h13"/><circle cx="4.5" cy="5" r="1.5"/><circle cx="4.5" cy="19" r="1.5"/></svg>
-          <span>Diff</span>
-        </a>
-        <a href="/reports" class="{{ _nav_base }} {% if request.url.path.startswith('/reports') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <span>Reports</span>
-        </a>
-        <a href="/architecture" class="{{ _nav_base }} {% if request.url.path.startswith('/architecture') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><rect x="3" y="3" width="7" height="5" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="3" y="13" width="7" height="8" rx="1"/><rect x="14" y="13" width="7" height="8" rx="1"/></svg>
-          <span>Architecture and Observability</span>
-        </a>
+      <div class="nav-group">
+        <span class="nav-group-label">Audit</span>
+        {% call nav_link('/sessions', 'Sessions', _path.startswith('/sessions')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>
+        {% endcall %}
+        {% call nav_link('/preflight', 'Preflight', _path.startswith('/preflight')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l2-6 4 12 2-6h7"/></svg>
+        {% endcall %}
+        {% call nav_link('/diff', 'Diff', _path.startswith('/diff')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5h13M3 12h18M8 19h13"/><circle cx="4.5" cy="5" r="1.5"/><circle cx="4.5" cy="19" r="1.5"/></svg>
+        {% endcall %}
+        {% call nav_link('/reports', 'Reports', _path.startswith('/reports')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        {% endcall %}
+        {% call nav_link('/architecture', 'Architecture & Observability', _path.startswith('/architecture')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="5" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="3" y="13" width="7" height="8" rx="1"/><rect x="14" y="13" width="7" height="8" rx="1"/></svg>
+        {% endcall %}
       </div>
 
-      <div class="mb-3.5">
-        {{ _nav_label('Configuration') }}
-        <a href="/environments" class="{{ _nav_base }} {% if request.url.path.startswith('/environments') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/></svg>
-          <span>Environments</span>
-        </a>
-        <a href="/rulesets" class="{{ _nav_base }} {% if request.url.path.startswith('/rulesets') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          <span>Rulesets</span>
-        </a>
-        <a href="/config/credentials" class="{{ _nav_base }} {% if request.url.path.startswith('/config/credentials') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <span>Credentials</span>
-        </a>
-        <a href="/config/doctor" class="{{ _nav_base }} {% if request.url.path.startswith('/config/doctor') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-          <span>Doctor</span>
-        </a>
-        <a href="/tier" class="{{ _nav_base }} {% if request.url.path.startswith('/tier') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
-          <span>Tier</span>
-        </a>
+      <div class="nav-group">
+        <span class="nav-group-label">Configuration</span>
+        {% call nav_link('/environments', 'Environments', _path.startswith('/environments')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/></svg>
+        {% endcall %}
+        {% call nav_link('/rulesets', 'Rulesets', _path.startswith('/rulesets')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        {% endcall %}
+        {% call nav_link('/config/credentials', 'Credentials', _path.startswith('/config/credentials')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        {% endcall %}
+        {% call nav_link('/config/doctor', 'Doctor', _path.startswith('/config/doctor')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        {% endcall %}
+        {% call nav_link('/tier', 'Tier', _path.startswith('/tier')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
+        {% endcall %}
       </div>
 
-      {# Platform API — DISABLED. Re-enable by un-commenting; structure is the
-         same as the other nav sections. See routes/platform_api.py. #}
+      {# Platform API — DISABLED. Re-enable by adding a nav_link call; see
+         routes/platform_api.py. #}
 
       {# Continuous Audit (+ its Alerts/Notifications) is platform-anchored —
-         hidden under SaaS, where the routes also 403. Standard/Extended keep it. #}
+         hidden under SaaS, where the routes also 403. #}
       {% if not is_saas %}
-      <div class="mb-3.5">
-        {{ _nav_label('Continuous') }}
-        <a href="/continuous" class="{{ _nav_base }} {% if request.url.path.startswith('/continuous') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
-          <span>Continuous Audit</span>
-        </a>
-        <a href="/alerts" class="{{ _nav_base }} {% if request.url.path.startswith('/alerts') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          <span>Alerts{% if continuous and continuous.unacked and continuous.unacked > 0 %} <span class="ml-auto font-mono text-[12px] py-px px-1.5 rounded-full bg-surface-3 text-text-3">{{ continuous.unacked }}</span>{% endif %}</span>
-        </a>
-        <a href="/notifications" class="{{ _nav_base }} {% if request.url.path.startswith('/notifications') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M4 4h16v12H5.17L4 17.17V4z"/><path d="M8 9h8M8 12h5"/></svg>
-          <span>Notifications</span>
-        </a>
+      <div class="nav-group">
+        <span class="nav-group-label">Continuous</span>
+        {% call nav_link('/continuous', 'Continuous Audit', _path.startswith('/continuous')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+        {% endcall %}
+        {% set _unacked = continuous.unacked if (continuous and continuous.unacked and continuous.unacked > 0) else None %}
+        {% call nav_link('/alerts', 'Alerts', _path.startswith('/alerts'), badge=_unacked) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        {% endcall %}
+        {% call nav_link('/notifications', 'Notifications', _path.startswith('/notifications')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H5.17L4 17.17V4z"/><path d="M8 9h8M8 12h5"/></svg>
+        {% endcall %}
       </div>
       {% endif %}
 
-      <div class="mb-3.5">
-        {{ _nav_label('System') }}
-        <a href="/jobs" class="{{ _nav_base }} {% if request.url.path.startswith('/jobs') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-          <span>Jobs</span>
-        </a>
-        {# Support Bundle is platform-anchored — hidden under SaaS, where the
-           route also 403s. Standard/Extended keep it. #}
+      <div class="nav-group">
+        <span class="nav-group-label">System</span>
+        {% call nav_link('/jobs', 'Jobs', _path.startswith('/jobs')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        {% endcall %}
+        {# Support Bundle is platform-anchored — hidden under SaaS. #}
         {% if not is_saas %}
-        <a href="/support-bundle" class="{{ _nav_base }} {% if request.url.path.startswith('/support-bundle') %}{{ _nav_active }}{% else %}{{ _nav_idle }}{% endif %}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="M16.5 9.4 7.55 4.24"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/><circle cx="18.5" cy="15.5" r="2.5"/><path d="M20.27 17.27 22 19"/></svg>
-          <span>Support Bundle</span>
-        </a>
+        {% call nav_link('/support-bundle', 'Support Bundle', _path.startswith('/support-bundle')) %}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="M16.5 9.4 7.55 4.24"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/><circle cx="18.5" cy="15.5" r="2.5"/><path d="M20.27 17.27 22 19"/></svg>
+        {% endcall %}
         {% endif %}
       </div>
     </nav>
 
-    <div class="mt-auto pt-3">
+    <div class="app-side-foot">
       {% if is_standard and not upgrade_panel_dismissed %}
-        {# .upgrade panel keeps atlas.css styling — gradient + dismiss button
-           are intricate enough that translating to utilities loses clarity. #}
         <div class="upgrade">
           <button type="button" class="upgrade-dismiss" data-atlas-upgrade-dismiss
                   aria-label="Dismiss upgrade panel" title="Dismiss">×</button>
@@ -354,15 +213,145 @@
           <a class="upgrade-cta upgrade-cta--ghost" href="/tier">View modes <span>→</span></a>
         </div>
       {% endif %}
-      <div class="text-[13px] text-text-3 px-3.5 pt-2.5 pb-1.5 tracking-[0.02em]">
-        WebUI v{{ webui_version | default('') }}
+      <div class="app-side-version" title="WebUI v{{ webui_version | default('') }}">
+        <i aria-hidden="true"></i><span>WebUI v{{ webui_version | default('') }}</span>
       </div>
     </div>
   </aside>
+  <div class="app-scrim" aria-hidden="true"></div>
 
-  <main class="px-8 pt-6 pb-14 min-w-0" style="grid-area: main;">
-    {% block content %}{% endblock %}
-  </main>
+  <div class="app-body">
+    <header class="app-top">
+      <button type="button" class="theme-toggle app-menu-btn" data-atlas-drawer-toggle
+              aria-controls="app-sidebar" aria-expanded="false" aria-label="Open navigation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+      </button>
+
+      <nav class="app-crumbs" aria-label="Breadcrumb">
+        <a href="/">Workspace</a>
+        <span class="sep" aria-hidden="true">/</span>
+        <span class="here">{% block crumb %}{{ self.title()|default('') }}{% endblock %}</span>
+      </nav>
+
+      <div class="app-top-spacer"></div>
+
+      <button type="button" class="app-search" data-atlas-palette-open aria-label="Search pages, sessions and environments">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span class="ph">Search or jump to…</span>
+        <kbd>⌘K</kbd>
+      </button>
+
+      <div class="app-top-cluster">
+        {# Inline environment switcher. Picking an environment POSTs an
+           activation and stays on the current page (the route's
+           _safe_next_url guards `next` against open redirects). #}
+        <div x-data="{ open: false }" class="relative inline-flex" @keydown.escape.window="open = false">
+          {% if active_environment %}
+            <button type="button" @click="open = !open" @click.outside="open = false"
+                    class="pill pill--env-link cursor-pointer" :aria-expanded="open"
+                    title="Switch environment">
+              <span class="dot" aria-hidden="true"></span>
+              <span class="label">Env</span>
+              <span class="val mono">{{ active_environment }}</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                   class="opacity-60 transition-transform duration-200" :class="open && 'rotate-180'"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          {% else %}
+            <button type="button" @click="open = !open" @click.outside="open = false"
+                    class="pill pill--env-warn cursor-pointer text-warn" :aria-expanded="open"
+                    title="No active environment — click to switch or create"
+                    style="border-color: var(--warn); background: var(--warn-soft);">
+              <span class="dot" style="background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft);"></span>
+              <span class="label text-warn">Env</span>
+              <span class="val text-warn font-semibold">No active environment</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                   class="opacity-60 transition-transform duration-200" :class="open && 'rotate-180'"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          {% endif %}
+
+          <div x-show="open" x-cloak
+               x-transition:enter="transition ease-out duration-200"
+               x-transition:enter-start="opacity-0 -translate-y-2 scale-95"
+               x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+               x-transition:leave="transition ease-in duration-100"
+               x-transition:leave-start="opacity-100"
+               x-transition:leave-end="opacity-0"
+               class="st-menu" role="menu">
+            <div class="st-menu-head">Switch environment</div>
+            {% if env_dropdown %}
+              <div class="pb-1.5">
+              {% for e in env_dropdown %}
+                <form action="/environments/{{ e.name }}/activate" method="post" class="block">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="next" value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+                  <button type="submit" data-loading-label="Activating…" role="menuitem"
+                          class="st-menu-item{% if e.is_active %} is-active{% endif %}">
+                    <span class="mark" aria-hidden="true"></span>
+                    <span class="font-mono truncate">{{ e.name }}</span>
+                    {% if e.is_active %}<span class="ml-auto text-[12px] opacity-70">Active</span>{% endif %}
+                  </button>
+                </form>
+              {% endfor %}
+              </div>
+            {% else %}
+              <div class="px-3.5 pb-3 text-[14px] text-text-3">No environments yet.</div>
+            {% endif %}
+            <div class="st-menu-foot">
+              {% if active_environment %}
+                <a href="/environments/{{ active_environment }}">View details for “{{ active_environment }}”</a>
+              {% else %}
+                <a href="/environments/new">Create an environment</a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% if tier %}
+          <span class="pill" title="Active audit tier">
+            <span class="label">Tier</span>
+            <span class="val mono">{{ tier }}</span>
+          </span>
+        {% endif %}
+
+        {% if continuous and continuous.enabled and not is_saas %}
+          {% set _state = continuous.state %}
+          <a class="pill pill--continuous pill--state-{{ _state | lower }}{% if _state == 'ON' %} pill--pulse{% endif %}"
+             href="/continuous"
+             aria-label="Continuous audit status"
+             title="Continuous audit · last run {{ continuous.last_age }}{% if continuous.next_in %} · next in {{ continuous.next_in }}{% endif %}{% if continuous.os_scheduler_active %} · OS scheduler active{% endif %}">
+            <span class="dot"></span>
+            <span class="label">{% if continuous.os_scheduler_active %}OS · {% endif %}Continuous</span>
+            <span class="val mono">{{ _state }} · {{ continuous.last_age }}{% if continuous.next_in %}<span class="pill-next"> · next {{ continuous.next_in }}</span>{% endif %}</span>
+          </a>
+
+          <a href="/alerts" class="theme-toggle alerts-bell"
+             aria-label="Drift alerts" title="Drift alerts ({{ continuous.unacked }} unacked)">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            {% if continuous.unacked and continuous.unacked > 0 %}
+              <span class="alerts-bell-count">{{ continuous.unacked }}</span>
+            {% endif %}
+          </a>
+        {% endif %}
+
+        <button type="button" class="theme-toggle" data-atlas-theme-toggle
+                aria-label="Toggle light/dark theme" title="Toggle light/dark theme">
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="icon-sun"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        </button>
+
+        <a href="/config" class="theme-toggle no-underline{% if _path == '/config' %} is-active text-accent border-accent{% endif %}"
+           aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </a>
+      </div>
+    </header>
+
+    <main class="app-main" id="main">
+      <div class="app-main-inner">
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
 
   {# ── Toaster ──────────────────────────────────────────────────────────
      Single global toast region. Listens for the `atlas:toast` custom
@@ -388,12 +377,12 @@
       <div :class="`toast toast--${t.kind || 'info'}`"
            :role="(t.kind === 'error' || t.kind === 'warning') ? 'alert' : 'status'"
            :aria-live="(t.kind === 'error' || t.kind === 'warning') ? 'assertive' : 'polite'"
-           x-transition:enter="transition ease-out duration-150"
-           x-transition:enter-start="opacity-0 translate-x-2"
-           x-transition:enter-end="opacity-100 translate-x-0"
-           x-transition:leave="transition ease-in duration-100"
-           x-transition:leave-start="opacity-100"
-           x-transition:leave-end="opacity-0">
+           x-transition:enter="transition ease-[cubic-bezier(.16,1,.3,1)] duration-500"
+           x-transition:enter-start="opacity-0 translate-x-8 scale-95"
+           x-transition:enter-end="opacity-100 translate-x-0 scale-100"
+           x-transition:leave="transition ease-in duration-200"
+           x-transition:leave-start="opacity-100 translate-x-0"
+           x-transition:leave-end="opacity-0 translate-x-6">
         <span x-text="t.msg"></span>
         <button type="button" class="toast-close"
                 @click="dismiss(t.id)"
@@ -419,15 +408,27 @@
        x-show="open && (title || confirmLabel)"
        x-cloak
        @keydown.escape.window="cancel"
-       class="fixed inset-0 z-50 grid place-items-center p-4 backdrop-blur-xs"
-       style="background: oklch(0% 0 0 / 0.55);">
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="st-dialog-backdrop fixed inset-0 z-[80] grid place-items-center p-4">
     <div @click.outside="cancel"
-         x-transition:enter="transition ease-out duration-150"
-         x-transition:enter-start="opacity-0 scale-95"
-         x-transition:enter-end="opacity-100 scale-100"
-         class="w-full max-w-md rounded-lg bg-surface border border-line p-5 shadow-2xl">
-      <h3 class="text-[17px] font-semibold mb-2" x-text="title"></h3>
-      <p class="text-[15px] text-text-2 leading-relaxed mb-5 whitespace-pre-line" x-text="message"></p>
+         role="alertdialog" aria-modal="true" aria-labelledby="atlas-confirm-title" aria-describedby="atlas-confirm-msg"
+         :data-kind="kind"
+         x-show="open"
+         x-transition:enter="transition ease-[cubic-bezier(.16,1,.3,1)] duration-300"
+         x-transition:enter-start="opacity-0 translate-y-3 scale-95"
+         x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+         class="st-dialog w-full max-w-md">
+      <div class="st-dialog-icon" aria-hidden="true">
+        <svg x-show="kind === 'danger'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+        <svg x-show="kind !== 'danger'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      </div>
+      <h3 id="atlas-confirm-title" x-text="title"></h3>
+      <p id="atlas-confirm-msg" class="text-[15px] text-text-2 leading-relaxed mb-6 whitespace-pre-line" x-text="message"></p>
       <div class="flex gap-2 justify-end">
         <button type="button" @click="cancel" class="btn">Cancel</button>
         <button type="button" @click="confirm"

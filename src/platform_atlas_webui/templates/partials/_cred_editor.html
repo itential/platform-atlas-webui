@@ -1,0 +1,239 @@
+{# ── Shared credential editor ────────────────────────────────────────────
+   ONE credential-status list + inline set/edit/remove editor, replacing the
+   `.ce-*` list in config/credentials.html and the `.cred-*` cards in
+   tier/extended_setup.html. Visuals live in atlas.css (.ce-*); the toggle /
+   reveal / format-check JS is defined here, guarded, so any consumer inherits
+   it.
+
+   The caller sets these vars immediately before {% include %}:
+     creds            list of cred dicts: key, display, present, required,
+                      unavailable, extended_only, description, (opt) placeholder
+     ce_set_action    POST endpoint for setting a value
+     ce_delete_action POST endpoint for delete, or '' / omitted → no remove UI
+     ce_writable      bool — backend accepts writes (false for Vault / on error)
+     ce_store_is_file bool — wording: 'encrypted file' vs 'OS keyring'
+     ce_env_name      scope name, or '' for the unscoped default
+     ce_backend       'keyring' | 'file' | 'vault'
+     ce_format_check  bool — show the no-network "Check" button (credentials pg)
+
+   `csrf_token` and `csp_nonce` come from the parent scope. #}
+
+{% set _store_word = 'encrypted file' if ce_store_is_file else 'keyring' %}
+{% set _scope = 'platform-atlas' + ('/' + ce_env_name if ce_env_name else '') %}
+
+<div class="ce-list">
+  {% for c in creds %}
+    {% set is_present = c.present is true %}
+    {% set is_missing = (c.present is not none) and (not c.present) %}
+    {% set writable = ce_writable and not c.unavailable %}
+
+    <div class="ce-row{% if c.unavailable %} is-unavailable{% endif %}" data-ce-row>
+      <div class="ce-line">
+
+        {# Required / optional indicator #}
+        <span class="ce-dot" title="{% if c.required and not c.unavailable %}Required{% else %}Optional{% endif %}">
+          {% if c.required and not c.unavailable %}
+            <svg width="7" height="7" viewBox="0 0 10 10" class="text-text-2"><circle cx="5" cy="5" r="5" fill="currentColor"/></svg>
+          {% else %}
+            <svg width="7" height="7" viewBox="0 0 10 10" class="text-text-4"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          {% endif %}
+        </span>
+
+        {# Name, key, tags #}
+        <div class="ce-name">
+          <div class="ce-name-row">
+            <span class="display">{{ c.display }}</span>
+            <code class="key">{{ c.key }}</code>
+          </div>
+          {% if c.extended_only or not c.required %}
+            <div class="ce-tags">
+              {% if c.extended_only %}<span class="ce-tag is-extended">Extended only</span>{% endif %}
+              {% if not c.required and not c.unavailable %}<span class="ce-tag">Optional</span>{% endif %}
+            </div>
+          {% endif %}
+        </div>
+
+        {# Status pill — fixed shape on every row #}
+        <div>
+          {% if c.unavailable %}
+            <span class="ce-status">Unavailable</span>
+          {% elif c.present is none %}
+            <span class="ce-status">Unknown</span>
+          {% elif is_present %}
+            <span class="ce-status is-ok"><span class="dot"></span>Stored</span>
+          {% elif c.required %}
+            <span class="ce-status is-bad"><span class="dot"></span>Missing</span>
+          {% else %}
+            <span class="ce-status"><span class="dot"></span>Not set</span>
+          {% endif %}
+        </div>
+
+        {# Action #}
+        <div class="ce-action-cell">
+          {% if writable %}
+            <button type="button" class="ce-action{% if is_missing and c.required %} is-primary{% endif %}"
+                    aria-controls="ce-edit-{{ loop.index }}"
+                    onclick="atlasCredToggle({{ loop.index }})">
+              {% if is_present %}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                Edit
+              {% else %}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Set
+              {% endif %}
+            </button>
+          {% elif ce_backend == 'vault' and not c.unavailable %}
+            <span class="text-[13px] text-text-4">Vault</span>
+          {% endif %}
+        </div>
+      </div>
+
+      {# Format-check result (no network) — shown under the row when requested #}
+      {% if ce_format_check and is_present %}
+        <div class="px-4 pb-2 -mt-1 flex items-center gap-2.5">
+          <button type="button" class="ce-action" style="height:26px; min-width:0; padding:0 10px; font-size:13px;"
+                  hx-post="/config/credentials/check-format"
+                  hx-vals='{"key": {{ c.key | tojson }}}'
+                  hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'
+                  hx-target="#ce-check-{{ loop.index }}" hx-swap="innerHTML"
+                  hx-disabled-elt="this">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            Check format
+          </button>
+          <span id="ce-check-{{ loop.index }}" class="ce-check-result"></span>
+        </div>
+      {% endif %}
+
+      {# Inline editor #}
+      {% if writable %}
+        <div id="ce-edit-{{ loop.index }}" class="ce-edit">
+          <form method="post" action="{{ ce_set_action }}" class="ce-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="key" value="{{ c.key }}">
+
+            <div class="ce-input-wrap">
+              <input type="password" name="value" id="ce-val-{{ loop.index }}" class="ce-input"
+                     placeholder="{{ c.placeholder if c.placeholder is defined and c.placeholder else c.display ~ '…' }}"
+                     autocomplete="new-password" required
+                     {% if c.key == 'mongo_uri' %}data-mongo-authsource-check{% endif %}>
+              <button type="button" class="ce-reveal" tabindex="-1"
+                      onclick="atlasCredReveal('ce-val-{{ loop.index }}', this)"
+                      title="Show / hide value" aria-label="Show or hide value">
+                <svg class="icon-eye-off" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+                <svg class="icon-eye" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden>
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </div>
+
+            {% if c.key == 'mongo_uri' %}
+              <div class="ce-mongo-warn" data-mongo-warn hidden>
+                <strong>⚠ Missing authSource</strong> — your URI includes credentials but no
+                <code>authSource</code>. MongoDB may reject the connection if the user was created
+                outside the <code>admin</code> database. Consider appending <code>?authSource=admin</code>.
+              </div>
+            {% endif %}
+
+            {% if c.description %}<p class="ce-hint">{{ c.description }}</p>{% endif %}
+            <p class="ce-hint">
+              {% if is_present %}Replaces the existing value{% else %}Saved to the {{ _store_word }}{% endif %}
+              under <code>{{ _scope }}</code>.
+            </p>
+
+            <div class="ce-form-actions">
+              {% if is_present and ce_delete_action %}
+                <button type="submit" form="ce-remove-{{ loop.index }}" class="ce-remove">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14H7L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                  Remove from {{ _store_word }}
+                </button>
+              {% endif %}
+              <span class="spacer"></span>
+              <button type="button" class="btn" onclick="atlasCredToggle({{ loop.index }})">Cancel</button>
+              <button type="submit" class="btn primary">Save</button>
+            </div>
+          </form>
+
+          {% if is_present and ce_delete_action %}
+            {# Out-of-band remove form the trash link submits #}
+            <form id="ce-remove-{{ loop.index }}" method="post" action="{{ ce_delete_action }}"
+                  data-confirm-action data-confirm-kind="danger"
+                  data-confirm-title="Remove credential?"
+                  data-confirm-message="Remove {{ c.display }} from the {{ _store_word }}? This cannot be undone."
+                  data-confirm-label="Remove" hidden>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="key" value="{{ c.key }}">
+            </form>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  'use strict';
+  if (window.__atlasCredEditorWired) return;
+  window.__atlasCredEditorWired = true;
+
+  // Toggle one row's inline editor; closing any other open row keeps it calm.
+  window.atlasCredToggle = function (idx) {
+    var editor = document.getElementById('ce-edit-' + idx);
+    if (!editor) return;
+    var row = editor.closest('[data-ce-row]');
+    if (!row) return;
+    var willOpen = !row.classList.contains('is-open');
+    document.querySelectorAll('[data-ce-row].is-open').forEach(function (r) {
+      if (r !== row) r.classList.remove('is-open');
+    });
+    row.classList.toggle('is-open', willOpen);
+    if (willOpen) {
+      var inp = editor.querySelector('input[type="password"]');
+      if (inp) setTimeout(function () { inp.focus(); }, 40);
+    }
+  };
+
+  // Show / hide a password value.
+  window.atlasCredReveal = function (inputId, btn) {
+    var inp = document.getElementById(inputId);
+    if (!inp) return;
+    var isHidden = inp.type === 'password';
+    inp.type = isHidden ? 'text' : 'password';
+    var eyeOff = btn.querySelector('.icon-eye-off');
+    var eyeOn  = btn.querySelector('.icon-eye');
+    if (eyeOff) eyeOff.hidden = isHidden;
+    if (eyeOn)  eyeOn.hidden  = !isHidden;
+  };
+
+  // MongoDB authSource inline warning — fires while typing a new URI.
+  function checkMongoAuthSource(inp) {
+    var form = inp.closest('form');
+    var warnEl = form && form.querySelector('[data-mongo-warn]');
+    if (!warnEl) return;
+    var val = inp.value || '';
+    var needsWarn = false;
+    if (/^mongodb(\+srv)?:\/\//i.test(val)) {
+      var atIdx = val.indexOf('@');
+      var afterScheme = val.indexOf('://') + 3;
+      var hasCreds = atIdx > afterScheme && val.indexOf(':') < atIdx;
+      if (hasCreds) {
+        var qs = val.indexOf('?') !== -1 ? val.slice(val.indexOf('?') + 1) : '';
+        needsWarn = !/(?:^|&)authSource=/i.test(qs);
+      }
+    }
+    warnEl.hidden = !needsWarn;
+  }
+  document.querySelectorAll('[data-mongo-authsource-check]').forEach(function (inp) {
+    inp.addEventListener('input', function () { checkMongoAuthSource(inp); });
+    var row = inp.closest('[data-ce-row]');
+    if (row) {
+      new MutationObserver(function () { checkMongoAuthSource(inp); })
+        .observe(row, { attributes: true, attributeFilter: ['class'] });
+    }
+  });
+}());
+</script>

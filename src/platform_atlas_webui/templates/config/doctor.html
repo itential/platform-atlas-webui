@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Config Doctor — Platform Atlas{% endblock %}
 {% block crumb %}<a href="/config" class="text-text-3 hover:text-accent no-underline">Settings</a> <span class="text-text-4 mx-1">/</span> Doctor{% endblock %}
 {% block content %}
@@ -7,26 +8,12 @@
    stays declarative (no Python-side colour math). #}
 {% set _chip_class = {"ok": "ok", "warn": "warn", "fail": "bad"} %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Health check</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
-      Config Doctor
-      <em class="not-italic text-accent">— {{ counts.ok }} OK · {{ counts.warn }} warn · {{ counts.fail }} fail</em>
-    </h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Runs the same checks as <code>platform-atlas config doctor</code> — config
-      file permissions, Python interpreter, disk space, credential backend,
-      Platform / Gateway 4 reachability, active ruleset, and SSH key path.
-      Reload the page to re-run.
-    </p>
-  </div>
-  <div class="flex items-center gap-2">
-    <a class="btn primary" href="/config/doctor"
-       data-loading-label="Re-running…">Re-run checks</a>
-    <a class="btn" href="/config">← Settings</a>
-  </div>
-</header>
+{% call page_header("Config Doctor",
+    subtitle="Runs the same checks as <code>platform-atlas config doctor</code> — config file permissions, Python interpreter, disk space, credential backend, Platform / Gateway 4 reachability, active ruleset, and SSH key path. Reload the page to re-run.",
+    meta=[counts.ok ~ ' OK · ' ~ counts.warn ~ ' warn · ' ~ counts.fail ~ ' fail']) %}
+  <a class="btn primary" href="/config/doctor" data-loading-label="Re-running…">Re-run checks</a>
+  <a class="btn" href="/config">← Settings</a>
+{% endcall %}
 
 {# ── Overall summary + count tiles ─────────────────────────────── #}
 <section class="grid gap-3 mb-4" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">

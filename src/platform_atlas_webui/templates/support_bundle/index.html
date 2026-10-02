@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Support Bundle — Platform Atlas{% endblock %}
 {% block crumb %}Support Bundle{% endblock %}
 {% block content %}
@@ -264,16 +265,8 @@
 </style>
 
 {# ── Page header (always shown) ─────────────────────────────── #}
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Diagnostics</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">Support Bundle</h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Collect Platform health endpoints, logs, system info, and a redacted Atlas config snapshot
-      into a single ZIP — attach it to your Itential support ticket.
-    </p>
-  </div>
-</header>
+{{ page_header("Support Bundle",
+    subtitle="Collect Platform health endpoints, logs, system info, and a redacted Atlas config snapshot into a single ZIP — attach it to your Itential support ticket.") }}
 
 {% if job %}
 

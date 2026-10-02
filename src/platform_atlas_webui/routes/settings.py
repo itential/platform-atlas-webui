@@ -18,7 +18,8 @@ from platform_atlas_webui.services import config as config_svc
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-_VALID_THEMES = {"aurora", "horizon", "obsidian", "meadow", "carbon", "itential", "dracula"}
+# 3.0 curated theme set — Modern (default), Itential, Obsidian, Carbon.
+_VALID_THEMES = {"modern", "itential", "obsidian", "carbon"}
 # "auto" follows the OS prefers-color-scheme — the client resolves it to
 # light/dark at runtime; we only persist the intent.
 _VALID_MODES = {"light", "dark", "auto"}

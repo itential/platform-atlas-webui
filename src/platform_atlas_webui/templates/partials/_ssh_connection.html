@@ -1,0 +1,138 @@
+{# ── Shared SSH connection sub-form ─────────────────────────────────────
+   ONE definition of the SSH auth-method + private-key picker + passphrase /
+   password inputs, used by both the SaaS gateway block and the Extended
+   topology block in environments/form.html (previously ~100 duplicated lines
+   in each). Optionally also renders the host / user / port fields plus a live
+   "Test SSH connection" button (SaaS uses this; Extended supplies host/user/
+   port from the topology step instead).
+
+   The caller sets these vars immediately before {% include %}:
+     ssh_prefix      field-name + id prefix — 'ssh_' (Extended) or 'saas_ssh_' (SaaS)
+     ssh_authmodel   Alpine x-model backing the auth-method select
+                     ('extAuthMethod' or 'saasAuthMethod')
+     ssh_keyval      current private-key path (edit pre-fill), '' if none
+     ssh_key_in_dd   bool — is ssh_keyval one of the discovered ssh_keys?
+     ssh_with_host   bool — also render saas_iag_host/saas_ssh_user/saas_ssh_port
+                     + the Test SSH button (SaaS only)
+     ssh_host_val / ssh_user_val / ssh_port_val   host-field pre-fill (when ssh_with_host)
+     ssh_env_name    env name, for the Test SSH hx-vals (when ssh_with_host)
+
+   Visibility of the whole block is the caller's job (x-show on a wrapper).
+   `credBackend`, `ssh_keys`, and `csrf_token` come from the parent scope. #}
+
+{% if ssh_with_host %}
+<div class="field">
+  <label for="saas_iag_host">Gateway SSH host</label>
+  <input id="saas_iag_host" name="saas_iag_host" type="text"
+         placeholder="iag.acme.cloud" value="{{ ssh_host_val }}"
+         :required="saasNeedsSsh">
+</div>
+<div class="field">
+  <label for="saas_ssh_user">SSH user</label>
+  <input id="saas_ssh_user" name="saas_ssh_user" type="text" value="{{ ssh_user_val or 'atlas' }}">
+</div>
+<div class="field">
+  <label for="saas_ssh_port">SSH port</label>
+  <input id="saas_ssh_port" name="saas_ssh_port" type="number" min="1" max="65535"
+         value="{{ ssh_port_val or 22 }}">
+</div>
+{% endif %}
+
+<div class="field">
+  <label for="{{ ssh_prefix }}auth_method">SSH authentication</label>
+  <select id="{{ ssh_prefix }}auth_method" name="{{ ssh_prefix }}auth_method" x-model="{{ ssh_authmodel }}">
+    <option value="key">Key-based (private key file or SSH agent)</option>
+    <option value="password">Password-based</option>
+  </select>
+  <span class="hint" x-show="{{ ssh_authmodel }} === 'password'" x-cloak>
+    Password auth must be enabled on the target (<code>PasswordAuthentication yes</code> in sshd_config).
+    Key-based auth is recommended where available.
+  </span>
+</div>
+
+{# ── Key-based auth ──────────────────────────────────────────────────── #}
+<div x-show="{{ ssh_authmodel }} === 'key'" x-cloak>
+  <div class="field">
+    <label for="{{ ssh_prefix }}key_select">SSH private key</label>
+    <select id="{{ ssh_prefix }}key_select" class="mono"
+            onchange="(function(s){
+              var custom = document.getElementById('{{ ssh_prefix }}key_custom');
+              var hidden = document.getElementById('{{ ssh_prefix }}key');
+              if (s.value === '__custom__') { custom.hidden = false; hidden.value = custom.value; }
+              else { custom.hidden = true; hidden.value = s.value; }
+            })(this)">
+      <option value="" {% if not ssh_keyval %}selected{% endif %}>— None (use SSH agent) —</option>
+      {% for k in ssh_keys %}
+        <option value="{{ k.path }}" {% if ssh_keyval == k.path %}selected{% endif %}>{{ k.name }} · {{ k.path }}</option>
+      {% endfor %}
+      <option value="__custom__" {% if ssh_keyval and not ssh_key_in_dd %}selected{% endif %}>— Custom path… —</option>
+    </select>
+    {# Hidden field that actually submits — kept in sync by the select's onchange
+       and the custom input's oninput. #}
+    <input type="hidden" id="{{ ssh_prefix }}key" name="{{ ssh_prefix }}key" value="{{ ssh_keyval }}">
+    <input type="text" id="{{ ssh_prefix }}key_custom" class="mono mt-1.5"
+           placeholder="~/.ssh/some_other_key"
+           value="{{ ssh_keyval if (ssh_keyval and not ssh_key_in_dd) else '' }}"
+           {% if not (ssh_keyval and not ssh_key_in_dd) %}hidden{% endif %}
+           oninput="document.getElementById('{{ ssh_prefix }}key').value = this.value">
+    <span class="hint">
+      {% if ssh_keys %}
+        Atlas found {{ ssh_keys | length }} private key{% if ssh_keys | length != 1 %}s{% endif %}
+        in <code>~/.ssh</code>. Pick one, choose <em>Custom path…</em> for another path,
+        or leave as None to use the SSH agent.
+      {% else %}
+        No private keys detected in <code>~/.ssh</code> — choose <em>Custom path…</em>
+        to enter the full path, or leave as None to use the SSH agent.
+      {% endif %}
+    </span>
+  </div>
+  <div class="field">
+    <label for="{{ ssh_prefix }}passphrase">SSH key passphrase</label>
+    <input id="{{ ssh_prefix }}passphrase" name="{{ ssh_prefix }}passphrase" type="password"
+           autocomplete="new-password" placeholder="••••••••">
+    <span class="hint" x-show="credBackend !== 'vault'">
+      Only needed when the key is encrypted. 🔒 Stored in this environment's credential
+      store on save — never in the env file. Leave blank to keep the currently stored passphrase.
+    </span>
+    <span class="hint" x-show="credBackend === 'vault'" x-cloak>
+      Vault backend: store the passphrase under the <code>ssh_passphrase</code> key inside
+      your KV path — Atlas reads it from there at capture time.
+    </span>
+  </div>
+</div>
+
+{# ── Password-based auth ─────────────────────────────────────────────── #}
+<div x-show="{{ ssh_authmodel }} === 'password'" x-cloak>
+  <div class="field">
+    <label for="{{ ssh_prefix }}password">SSH password</label>
+    <input id="{{ ssh_prefix }}password" name="{{ ssh_prefix }}password" type="password"
+           autocomplete="off" placeholder="••••••••">
+    <span class="hint" x-show="credBackend !== 'vault'">
+      🔒 Stored in this environment's credential store on save — never in the env file.
+      Leave blank to keep the currently stored password.
+    </span>
+    <span class="hint" x-show="credBackend === 'vault'" x-cloak>
+      Vault backend: add <code>ssh_password</code> to your KV path manually.
+    </span>
+  </div>
+</div>
+
+{% if ssh_with_host %}
+{# Live SSH connection test. The endpoint only accepts saas_ssh_* names + env_name;
+   Extended callers (no host here) don't render this button. #}
+<div class="field">
+  <button type="button" class="btn sm"
+          hx-post="/environments/check-ssh"
+          hx-include="#saas_iag_host, #saas_ssh_user, #saas_ssh_port, #saas_ssh_key, #saas_ssh_passphrase, #saas_ssh_auth_method, #saas_ssh_password"
+          hx-vals='{"env_name": {{ ssh_env_name | tojson }}}'
+          hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'
+          hx-target="#saas-ssh-test-result"
+          hx-swap="innerHTML"
+          hx-disabled-elt="this">
+    Test SSH connection
+  </button>
+  <div id="saas-ssh-test-result" class="mt-1.5 min-h-[18px]"></div>
+  <span class="hint">Tries the host, user, port, and auth details above with the same SSH
+    machinery a capture uses — no more guessing whether it will connect.</span>
+</div>
+{% endif %}

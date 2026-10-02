@@ -31,41 +31,158 @@
     <div class="vm-backdrop__wash vm-backdrop__wash--info"></div>
   </div>
 
-  {# ── Action bar — just the export shortcuts, right-aligned. The
-       session name is already in the topbar breadcrumb and the tier is
-       already in the topbar pill, so we don't repeat them here. #}
-  <div class="vm-actionbar">
-    <a class="btn sm" href="/reports/{{ session_name }}/html" target="_blank" rel="noopener"
-       title="Open the standalone HTML report (the file the CLI generates) in a new tab">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-      </svg>
-      Standalone HTML
-    </a>
-    <a class="btn sm" href="/sessions/{{ session_name }}"
-       title="Go to the audit session that produced this report">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="4" y="3" width="16" height="18" rx="2"/>
-        <path d="M8 7h8M8 11h8M8 15h5"/>
-      </svg>
-      Session
-    </a>
-    {# Report Export — packages this session into a delivery archive (the WebUI
-       twin of the CLI `session export`). Opens the modal below; export.js wires
-       the click (no inline handlers — strict CSP). #}
-    <button type="button" class="btn sm primary" data-rx-open
-            title="Package this session's reports + report.json + metadata into a delivery archive (ZIP)">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-      Report Export
-    </button>
-  </div>
+  {# ── Hero ─────────────────────────────────────────────────────────────
+       The report's single header. Navy, with the crystal facets behind it
+       (atlas-facets.js, mounted lazily by atlas-motion.js via
+       data-atlas-facets), in every theme.
+
+       It follows the active tab: each [data-vm-hero-slice] carries one tab's
+       title, description and stat ledger. The slices are stacked in one grid
+       cell and cross-faded by class (not x-show), so the hero keeps the
+       height of its tallest slice and never jumps between tabs. The score
+       ring on the right is the report-wide answer and stays put.
+
+       Data hooks are the ones viewmodel.js already fills (data-vm-id,
+       data-vm-counter, data-vm-hero-headline/-lede, data-vm-dial,
+       data-vm-ring-grade, data-vm-rbac-stats, data-vm-tab-count); its
+       tabScopes() helper animates each slice's counters with its panel. #}
+  <header class="vm-hero-x" data-facets-host>
+    <div class="dash-facets" data-atlas-facets aria-hidden="true">
+      <div class="facets-probe"><i data-c="a"></i><i data-c="b"></i></div>
+    </div>
+
+    <div class="vm-hx-top">
+      <div class="vm-hx-eyebrow">
+        <span class="vm-hx-dot" aria-hidden="true"></span>
+        <span class="vm-hx-session">{{ session_name }}</span>
+        <span class="vm-hx-sep" aria-hidden="true">·</span>
+        <span data-vm-kicker>Audit report</span>
+      </div>
+      <div class="vm-hx-actions">
+        <button type="button" class="vm-hx-btn is-primary" data-rx-open
+                title="Package this session's reports + report.json + metadata into a delivery archive (ZIP)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Report export
+        </button>
+        <a class="vm-hx-btn" href="/reports/{{ session_name }}/html" target="_blank" rel="noopener"
+           title="Open the standalone HTML report (the file the CLI generates) in a new tab">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Standalone HTML
+        </a>
+        <a class="vm-hx-btn" href="/sessions/{{ session_name }}" title="Go to the audit session that produced this report">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>Session
+        </a>
+      </div>
+    </div>
+
+    <div class="vm-hx-body">
+      {# .dash-mast-inner is the element atlas-facets.js measures so the
+         crystal stays clear of the copy. #}
+      <div class="vm-hx-copy dash-mast-inner">
+        <div class="vm-hx-stack">
+          <div class="vm-hx-slice" data-vm-hero-slice="compliance"
+               :class="tab === 'compliance' && 'is-on'" :aria-hidden="tab !== 'compliance'">
+            <h1 class="vm-hx-title">Compliance</h1>
+            <p class="vm-hx-headline" data-vm-hero-headline></p>
+            <p class="vm-hx-lede" data-vm-hero-lede></p>
+          </div>
+          {% if session.tier != 'saas' %}
+          <div class="vm-hx-slice" data-vm-hero-slice="operational"
+               :class="tab === 'operational' && 'is-on'" :aria-hidden="tab !== 'operational'">
+            <h1 class="vm-hx-title">Operational</h1>
+            <p class="vm-hx-lede">MongoDB pipeline results and log analysis captured during this audit.</p>
+          </div>
+          {% endif %}
+          <div class="vm-hx-slice" data-vm-hero-slice="additional_validation"
+               :class="tab === 'additional_validation' && 'is-on'" :aria-hidden="tab !== 'additional_validation'">
+            <h1 class="vm-hx-title">Additional validation</h1>
+            <p class="vm-hx-lede">Extended checks beyond the ruleset: system, filesystem, gateways and more, grouped by category.</p>
+          </div>
+          <div class="vm-hx-slice" data-vm-hero-slice="architecture"
+               :class="tab === 'architecture' && 'is-on'" :aria-hidden="tab !== 'architecture'">
+            <h1 class="vm-hx-title">Architecture</h1>
+            <p class="vm-hx-lede">The deployment as it was captured: each section of its configuration, ready to expand.</p>
+          </div>
+          <div class="vm-hx-slice" data-vm-hero-slice="rbac"
+               :class="tab === 'rbac' && 'is-on'" :aria-hidden="tab !== 'rbac'">
+            <h1 class="vm-hx-title">Access control</h1>
+            <p class="vm-hx-lede">Who can reach what, and at what privilege level, from the Platform authorization API.</p>
+          </div>
+        </div>
+        <p class="vm-hx-meta">
+          <span data-vm-id="organization_name">—</span>
+          <span class="vm-hx-sep" aria-hidden="true">·</span>
+          <span class="vm-hx-code" data-vm-id="environment">—</span>
+          <span class="vm-hx-sep" aria-hidden="true">·</span>
+          <span class="vm-hx-code" data-vm-id="hostname">—</span>
+        </p>
+      </div>
+
+      {# Score — instrument-style 270° gauge (75 of 100 pathLength units),
+         tone-coloured by score in paintHeroHeadline(). .vm-hero-ring is the
+         class viewmodel.js sets --vm-dial-tone on. #}
+      <div class="vm-hx-score">
+        <div class="vm-hero-ring">
+          <svg viewBox="0 0 220 220" aria-hidden="true">
+            <circle class="vm-ring-track" cx="110" cy="110" r="100"
+                    pathLength="100" stroke-dasharray="75 100"
+                    transform="rotate(135 110 110)"/>
+            <circle class="vm-ring-arc" cx="110" cy="110" r="100"
+                    data-vm-dial="pass-rate"
+                    pathLength="100" stroke-dasharray="75 100" stroke-dashoffset="75"
+                    transform="rotate(135 110 110)"/>
+          </svg>
+          <div class="vm-ring-label">
+            <div class="vm-ring-row">
+              <span class="vm-ring-num" data-vm-id="pass_rate">0</span><span class="vm-ring-pct">%</span>
+            </div>
+            <span class="vm-ring-grade" data-vm-ring-grade>—</span>
+          </div>
+        </div>
+        <div class="vm-hx-rating">
+          <span class="vm-hx-rating-val" data-vm-id="health_rating">—</span>
+          <span class="vm-hx-rating-cap">Health rating · severity-weighted</span>
+        </div>
+      </div>
+    </div>
+
+    {# Ledger — one row of key numbers for the active tab. #}
+    <div class="vm-hx-ledger-stack">
+      <div class="vm-hx-ledger" data-vm-hero-slice="compliance"
+           :class="tab === 'compliance' && 'is-on'" :aria-hidden="tab !== 'compliance'">
+        <div class="vm-hx-stat" data-tone="ok"><span class="vm-hx-k">Compliant</span><span class="vm-hx-v" data-vm-counter="compliant">0</span></div>
+        <div class="vm-hx-stat" data-tone="bad"><span class="vm-hx-k">Non-compliant</span><span class="vm-hx-v" data-vm-counter="non_compliant">0</span></div>
+        <div class="vm-hx-stat" data-tone="mute"><span class="vm-hx-k">Skipped</span><span class="vm-hx-v" data-vm-counter="skipped">0</span></div>
+        <div class="vm-hx-stat" data-tone="warn"><span class="vm-hx-k">Errors</span><span class="vm-hx-v" data-vm-counter="errors">0</span></div>
+      </div>
+      {% if session.tier != 'saas' %}
+      <div class="vm-hx-ledger" data-vm-hero-slice="operational"
+           :class="tab === 'operational' && 'is-on'" :aria-hidden="tab !== 'operational'">
+        <div class="vm-hx-stat"><span class="vm-hx-k">Pipelines run</span><span class="vm-hx-v" data-vm-counter="pipeline_count">0</span></div>
+        <div class="vm-hx-stat" data-tone="ok"><span class="vm-hx-k">Successful</span><span class="vm-hx-v" data-vm-counter="success_count">0</span></div>
+        <div class="vm-hx-stat" data-tone="bad"><span class="vm-hx-k">Errored</span><span class="vm-hx-v" data-vm-counter="error_count">0</span></div>
+      </div>
+      {% endif %}
+      <div class="vm-hx-ledger" data-vm-hero-slice="additional_validation" :class="tab === 'additional_validation' && 'is-on'" :aria-hidden="tab !== 'additional_validation'">
+        <div class="vm-hx-stat"><span class="vm-hx-k">Checks run</span><span class="vm-hx-v" data-vm-tab-count="additional_validation">—</span></div>
+        <div class="vm-hx-stat"><span class="vm-hx-k">Tier</span><span class="vm-hx-fact vm-hx-tier" data-vm-id="tier">—</span></div>
+        <div class="vm-hx-stat vm-hx-wide"><span class="vm-hx-k">Ruleset</span><span class="vm-hx-fact" data-vm-id="ruleset">—</span></div>
+      </div>
+      <div class="vm-hx-ledger" data-vm-hero-slice="architecture" :class="tab === 'architecture' && 'is-on'" :aria-hidden="tab !== 'architecture'">
+        <div class="vm-hx-stat"><span class="vm-hx-k">Sections captured</span><span class="vm-hx-v" data-vm-tab-count="architecture">—</span></div>
+        {% if session.tier != 'saas' %}<div class="vm-hx-stat"><span class="vm-hx-k">Platform</span><span class="vm-hx-fact" data-vm-id="platform_version">—</span></div>{% endif %}
+        <div class="vm-hx-stat vm-hx-wide"><span class="vm-hx-k">Captured</span><span class="vm-hx-fact" data-vm-id="captured_at">—</span></div>
+      </div>
+      <div class="vm-hx-ledger" data-vm-hero-slice="rbac" :class="tab === 'rbac' && 'is-on'" :aria-hidden="tab !== 'rbac'">
+        {# viewmodel.js un-hides this wrapper when RBAC data exists. #}
+        <div class="vm-hx-ledger-inner" data-vm-rbac-stats hidden>
+          <div class="vm-hx-stat"><span class="vm-hx-k">Accounts</span><span class="vm-hx-v" data-vm-counter="rbac_total_accounts">0</span></div>
+          <div class="vm-hx-stat" data-tone="bad"><span class="vm-hx-k">Admin-tier</span><span class="vm-hx-v" data-vm-counter="rbac_admin">0</span></div>
+          <div class="vm-hx-stat" data-tone="warn"><span class="vm-hx-k">Stale &amp; privileged</span><span class="vm-hx-v" data-vm-counter="rbac_stale">0</span></div>
+          <div class="vm-hx-stat"><span class="vm-hx-k">Applications</span><span class="vm-hx-v" data-vm-counter="rbac_apps">0</span></div>
+        </div>
+        <div class="vm-hx-stat vm-hx-empty"><span class="vm-hx-k">Accounts</span><span class="vm-hx-fact">No RBAC data captured for this session</span></div>
+      </div>
+    </div>
+  </header>
 
   {# ── Tab strip ─────────────────────────────────────────────────────── #}
   {# The identity strip moved to the bottom of the report (acts as the
@@ -76,8 +193,9 @@
      active underline animates smoothly between tabs. Alpine still owns
      panel visibility via `tab`; the indicator just rides along. #}
   <nav class="vm-tabs" role="tablist" aria-label="Report sections">
-    {# Sliding underline — JS positions it under the active tab and
-       animates between positions on tab change (anime.js outElastic). #}
+    {# Sliding pill — JS positions it behind the active tab and animates
+       between positions on tab change (anime.js outElastic); the CSS draws
+       it as a raised segment rather than an underline. #}
     <span class="vm-tab-indicator" data-vm-tab-indicator aria-hidden="true"></span>
     <button type="button" role="tab" class="vm-tab"
             data-tab-id="compliance"
@@ -109,6 +227,18 @@
     </button>
     {% endif %}
     <button type="button" role="tab" class="vm-tab"
+            data-tab-id="additional_validation"
+            :class="tab === 'additional_validation' && 'is-active'"
+            :aria-selected="tab === 'additional_validation'"
+            @click="tab = 'additional_validation'">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+      </svg>
+      <span>Additional Validation</span>
+      <span class="vm-tab-count" data-vm-tab-count="additional_validation">—</span>
+    </button>
+    <button type="button" role="tab" class="vm-tab"
             data-tab-id="architecture"
             :class="tab === 'architecture' && 'is-active'"
             :aria-selected="tab === 'architecture'"
@@ -120,6 +250,18 @@
       </svg>
       <span>Architecture</span>
       <span class="vm-tab-count" data-vm-tab-count="architecture">—</span>
+    </button>
+    <button type="button" role="tab" class="vm-tab"
+            data-tab-id="rbac"
+            :class="tab === 'rbac' && 'is-active'"
+            :aria-selected="tab === 'rbac'"
+            @click="tab = 'rbac'">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+      </svg>
+      <span>RBAC</span>
+      <span class="vm-tab-count" data-vm-tab-count="rbac">—</span>
     </button>
   </nav>
 
@@ -159,62 +301,6 @@
            x-transition:enter-end="vm-panel-enter-end"
            role="tabpanel" aria-labelledby="tab-compliance"
            class="vm-panel" data-vm-panel="compliance">
-
-    {# Hero — single L2 frosted panel with text on the left, score ring
-       on the right, and the four supporting stat tiles nested inside as
-       L1 panels. Per the frosted style guide §10. #}
-    <section class="card vm-hero" data-vm-hero>
-      <div class="vm-hero-text">
-        <span class="vm-smallcap">Health rating</span>
-        <div class="vm-hero-title" data-vm-id="health_rating">—</div>
-        {# Lede is fully hydrated by JS so the format adapts to skipped /
-           errors counts ("One rule was deliberately skipped" vs "3 rules
-           were deliberately skipped"). #}
-        <p class="vm-hero-lede" data-vm-hero-lede></p>
-
-        <div class="vm-stat-grid">
-          <div class="card vm-stat" data-vm-stat="compliant">
-            <span class="vm-smallcap">Compliant</span>
-            <span class="vm-stat-value text-ok" data-vm-counter="compliant">0</span>
-          </div>
-          <div class="card vm-stat" data-vm-stat="non_compliant">
-            <span class="vm-smallcap">Non-compliant</span>
-            <span class="vm-stat-value text-bad" data-vm-counter="non_compliant">0</span>
-          </div>
-          <div class="card vm-stat" data-vm-stat="skipped">
-            <span class="vm-smallcap">Skipped</span>
-            <span class="vm-stat-value text-mute" data-vm-counter="skipped">0</span>
-          </div>
-          <div class="card vm-stat" data-vm-stat="errors">
-            <span class="vm-smallcap">Errors</span>
-            <span class="vm-stat-value text-warn" data-vm-counter="errors">0</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="vm-hero-ring">
-        {# Single-stroke score ring — flat var(--accent) on a faint track.
-           No gradient. Animated via anime.js (see viewmodel.js). #}
-        <svg viewBox="0 0 220 220" aria-hidden="true">
-          <circle class="vm-ring-track" cx="110" cy="110" r="100"/>
-          <circle class="vm-ring-arc"   cx="110" cy="110" r="100"
-                  data-vm-dial="pass-rate"
-                  pathLength="100"
-                  stroke-dasharray="100 100"
-                  stroke-dashoffset="100"
-                  transform="rotate(-90 110 110)"/>
-        </svg>
-        <div class="vm-ring-label">
-          {# .vm-ring-row keeps the number and the % glyph on the same
-             baseline. The parent .vm-ring-label is flex-column so the
-             "Pass rate" smallcap drops underneath. #}
-          <div class="vm-ring-row">
-            <span class="vm-ring-num" data-vm-id="pass_rate">0</span><span class="vm-ring-pct">%</span>
-          </div>
-          <span class="vm-smallcap vm-ring-sub">Pass rate</span>
-        </div>
-      </div>
-    </section>
 
     {# Two-column split: All rules occupies the wider left column (it
        benefits most from horizontal real estate); the right rail stacks
@@ -278,67 +364,38 @@
           </ol>
         </div>
 
-        <div class="card">
+        {# By category / By severity — two views of the same rule breakdown,
+           merged into one card behind a tab switcher instead of two
+           permanently-stacked cards. Both JS paint targets
+           (data-vm-bars="category" / data-vm-severity) still render
+           unconditionally on load exactly as before; Alpine only controls
+           which one is visible, so no viewmodel.js change was needed. The
+           previous "Audit metadata" card was dropped entirely — it
+           duplicated the identity footer at the bottom of the report
+           field-for-field (same data-vm-id targets, which paintIdentity()
+           already fills via querySelectorAll across every match). #}
+        <div class="card" x-data="{ vmSubtab: 'category' }">
           <div class="card-head">
-            <h3>By category</h3>
-            <span class="sub">Compliant / total</span>
+            <h3>Breakdown</h3>
+            <div class="right vm-seg" role="tablist" aria-label="Breakdown view">
+              <button type="button" class="vm-seg-btn" role="tab"
+                      :class="vmSubtab === 'category' && 'is-active'"
+                      :aria-selected="vmSubtab === 'category'"
+                      @click="vmSubtab = 'category'">Category</button>
+              <button type="button" class="vm-seg-btn" role="tab"
+                      :class="vmSubtab === 'severity' && 'is-active'"
+                      :aria-selected="vmSubtab === 'severity'"
+                      @click="vmSubtab = 'severity'">Severity</button>
+            </div>
           </div>
-          <div class="vm-bars" data-vm-bars="category">
-            {# Filled by JS #}
+          <div x-show="vmSubtab === 'category'">
+            <div class="vm-bars" data-vm-bars="category">
+              {# Filled by JS #}
+            </div>
           </div>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
-            <h3>By severity</h3>
-            <span class="sub">Distribution of evaluated rules</span>
-          </div>
-          <div class="vm-severity" data-vm-severity>
-            {# Filled by JS — rendered as a horizontal stacked bar plus legend #}
-          </div>
-        </div>
-
-        {# Audit metadata — provenance card mirroring the identity footer
-           fields. Same data, surfaced near the summary cards so readers
-           don't have to scroll to the bottom to see who/where/when.
-           Each row's value reuses the existing data-vm-id attribute that
-           paintIdentity already populates via querySelectorAll, so no JS
-           change is required. #}
-        <div class="card vm-meta-card">
-          <div class="card-head">
-            <h3>Audit metadata</h3>
-            <span class="sub">Provenance</span>
-          </div>
-          <div class="vm-meta-rows">
-            <div class="vm-meta-r">
-              <span class="k">Organization</span>
-              <span class="v" data-vm-id="organization_name">—</span>
-            </div>
-            <div class="vm-meta-r">
-              <span class="k">Environment</span>
-              <span class="v mono" data-vm-id="environment">—</span>
-            </div>
-            <div class="vm-meta-r">
-              <span class="k">Tier</span>
-              <span class="v mono" data-vm-id="tier">—</span>
-            </div>
-            <div class="vm-meta-r">
-              <span class="k">Ruleset</span>
-              <span class="v mono" data-vm-id="ruleset">—</span>
-            </div>
-            <div class="vm-meta-r">
-              <span class="k">Host</span>
-              <span class="v mono" data-vm-id="hostname">—</span>
-            </div>
-            {% if session.tier != 'saas' %}
-            <div class="vm-meta-r">
-              <span class="k">Platform</span>
-              <span class="v mono" data-vm-id="platform_version">—</span>
-            </div>
-            {% endif %}
-            <div class="vm-meta-r">
-              <span class="k">Captured at</span>
-              <span class="v mono" data-vm-id="captured_at">—</span>
+          <div x-show="vmSubtab === 'severity'" x-cloak>
+            <div class="vm-severity" data-vm-severity>
+              {# Filled by JS — rendered as a horizontal stacked bar plus legend #}
             </div>
           </div>
         </div>
@@ -355,23 +412,6 @@
            x-transition:enter-end="vm-panel-enter-end"
            role="tabpanel" aria-labelledby="tab-operational"
            class="vm-panel" data-vm-panel="operational">
-
-    {# Top-line metrics — three L1 stat tiles flowing inline. No L2
-       wrapper; the panels carry their own frosted treatment. #}
-    <div class="vm-stat-grid vm-stat-grid--3">
-      <div class="card vm-stat">
-        <span class="vm-smallcap">Pipelines run</span>
-        <span class="vm-stat-value" data-vm-counter="pipeline_count">0</span>
-      </div>
-      <div class="card vm-stat">
-        <span class="vm-smallcap">Successful</span>
-        <span class="vm-stat-value text-ok" data-vm-counter="success_count">0</span>
-      </div>
-      <div class="card vm-stat">
-        <span class="vm-smallcap">Errored</span>
-        <span class="vm-stat-value text-bad" data-vm-counter="error_count">0</span>
-      </div>
-    </div>
 
     <div class="card">
       <div class="card-head">
@@ -403,13 +443,17 @@
   </section>
   {% endif %}{# /Operational panel #}
 
-  {# ── Panel: Architecture ─────────────────────────────────────────── #}
-  <section x-show="loaded && tab === 'architecture'" x-cloak
+  {# ── Panel: Additional Validation ─────────────────────────────────
+       Split out from Architecture into its own tab — these are extended
+       checks (system/filesystem/gateway/etc.), not deployment topology,
+       and the combined tab was hiding a genuinely separate concern behind
+       one label. #}
+  <section x-show="loaded && tab === 'additional_validation'" x-cloak
            x-transition:enter="vm-panel-enter"
            x-transition:enter-start="vm-panel-enter-start"
            x-transition:enter-end="vm-panel-enter-end"
-           role="tabpanel" aria-labelledby="tab-architecture"
-           class="vm-panel" data-vm-panel="architecture">
+           role="tabpanel" aria-labelledby="tab-additional_validation"
+           class="vm-panel" data-vm-panel="additional_validation">
 
     <div class="card">
       <div class="card-head">
@@ -429,6 +473,15 @@
         </div>
       </div>
     </div>
+  </section>
+
+  {# ── Panel: Architecture ─────────────────────────────────────────── #}
+  <section x-show="loaded && tab === 'architecture'" x-cloak
+           x-transition:enter="vm-panel-enter"
+           x-transition:enter-start="vm-panel-enter-start"
+           x-transition:enter-end="vm-panel-enter-end"
+           role="tabpanel" aria-labelledby="tab-architecture"
+           class="vm-panel" data-vm-panel="architecture">
 
     <div class="card">
       <div class="card-head">
@@ -438,6 +491,57 @@
       <div data-vm-arch-sections class="vm-arch-sections">
         {# Filled by JS — one accordion per captured section. Sections
            that were not captured are silently omitted. #}
+      </div>
+    </div>
+  </section>
+
+  {# ── Panel: RBAC ───────────────────────────────────────────────────
+       Role-based access control summary — who can reach what, and at
+       what privilege level. Data comes from the Platform 6 authorization
+       API (platform_atlas.validation.rbac_engine.build_rbac_summary,
+       already wired into the webui viewmodel — see services/runners.py).
+       Empty when RBAC collection wasn't enabled for this session. #}
+  <section x-show="loaded && tab === 'rbac'" x-cloak
+           x-transition:enter="vm-panel-enter"
+           x-transition:enter-start="vm-panel-enter-start"
+           x-transition:enter-end="vm-panel-enter-end"
+           role="tabpanel" aria-labelledby="tab-rbac"
+           class="vm-panel" data-vm-panel="rbac">
+
+    <div data-vm-rbac-empty></div>
+
+    <div class="vm-split" data-vm-rbac-body hidden>
+      <div class="vm-split-left">
+        <div class="card vm-rules-card">
+          <div class="card-head vm-rules-head">
+            <h3>Accounts</h3>
+            <span class="vm-count" data-vm-rbac-accounts-count>—</span>
+          </div>
+          <div class="vm-rules-table-wrap">
+            <table class="vm-rules-table">
+              <thead>
+                <tr>
+                  <th class="vm-col-name">Account</th>
+                  <th class="vm-col-category">Type</th>
+                  <th class="vm-col-status">Highest access</th>
+                  <th class="vm-col-category">Apps</th>
+                  <th class="vm-col-view">Last seen</th>
+                </tr>
+              </thead>
+              <tbody data-vm-rbac-accounts-body></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="vm-split-right">
+        <div class="card vm-split-right-priority">
+          <div class="card-head">
+            <h3>Needs review</h3>
+            <span class="sub">Admin-tier, stale, or inactive-with-access</span>
+          </div>
+          <ol class="vm-priority" data-vm-rbac-flags></ol>
+        </div>
       </div>
     </div>
   </section>

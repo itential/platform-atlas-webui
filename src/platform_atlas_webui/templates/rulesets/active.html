@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Rulesets — Platform Atlas{% endblock %}
 {% block crumb %}Rulesets{% endblock %}
 {% block content %}
@@ -100,11 +101,11 @@
   }
   .status-pill.is-profile-off .dot { background: var(--text-3); }
   .status-pill.is-suppressed {
-    color: #b36b00; background: rgba(255,153,0,0.10);
-    border: 1px solid rgba(255,153,0,0.35);
+    color: var(--warn); background: var(--warn-soft);
+    border: 1px solid oklch(from var(--warn) l c h / .35);
     border-radius: 999px; padding: 2px 9px;
   }
-  .status-pill.is-suppressed .dot { background: #e08000; }
+  .status-pill.is-suppressed .dot { background: var(--warn); }
 
   /* Status cell layout — pill + action button on one line */
   .col-status-inner { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
@@ -112,13 +113,13 @@
   .rule-toggle-btn {
     font-size: 13px; font-weight: 500; line-height: 1;
     padding: 3px 10px; border-radius: 999px; cursor: pointer;
-    border: 1px solid #b36b00; color: #b36b00; background: transparent;
-    transition: background .15s, color .15s; white-space: nowrap;
+    border: 1px solid oklch(from var(--warn) l c h / .5); color: var(--warn); background: transparent;
+    transition: background .15s, color .15s, border-color .15s; white-space: nowrap;
     vertical-align: middle;
   }
-  .rule-toggle-btn:hover { background: #b36b00; color: #fff; }
-  .rule-toggle-btn.is-enable { border-color: #99CA3C; color: #5a7a1e; }
-  .rule-toggle-btn.is-enable:hover { background: #99CA3C; color: #fff; }
+  .rule-toggle-btn:hover { background: var(--warn-soft); border-color: var(--warn); }
+  .rule-toggle-btn.is-enable { border-color: oklch(from var(--ok) l c h / .5); color: var(--ok); }
+  .rule-toggle-btn.is-enable:hover { background: var(--ok-soft); border-color: var(--ok); }
 
   /* Suppress modal */
   .suppress-backdrop {
@@ -175,10 +176,10 @@
   .suppress-modal-actions .btn-confirm {
     padding: 7px 16px; font-size: 15px; font-weight: 600;
     border-radius: var(--r-md); border: none;
-    background: #b36b00; color: #fff; cursor: pointer;
-    transition: background .15s;
+    background: var(--accent); color: var(--accent-ink); cursor: pointer;
+    transition: filter .15s;
   }
-  .suppress-modal-actions .btn-confirm:hover { background: #8f5200; }
+  .suppress-modal-actions .btn-confirm:hover { filter: brightness(0.96); }
 
   /* Expanded row drawer */
   .rs-drawer-row td { padding: 0 !important; background: var(--bg); }
@@ -211,27 +212,18 @@
   tr[hidden] { display: none !important; }
 </style>
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Active ruleset</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">
-      {{ ruleset.name or ruleset.ruleset_id or 'No ruleset loaded' }}{% if ruleset.profile %}, <em class="not-italic text-accent">{{ ruleset.profile }}</em>{% endif %}
-    </h1>
-    {% if ruleset.description %}
-      <p class="text-[16px] text-text-2 max-w-[64ch]">{{ ruleset.description }}</p>
-    {% endif %}
-    {% if ruleset.ruleset_id %}
-      <div class="flex flex-wrap gap-y-1.5 gap-x-3.5 mt-2.5 text-[14px] text-text-3 [&_.sep]:text-text-4 [&_b]:text-text-2 [&_b]:font-medium">
-        <span><b>{{ ruleset.rule_count }}</b> rules</span>
-        {% if ruleset.version %}<span class="sep">·</span><span>v{{ ruleset.version }}</span>{% endif %}
-        {% if ruleset.target_product %}<span class="sep">·</span><span>{{ ruleset.target_product }}</span>{% endif %}
-        {% if ruleset.author %}<span class="sep">·</span><span>{{ ruleset.author }}</span>{% endif %}
-        {% if ruleset.updated_at %}<span class="sep">·</span><span>updated {{ ruleset.updated_at }}</span>{% endif %}
-        {% if is_standard %}<span class="sep">·</span><span class="text-accent">Standard tier</span>{% elif tier == 'saas' %}<span class="sep">·</span><span class="text-accent">SaaS tier (gateway rules)</span>{% endif %}
-      </div>
-    {% endif %}
-  </div>
-</header>
+{% set _title = ruleset.name or ruleset.ruleset_id or 'No ruleset loaded' %}
+{% if ruleset.profile %}{% set _title = _title ~ ', ' ~ ruleset.profile %}{% endif %}
+{% set _meta = [] %}
+{% if ruleset.ruleset_id %}
+  {% set _ = _meta.append(ruleset.rule_count ~ ' rules') %}
+  {% if ruleset.version %}{% set _ = _meta.append('v' ~ ruleset.version) %}{% endif %}
+  {% if ruleset.target_product %}{% set _ = _meta.append(ruleset.target_product) %}{% endif %}
+  {% if ruleset.author %}{% set _ = _meta.append(ruleset.author) %}{% endif %}
+  {% if ruleset.updated_at %}{% set _ = _meta.append('updated ' ~ ruleset.updated_at) %}{% endif %}
+  {% if is_standard %}{% set _ = _meta.append('Standard tier') %}{% elif tier == 'saas' %}{% set _ = _meta.append('SaaS tier (gateway rules)') %}{% endif %}
+{% endif %}
+{{ page_header(_title, subtitle=ruleset.description, meta=_meta if _meta else None) }}
 
 {# ── Stat strip ── #}
 {% if ruleset.rule_count %}

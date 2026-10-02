@@ -17,10 +17,15 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from platform_atlas.core import architecture_store
+
+from platform_atlas_webui.security.scriptjson import script_json
+from platform_atlas.core.config import environment_effective_tier
 from platform_atlas.reporting.arch_warnings import compute_arch_warnings
 
 from platform_atlas_webui.dependencies import get_atlas_context, get_templates, template_context
 from platform_atlas_webui.services import environments as env_svc
+from platform_atlas_webui.services import runners
+from platform_atlas_webui.services.jobs import get_registry
 
 router = APIRouter(prefix="/architecture", tags=["architecture"])
 _templates = get_templates()
@@ -69,6 +74,24 @@ def _resolve_arch_tier(target_env: str) -> tuple[bool, str]:
     return (True, kind)
 
 
+def _can_autofill(target_env: str) -> bool:
+    """Whether the auto-detect button should be offered for ``target_env``.
+
+    Extended tier only, and only when it's the *active* environment — the
+    autofill probe runs against the active context's resolved SSH targets
+    (credentials included), and building that resolved target list for an
+    arbitrary non-active named environment is a separate, higher-risk change
+    this doesn't take on. Fails closed (hides the button) on any error.
+    """
+    try:
+        if environment_effective_tier(target_env) != "extended":
+            return False
+        atlas = get_atlas_context()
+        return bool(target_env) and target_env == (atlas.active_environment or "")
+    except Exception:
+        return False
+
+
 @router.get("", response_class=HTMLResponse)
 async def architecture_form(request: Request, env: str | None = None) -> HTMLResponse:
     """Render the architecture overview form for ``env`` (active env if blank)."""
@@ -90,6 +113,10 @@ async def architecture_form(request: Request, env: str | None = None) -> HTMLRes
                 request,
                 target_env=target_env,
                 arch_data_json="{}",
+                arch_topology_seed_json="{}",
+                arch_suggested_skips_json="[]",
+                can_autofill=False,
+                arch_autofill_at="",
                 available_envs=available_envs,
                 envs_with_data=[],
                 copy_sources=[],
@@ -149,13 +176,34 @@ async def architecture_form(request: Request, env: str | None = None) -> HTMLRes
     # active tier the nav's ``is_saas`` uses. Fails open to the full form.
     arch_is_saas, saas_gateway_kind = _resolve_arch_tier(target_env)
 
+    # Free, zero-cost topology/config-derived suggestions (no SSH) — the same
+    # source the CLI's browser form seeds from. Layered client-side under the
+    # user's own completed answers and any prior SSH auto-detect run (already
+    # present in arch_data.autofill). "Suggested skip" sections are ones the
+    # topology confidently rules out (e.g. Gateway4-only ⇒ no Gateway5),
+    # minus anything already answered (never second-guessed) or already
+    # explicitly skipped by the user (that's applied — and rendered — via
+    # SAVED.skipped already; re-listing it here would badge the user's own
+    # decision as if Atlas had made it).
+    from platform_atlas.capture.collectors.manual import TopologyHints
+    topology_hints = await run_in_threadpool(TopologyHints.from_config, target_env)
+    completed_sections = set(arch_data.get("completed") or {})
+    already_skipped = set(arch_data.get("skipped") or [])
+    suggested_skips = sorted(
+        set(topology_hints.suggested_section_skips()) - completed_sections - already_skipped
+    )
+
     return _templates.TemplateResponse(
         request,
         "architecture/index.html",
         template_context(
             request,
             target_env=target_env,
-            arch_data_json=json.dumps(arch_data, ensure_ascii=False),
+            arch_data_json=script_json(arch_data),
+            arch_topology_seed_json=script_json(topology_hints.as_seed_dict()),
+            arch_suggested_skips_json=script_json(suggested_skips),
+            can_autofill=_can_autofill(target_env),
+            arch_autofill_at=arch_data.get("autofill_at") or "",
             available_envs=available_envs,
             envs_with_data=envs_with_data,
             copy_sources=copy_sources,
@@ -221,6 +269,41 @@ def _sanitize_arch_payload(payload: object) -> dict:
             pass
 
     return result
+
+
+@router.post("/autofill")
+async def kick_architecture_autofill(env: str | None = None) -> RedirectResponse:
+    """Kick off the best-effort SSH auto-detect pass as a background job.
+
+    Redirects to the job's own page, which streams progress via the same
+    generic ``check`` event rendering every other job page uses. The job's
+    "Continue" button (via ``metadata.return_url``) brings the user back to
+    this environment's architecture page, where the (now-populated)
+    ``autofill`` bucket flows through on the next render.
+    """
+    target_env = _resolve_target_env(env)
+    if not _can_autofill(target_env):
+        atlas = get_atlas_context()
+        active_env = atlas.active_environment or ""
+        if target_env != active_env:
+            detail = (
+                f"Auto-detect runs against the active environment's SSH targets. "
+                f"Switch to '{target_env}' under Environments first, then try again."
+            )
+        else:
+            detail = "Architecture auto-detect is available in the Extended tier only."
+        raise HTTPException(status_code=400, detail=detail)
+
+    from urllib.parse import quote
+
+    reg = get_registry()
+    record = await reg.submit(
+        "architecture autofill",
+        runners.run_architecture_autofill_job,
+        environment=target_env,
+        metadata={"return_url": f"/architecture?env={quote(target_env, safe='')}"},
+    )
+    return RedirectResponse(url=f"/jobs/{record.id}", status_code=303)
 
 
 @router.get("/warnings")

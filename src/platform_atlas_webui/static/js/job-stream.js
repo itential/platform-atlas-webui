@@ -337,10 +337,28 @@
     div.textContent = message;
     pfList.appendChild(div);
   }
+
+  // ── Result tally + failure classification (checks-panel completion) ──
+  // Mirrors core.preflight.CheckResult.group without a server-side field:
+  // check names already encode it ("SSH → node" / "<module> → node" /
+  // bare connector name), the same pattern pfCardFromCheck below already
+  // reads for the target-card mapping.
+  var pfListCounts = { pass: 0, fail: 0, warn: 0, skip: 0 };
+  var pfListIssues = []; // {category, name, message, details} for fail/warn rows
+  function pfClassifyCheck(name) {
+    var n = String(name || '');
+    if (/^SSH\s*→/i.test(n)) return 'ssh';
+    if (/kubernetes/i.test(n)) return 'kubernetes';
+    if (/credential|keyring|vault/i.test(n)) return 'credentials';
+    if (/→/.test(n)) return 'node_services';
+    return 'connectors';
+  }
+
   function pfAddCheck(payload) {
     if (!pfList) return;
     var data = payload.data || {};
     var status = (data.status || 'skip').toLowerCase();
+    if (pfListCounts[status] !== undefined) pfListCounts[status]++;
     var row = document.createElement('div');
     row.className = 'pf-row ' + status;
     var dot = document.createElement('span'); dot.className = 'pf-dot';
@@ -355,6 +373,21 @@
       row.appendChild(msg);
     }
     pfList.appendChild(row);
+    // Failures/warnings get their reason on its own line, right under the
+    // row — the CLI shows the same text as a "↳ details" leaf. This is the
+    // one piece the panel was missing versus the CLI tree.
+    if (data.details && (status === 'fail' || status === 'warn')) {
+      var det = document.createElement('div');
+      det.className = 'pf-detail';
+      det.textContent = '↳ ' + data.details;
+      pfList.appendChild(det);
+    }
+    if (status === 'fail' || status === 'warn') {
+      pfListIssues.push({
+        category: pfClassifyCheck(data.name),
+        name: data.name || '', message: data.message || '', details: data.details || '',
+      });
+    }
     pfHideCurrent();
   }
   function pfShowCurrent(text) {
@@ -366,6 +399,113 @@
     if (!pfCurrent) return;
     pfCurrent.hidden = true;
   }
+
+  // ── Completion hero (checks-panel) ────────────────────────────
+  // Revealed once, on the terminal `status` event. Success mirrors the
+  // CLI's `ui.next_step`; failure groups issues the same way the CLI's
+  // `_print_summary` does (SSH / node services / connectors), but with
+  // links into the WebUI instead of CLI command hints.
+  var pfHeroSuccess = document.getElementById('pf-hero-success');
+  var pfHeroSuccessSub = document.getElementById('pf-hero-success-sub');
+  var pfHeroFail = document.getElementById('pf-hero-fail');
+  var pfHeroFailTitle = document.getElementById('pf-hero-fail-title');
+  var pfHeroFailSub = document.getElementById('pf-hero-fail-sub');
+  var pfHintBlock = document.getElementById('pf-hint-block');
+  var pfActiveEnv = streamEl.dataset.activeEnv || '';
+
+  var PF_HINTS = {
+    ssh: {
+      title: 'SSH connectivity',
+      body: 'Verify hosts are reachable (ping, telnet port 22), the SSH user and key are correct, and target host keys are in known_hosts.',
+    },
+    ssh_socket: {
+      title: 'ControlMaster socket',
+      body: 'The pre-opened SSH master socket for this node isn’t reachable — open it before running Atlas.',
+      linkText: 'Manage sockets →',
+      linkHref: pfActiveEnv ? ('/environments/' + encodeURIComponent(pfActiveEnv) + '/sockets') : '',
+    },
+    node_services: {
+      title: 'Node services',
+      body: 'Verify required files/services exist on the target node, and the SSH user has read permissions to config files.',
+    },
+    connectors: {
+      title: 'Service connectors',
+      body: 'Verify the URIs in your environment config are correct and the services are running and accepting connections.',
+      linkText: 'Review environment →',
+      linkHref: pfActiveEnv ? ('/environments/' + encodeURIComponent(pfActiveEnv)) : '',
+    },
+  };
+
+  function pfBuildHintBlock() {
+    if (!pfHintBlock) return;
+    pfHintBlock.textContent = '';
+    var buckets = {};
+    pfListIssues.forEach(function (issue) {
+      var cat = issue.category;
+      if (cat === 'ssh' && (issue.message + ' ' + issue.details).toLowerCase().indexOf('socket') !== -1) {
+        cat = 'ssh_socket';
+      }
+      if (!PF_HINTS[cat]) return; // credentials/kubernetes rows already explain themselves inline
+      (buckets[cat] = buckets[cat] || []).push(issue);
+    });
+    Object.keys(PF_HINTS).forEach(function (cat) {
+      if (!buckets[cat]) return;
+      var hint = PF_HINTS[cat];
+      var box = document.createElement('div');
+      box.className = 'pf-hint';
+      var title = document.createElement('div');
+      title.className = 'pf-hint-title';
+      title.textContent = hint.title;
+      var body = document.createElement('div');
+      body.className = 'pf-hint-body';
+      body.textContent = hint.body;
+      box.appendChild(title);
+      box.appendChild(body);
+      if (hint.linkHref) {
+        var a = document.createElement('a');
+        a.className = 'pf-hint-link';
+        a.href = hint.linkHref;
+        a.textContent = hint.linkText;
+        box.appendChild(a);
+      }
+      pfHintBlock.appendChild(box);
+    });
+  }
+
+  function pfShowHero(jobSucceeded) {
+    var c = pfListCounts;
+    var total = c.pass + c.fail + c.warn + c.skip;
+    if (total === 0) {
+      // The job ended before any check event arrived (a genuine crash, not
+      // an individual check failing) — nothing to tally, say so plainly.
+      if (pfHeroFail) {
+        if (pfHeroFailTitle) pfHeroFailTitle.textContent = 'Preflight didn’t complete';
+        if (pfHeroFailSub) pfHeroFailSub.textContent = 'No check results were received — see the full output log below.';
+        if (pfHintBlock) pfHintBlock.textContent = '';
+        pfHeroFail.hidden = false;
+      }
+      return;
+    }
+    if (jobSucceeded && c.fail === 0) {
+      if (pfHeroSuccessSub) {
+        var bits = [c.pass + ' passed'];
+        if (c.warn) bits.push(c.warn + ' warning' + (c.warn === 1 ? '' : 's'));
+        if (c.skip) bits.push(c.skip + ' skipped');
+        pfHeroSuccessSub.textContent = bits.join(' · ') + ' · ' + total + ' total — ready to capture.';
+      }
+      if (pfHeroSuccess) pfHeroSuccess.hidden = false;
+    } else if (pfHeroFail) {
+      if (pfHeroFailTitle) {
+        pfHeroFailTitle.textContent = c.fail + ' of ' + total + ' check' + (total === 1 ? '' : 's') + ' failed';
+      }
+      if (pfHeroFailSub) {
+        pfHeroFailSub.textContent = 'Fix the issue' + (c.fail === 1 ? '' : 's') + ' below, then run preflight again.';
+      }
+      pfBuildHintBlock();
+      pfHeroFail.hidden = false;
+    }
+  }
+
   var PF_ACTIVITY = [
     /^Probing\s+SSH\s+→\s+(.+?)\s*[…\.]*$/i,
     /^Checking\s+services\s+on\s+(.+?):/i,
@@ -852,7 +992,7 @@
       message: 'Job ' + (payload.data.status || 'finished') + (payload.data.error ? ' — ' + payload.data.error : ''),
       timestamp: payload.timestamp,
     });
-    if (isPreflight) pfHideCurrent();
+    if (isPreflight) { pfHideCurrent(); pfShowHero(payload.data.status === 'succeeded'); }
     if (hasCards) pfFinalize();
     if (isPipeline) {
       var pp2ok = payload.data.status === 'succeeded';

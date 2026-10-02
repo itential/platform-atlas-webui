@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
 {% block title %}Continuous Audit — Platform Atlas{% endblock %}
 {% block crumb %}Continuous Audit{% endblock %}
 {% block content %}
@@ -14,32 +15,22 @@
 ] %}
 {% set INTERVAL_LABELS = {3600: '1h', 7200: '2h', 21600: '6h', 43200: '12h', 86400: '24h', 604800: '1w'} %}
 
-<header class="flex items-end justify-between gap-6 pb-5 border-b border-line mb-6">
-  <div>
-    <div class="eyebrow"><span class="dot"></span> Drift monitoring</div>
-    <h1 class="text-[36px] leading-[1.05] font-semibold tracking-[-0.038em] mt-2 mb-1.5">Continuous Audit</h1>
-    <p class="text-[16px] text-text-2 max-w-[64ch]">
-      Hourly Platform-OAuth-only re-runs of the active ruleset. Drift is detected when an observed
-      value changes between consecutive runs — surfaced as alerts and written to JSON for external systems.
-    </p>
-  </div>
-  <div class="flex items-center gap-2"><a class="btn" href="/alerts">View alerts →</a></div>
-</header>
+{% call page_header("Continuous Audit",
+    subtitle="Hourly Platform-OAuth-only re-runs of the active ruleset. Drift is detected when an observed value changes between consecutive runs — surfaced as alerts and written to JSON for external systems.",
+    meta=(['<span class="dot"></span>' ~ env] if env else None)) %}
+  <a class="btn" href="/alerts">View alerts →</a>
+{% endcall %}
 
 {% if not env and not environments %}
-  <section class="card">
-    <div class="card-body">
-      <div class="empty" style="border:0; padding:24px;">
-        <strong>No environments configured</strong>
-        <span style="color:var(--text-3);">Add an environment before configuring continuous audit.</span>
-        <div style="margin-top:12px;"><a class="btn" href="/environments">Manage environments</a></div>
-      </div>
-    </div>
+  <section class="flex flex-col items-center justify-center py-12 px-6 text-center bg-surface border border-line rounded-lg">
+    <strong class="mb-1.5">No environments configured</strong>
+    <span class="text-text-3 max-w-[440px]">Add an environment before configuring continuous audit.</span>
+    <div class="mt-4"><a class="btn" href="/environments">Manage environments</a></div>
   </section>
 {% else %}
 
 {# ── Environment selector ── #}
-<section class="card" style="margin-bottom:12px;">
+<section class="card mb-3">
   <div class="card-head">
     <h3>Environment</h3>
     {% if env %}
@@ -48,11 +39,10 @@
       <span class="chip"><span class="dot"></span>None active</span>
     {% endif %}
   </div>
-  <div class="card-body" style="padding:12px 16px;">
-    <form method="post" action="/continuous/switch-env" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+  <div class="card-body flex gap-2 items-center flex-wrap">
+    <form method="post" action="/continuous/switch-env" class="flex gap-2 items-center flex-wrap">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <select name="env_name"
-              style="height:30px; padding:0 8px; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--text); font-size:14px; min-width:180px;">
+      <select name="env_name" class="h-[34px] px-3 border border-line rounded-md bg-surface-2 text-text text-[14px] min-w-[180px]">
         {% if not env %}
           <option value="" selected disabled>(select environment)</option>
         {% endif %}
@@ -62,22 +52,16 @@
           </option>
         {% endfor %}
       </select>
-      <button type="submit" class="btn" style="height:30px; padding:0 14px; font-size:14px;">Switch</button>
-      <span style="color:var(--text-4); font-size:13px;">
-        Switching reloads this page for the selected environment.
-      </span>
+      <button type="submit" class="btn sm">Switch</button>
+      <span class="text-text-4 text-[13px]">Switching reloads this page for the selected environment.</span>
     </form>
   </div>
 </section>
 
 {% if not env %}
-  <section class="card">
-    <div class="card-body">
-      <div class="empty" style="border:0; padding:24px;">
-        <strong>No active environment</strong>
-        <span style="color:var(--text-3);">Select an environment above to configure continuous audit for it.</span>
-      </div>
-    </div>
+  <section class="flex flex-col items-center justify-center py-12 px-6 text-center bg-surface border border-line rounded-lg">
+    <strong class="mb-1.5">No active environment</strong>
+    <span class="text-text-3 max-w-[440px]">Select an environment above to configure continuous audit for it.</span>
   </section>
 {% else %}
 
@@ -93,72 +77,72 @@
       {% endif %}
     </div>
     <div class="card-body">
-      <table style="width:100%; font-size:15px; border-collapse:collapse;">
-        <tr>
-          <td style="color:var(--text-3); padding:6px 0; width:140px;">Interval</td>
-          <td style="font-family:var(--mono); font-size:14px;">{{ INTERVAL_LABELS.get(settings.interval_seconds, settings.interval_seconds ~ 's') }}</td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-3); padding:6px 0;">Retain runs</td>
-          <td style="font-family:var(--mono); font-size:14px;">{{ settings.retain_runs }}</td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-3); padding:6px 0;">Ruleset</td>
-          <td style="font-family:var(--mono); font-size:14px;">{{ settings.ruleset_id if settings.ruleset_id else '(active)' }}</td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-3); padding:6px 0;">Profile</td>
-          <td style="font-family:var(--mono); font-size:14px;">{{ settings.profile_id if settings.profile_id else '(active)' }}</td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-3); padding:6px 0;">Alert policy</td>
-          <td style="font-family:var(--mono); font-size:14px;">
+      <dl class="m-0">
+        <div class="flex items-start gap-3 py-2.5">
+          <dt class="text-text-3 w-[140px] shrink-0">Interval</dt>
+          <dd class="font-mono text-[14px] m-0">{{ INTERVAL_LABELS.get(settings.interval_seconds, settings.interval_seconds ~ 's') }}</dd>
+        </div>
+        <div class="flex items-start gap-3 py-2.5 border-t border-line">
+          <dt class="text-text-3 w-[140px] shrink-0">Retain runs</dt>
+          <dd class="font-mono text-[14px] m-0">{{ settings.retain_runs }}</dd>
+        </div>
+        <div class="flex items-start gap-3 py-2.5 border-t border-line">
+          <dt class="text-text-3 w-[140px] shrink-0">Ruleset</dt>
+          <dd class="font-mono text-[14px] m-0">{{ settings.ruleset_id if settings.ruleset_id else '(active)' }}</dd>
+        </div>
+        <div class="flex items-start gap-3 py-2.5 border-t border-line">
+          <dt class="text-text-3 w-[140px] shrink-0">Profile</dt>
+          <dd class="font-mono text-[14px] m-0">{{ settings.profile_id if settings.profile_id else '(active)' }}</dd>
+        </div>
+        <div class="flex items-start gap-3 py-2.5 border-t border-line">
+          <dt class="text-text-3 w-[140px] shrink-0">Alert policy</dt>
+          <dd class="font-mono text-[14px] m-0">
             {% if settings.alert_policy == 'regression' %}
-              <strong>regression</strong> <span style="color:var(--text-3);">— PASS → FAIL only</span>
+              <strong>regression</strong> <span class="text-text-3">— PASS → FAIL only</span>
             {% else %}
-              <strong>any</strong> <span style="color:var(--text-3);">— every drift event alerts</span>
+              <strong>any</strong> <span class="text-text-3">— every drift event alerts</span>
             {% endif %}
-          </td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-3); padding:6px 0; vertical-align:top;">Watchlist</td>
-          <td style="font-size:14px;">
+          </dd>
+        </div>
+        <div class="flex items-start gap-3 py-2.5 border-t border-line">
+          <dt class="text-text-3 w-[140px] shrink-0 pt-0.5">Watchlist</dt>
+          <dd class="text-[14px] m-0">
             {% if settings.watchlist %}
-              <div style="display:flex; flex-wrap:wrap; gap:4px;">
+              <div class="flex flex-wrap gap-1">
                 {% for rule in settings.watchlist %}
-                  <span class="chip" style="font-family:var(--mono); font-size:13px; padding:2px 8px;">{{ rule }}</span>
+                  <span class="chip font-mono text-[13px]">{{ rule }}</span>
                 {% endfor %}
               </div>
-              <span style="color:var(--text-3); font-size:13px;">
+              <span class="text-text-3 text-[13px]">
                 {{ settings.watchlist|length }} rule(s) — only these generate alerts.
               </span>
             {% else %}
-              <span style="color:var(--text-3); font-family:var(--mono); font-size:14px;">all rules eligible</span>
+              <span class="text-text-3 font-mono text-[14px]">all rules eligible</span>
             {% endif %}
-          </td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-3); padding:6px 0;">Scheduler</td>
-          <td>
+          </dd>
+        </div>
+        <div class="flex items-start gap-3 py-2.5 border-t border-line">
+          <dt class="text-text-3 w-[140px] shrink-0">Scheduler</dt>
+          <dd class="m-0">
             {% if scheduler_running %}
               <span class="chip ok"><span class="dot"></span>Running</span>
             {% else %}
               <span class="chip">Idle</span>
             {% endif %}
-          </td>
-        </tr>
+          </dd>
+        </div>
         {% if status %}
-          <tr>
-            <td style="color:var(--text-3); padding:6px 0;">Last run</td>
-            <td style="font-family:var(--mono); font-size:14px;">{{ status.last_finished_at or '—' }}</td>
-          </tr>
-          <tr>
-            <td style="color:var(--text-3); padding:6px 0;">Last duration</td>
-            <td style="font-family:var(--mono); font-size:14px;">{{ status.last_duration_ms or 0 }} ms</td>
-          </tr>
-          <tr>
-            <td style="color:var(--text-3); padding:6px 0;">Last status</td>
-            <td>
+          <div class="flex items-start gap-3 py-2.5 border-t border-line">
+            <dt class="text-text-3 w-[140px] shrink-0">Last run</dt>
+            <dd class="font-mono text-[14px] m-0">{{ status.last_finished_at or '—' }}</dd>
+          </div>
+          <div class="flex items-start gap-3 py-2.5 border-t border-line">
+            <dt class="text-text-3 w-[140px] shrink-0">Last duration</dt>
+            <dd class="font-mono text-[14px] m-0">{{ status.last_duration_ms or 0 }} ms</dd>
+          </div>
+          <div class="flex items-start gap-3 py-2.5 border-t border-line">
+            <dt class="text-text-3 w-[140px] shrink-0">Last status</dt>
+            <dd class="m-0">
               {% if status.last_status == 'ok' %}
                 <span class="chip ok"><span class="dot"></span>OK</span>
               {% elif status.last_status == 'error' %}
@@ -166,27 +150,27 @@
               {% else %}
                 <span class="chip">{{ status.last_status or '—' }}</span>
               {% endif %}
-            </td>
-          </tr>
+            </dd>
+          </div>
           {% if status.last_summary %}
-            <tr>
-              <td style="color:var(--text-3); padding:6px 0;">Last summary</td>
-              <td style="font-family:var(--mono); font-size:14px;">
-                <span style="color:var(--ok);">{{ status.last_summary.pass_count }}P</span> /
-                <span style="color:var(--bad);">{{ status.last_summary.fail_count }}F</span> /
-                <span style="color:var(--text-3);">{{ status.last_summary.skip_count }}S</span> ·
+            <div class="flex items-start gap-3 py-2.5 border-t border-line">
+              <dt class="text-text-3 w-[140px] shrink-0">Last summary</dt>
+              <dd class="font-mono text-[14px] m-0">
+                <span class="text-ok">{{ status.last_summary.pass_count }}P</span> /
+                <span class="text-bad">{{ status.last_summary.fail_count }}F</span> /
+                <span class="text-text-3">{{ status.last_summary.skip_count }}S</span> ·
                 <strong>{{ status.last_summary.drifted_count }} drift</strong>
-              </td>
-            </tr>
+              </dd>
+            </div>
           {% endif %}
           {% if status.last_error %}
-            <tr>
-              <td style="color:var(--text-3); padding:6px 0; vertical-align:top;">Last error</td>
-              <td style="color:var(--bad); font-family:var(--mono); font-size:14px;">{{ status.last_error }}</td>
-            </tr>
+            <div class="flex items-start gap-3 py-2.5 border-t border-line">
+              <dt class="text-text-3 w-[140px] shrink-0 pt-0.5">Last error</dt>
+              <dd class="text-bad font-mono text-[14px] m-0">{{ status.last_error }}</dd>
+            </div>
           {% endif %}
         {% endif %}
-      </table>
+      </dl>
     </div>
   </div>
 
@@ -197,22 +181,21 @@
     </div>
     <div class="card-body">
       {% if not settings.enabled and not enable_allowed %}
-        <div class="flash flash--warn" style="margin-bottom:14px; display:flex; gap:10px; align-items:flex-start;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:2px;"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-          <span style="font-size:14px; line-height:1.5;">
+        <div class="flash flash--warn mb-3.5 flex gap-2.5 items-start">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-0.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+          <span class="text-[14px] leading-normal">
             <strong>Test before enabling.</strong>
             {{ enable_blocked_reason }}
           </span>
         </div>
       {% endif %}
 
-      <form method="post" action="/continuous/enable" style="display:flex; flex-direction:column; gap:12px;">
+      <form method="post" action="/continuous/enable" class="flex flex-col gap-3">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label style="display:flex; flex-direction:column; gap:4px;">
-          <span style="font-size:13px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">Interval</span>
+        <div class="field">
+          <label>Interval</label>
           {% set choice_seconds = INTERVAL_CHOICES | map(attribute=0) | list %}
-          <select name="interval"
-                  style="height:30px; padding:0 8px; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--text); font-size:14px;">
+          <select name="interval">
             {% if settings.interval_seconds and settings.interval_seconds not in choice_seconds %}
               <option value="{{ settings.interval_seconds }}" selected>Current: {{ settings.interval_seconds }}s (custom)</option>
             {% endif %}
@@ -220,16 +203,14 @@
               <option value="{{ secs }}" {% if settings.interval_seconds == secs %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
-        </label>
-        <label style="display:flex; flex-direction:column; gap:4px;">
-          <span style="font-size:13px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">Retain runs</span>
-          <input type="number" name="retain" value="{{ settings.retain_runs }}" min="1" max="10000"
-                 style="height:30px; padding:0 8px; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--text); font-size:14px;">
-        </label>
-        <label style="display:flex; flex-direction:column; gap:4px;">
-          <span style="font-size:13px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">Ruleset</span>
-          <select name="ruleset_id"
-                  style="height:30px; padding:0 8px; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--text); font-size:14px;">
+        </div>
+        <div class="field">
+          <label>Retain runs</label>
+          <input type="number" name="retain" value="{{ settings.retain_runs }}" min="1" max="10000">
+        </div>
+        <div class="field">
+          <label>Ruleset</label>
+          <select name="ruleset_id">
             <option value="" {% if not settings.ruleset_id %}selected{% endif %}>(use active ruleset)</option>
             {% for rs in rulesets %}
               <option value="{{ rs.id }}" {% if settings.ruleset_id == rs.id %}selected{% endif %}>
@@ -237,11 +218,10 @@
               </option>
             {% endfor %}
           </select>
-        </label>
-        <label style="display:flex; flex-direction:column; gap:4px;">
-          <span style="font-size:13px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em;">Profile</span>
-          <select name="profile_id"
-                  style="height:30px; padding:0 8px; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--text); font-size:14px;">
+        </div>
+        <div class="field">
+          <label>Profile</label>
+          <select name="profile_id">
             <option value="" {% if not settings.profile_id %}selected{% endif %}>(use active profile)</option>
             {% for p in profiles %}
               <option value="{{ p.id }}" {% if settings.profile_id == p.id %}selected{% endif %}>
@@ -249,7 +229,7 @@
               </option>
             {% endfor %}
           </select>
-        </label>
+        </div>
         {# When already enabled this becomes 'Update' — no precheck needed.
            When disabled, gate the button on a successful prior test run. #}
         <button type="submit" class="btn primary"
@@ -259,10 +239,10 @@
         </button>
       </form>
 
-      <hr style="border:0; border-top:1px solid var(--line); margin:16px 0;">
+      <hr class="rule-line">
 
-      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <form method="post" action="/continuous/run-now" style="display:inline;">
+      <div class="flex gap-2 flex-wrap items-center">
+        <form method="post" action="/continuous/run-now" class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="btn {% if not settings.enabled and not enable_allowed %}primary{% endif %}"
                   data-loading-label="Running…">
@@ -270,18 +250,18 @@
           </button>
         </form>
         {% if settings.enabled %}
-          <form method="post" action="/continuous/disable" style="display:inline;"
+          <form method="post" action="/continuous/disable" class="inline"
                 data-confirm-action data-confirm-message="Disable continuous audit? Existing run history will be preserved.">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit" class="btn danger" data-loading-label="Disabling…">Disable</button>
           </form>
         {% endif %}
         {% if not settings.enabled and not enable_allowed %}
-          <span style="color:var(--text-4); font-size:13px;">↑ Run a successful test to unlock Enable</span>
+          <span class="text-text-4 text-[13px]">↑ Run a successful test to unlock Enable</span>
         {% endif %}
       </div>
 
-      <p style="color:var(--text-4); font-size:13px; margin-top:14px; line-height:1.5;">
+      <p class="text-text-4 text-[13px] mt-3.5 leading-normal">
         Continuous audit hits Platform OAuth only — no SSH, Mongo, Redis, IAG, or filesystem reads.
         Endpoint set is pruned to what the active ruleset references.
       </p>
@@ -290,105 +270,95 @@
 </section>
 
 {# ── Alert policy + rule watchlist ── #}
-<section class="card" style="margin-top:12px;">
+<section class="card mt-3">
   <div class="card-head">
     <h3>Alerting</h3>
-    <span class="chip" style="font-family:var(--mono); font-size:13px;">
+    <span class="chip font-mono text-[13px]">
       {% if settings.alert_policy == 'regression' %}regression{% else %}any{% endif %}
       ·
       {% if settings.watchlist %}{{ settings.watchlist|length }} watched{% else %}all rules{% endif %}
     </span>
   </div>
-  <div class="card-body" style="display:grid; grid-template-columns: 1fr 1fr; gap:24px;">
+  <div class="card-body grid grid-cols-1 md:grid-cols-2 gap-6">
 
     {# Policy column #}
     <div>
-      <h4 style="margin:0 0 8px; font-size:15px; font-weight:600;">Alert policy</h4>
-      <p style="color:var(--text-3); font-size:14px; line-height:1.5; margin-bottom:10px;">
+      <h4 class="m-0 mb-2 text-[15px] font-semibold">Alert policy</h4>
+      <p class="text-text-3 text-[14px] leading-normal mb-2.5">
         Controls which drift events surface as alerts and outbound notifications.
         The full drift history (events.ndjson) is recorded regardless of this setting.
       </p>
-      <form method="post" action="/continuous/policy" style="display:flex; flex-direction:column; gap:8px;">
+      <form method="post" action="/continuous/policy" class="flex flex-col gap-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer; padding:10px 12px; border:1px solid var(--border); border-radius:6px;">
-          <input type="radio" name="policy" value="any"
-                 {% if settings.alert_policy != 'regression' %}checked{% endif %}
-                 style="margin-top:3px;">
+        <label class="flex gap-2.5 items-start cursor-pointer py-2.5 px-3 border border-line rounded-md">
+          <input type="radio" name="policy" value="any" class="mt-1"
+                 {% if settings.alert_policy != 'regression' %}checked{% endif %}>
           <span>
-            <strong style="font-size:15px;">Any change</strong>
-            <span style="display:block; color:var(--text-3); font-size:14px; margin-top:2px;">
+            <strong class="text-[15px]">Any change</strong>
+            <span class="block text-text-3 text-[14px] mt-0.5">
               Alert on every drift event — value or status change on any rule.
             </span>
           </span>
         </label>
-        <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer; padding:10px 12px; border:1px solid var(--border); border-radius:6px;">
-          <input type="radio" name="policy" value="regression"
-                 {% if settings.alert_policy == 'regression' %}checked{% endif %}
-                 style="margin-top:3px;">
+        <label class="flex gap-2.5 items-start cursor-pointer py-2.5 px-3 border border-line rounded-md">
+          <input type="radio" name="policy" value="regression" class="mt-1"
+                 {% if settings.alert_policy == 'regression' %}checked{% endif %}>
           <span>
-            <strong style="font-size:15px;">Regression only</strong>
-            <span style="display:block; color:var(--text-3); font-size:14px; margin-top:2px;">
+            <strong class="text-[15px]">Regression only</strong>
+            <span class="block text-text-3 text-[14px] mt-0.5">
               Alert only when a rule transitions <strong>PASS → FAIL</strong> (Compliant → Non-Compliant).
               Quieter; matches "tell me when something that was working just broke".
             </span>
           </span>
         </label>
-        <button type="submit" class="btn btn--primary" style="margin-top:6px; align-self:flex-start;">
-          Save policy
-        </button>
+        <button type="submit" class="btn primary self-start mt-1.5">Save policy</button>
       </form>
     </div>
 
     {# Watchlist column #}
     <div>
-      <h4 style="margin:0 0 8px; font-size:15px; font-weight:600;">Rule watchlist</h4>
-      <p style="color:var(--text-3); font-size:14px; line-height:1.5; margin-bottom:10px;">
+      <h4 class="m-0 mb-2 text-[15px] font-semibold">Rule watchlist</h4>
+      <p class="text-text-3 text-[14px] leading-normal mb-2.5">
         When non-empty, only drift on these rule numbers can trigger alerts.
         Leave empty to alert on every rule. Combines with the policy above —
         a watchlisted rule still has to satisfy the policy to alert.
       </p>
 
       {% if settings.watchlist %}
-        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+        <div class="flex flex-wrap gap-1.5 mb-3">
           {% for rule in settings.watchlist %}
-            <form method="post" action="/continuous/watch/remove" style="display:inline-flex;">
+            <form method="post" action="/continuous/watch/remove" class="inline-flex">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="rule" value="{{ rule }}">
-              <button type="submit" class="chip"
-                      style="font-family:var(--mono); font-size:13px; padding:3px 4px 3px 10px;
-                             cursor:pointer; border:1px solid var(--border); display:inline-flex;
-                             align-items:center; gap:6px;"
+              <button type="submit" class="chip font-mono text-[13px] py-0.5 pl-2.5 pr-1 cursor-pointer inline-flex items-center gap-1.5"
                       title="Remove {{ rule }} from watchlist">
                 {{ rule }}
-                <span style="font-size:16px; line-height:1; color:var(--text-3); padding:0 4px;">×</span>
+                <span class="text-[16px] leading-none text-text-3 px-1">×</span>
               </button>
             </form>
           {% endfor %}
         </div>
       {% else %}
-        <p style="color:var(--text-4); font-size:14px; font-style:italic; margin-bottom:12px;">
+        <p class="text-text-4 text-[14px] italic mb-3">
           No rules watched — every rule is currently eligible to alert.
         </p>
       {% endif %}
 
-      <form method="post" action="/continuous/watch/add" style="display:flex; gap:8px;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <form method="post" action="/continuous/watch/add" class="flex gap-2">
         <input type="text" name="rules" placeholder="PLAT-001 PLAT-042 (space or comma separated)"
-               autocomplete="off" spellcheck="false"
-               style="flex:1; min-width:0; font-family:var(--mono); font-size:14px;
-                      padding:8px 10px; background:var(--field-bg); border:1px solid var(--border);
-                      color:var(--text-1); border-radius:6px;">
+               autocomplete="off" spellcheck="false" class="field flex-1 min-w-0 font-mono text-[14px]">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="btn">Add</button>
       </form>
 
       {% if settings.watchlist %}
-        <form method="post" action="/continuous/watch/clear" style="margin-top:10px;"
+        <form method="post" action="/continuous/watch/clear" class="mt-2.5"
               data-confirm-action data-confirm-kind="danger"
               data-confirm-title="Clear watchlist?"
               data-confirm-message="Clear the entire watchlist? Every rule will be eligible for alerts again."
               data-confirm-label="Clear watchlist">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit" class="btn btn--ghost" style="font-size:14px;">Clear watchlist</button>
+          <button type="submit" class="btn text-[14px]">Clear watchlist</button>
         </form>
       {% endif %}
     </div>
@@ -731,89 +701,89 @@
   </div>
   <div class="card-body">
     {% if not timer.available %}
-      <p style="color:var(--text-2); font-size:14px; line-height:1.55; margin:0 0 8px;">
+      <p class="text-text-2 text-[14px] leading-relaxed m-0">
         <strong>No OS scheduler backend available on this host.</strong>
         Continuous audit will only fire while the WebUI is running. To get persistent scheduling,
         run Atlas on Linux (systemd) or macOS (launchd), or wire
-        <code style="font-family:var(--mono);">platform-atlas continuous-audit run-once</code> into your scheduler of choice.
+        <code>platform-atlas continuous-audit run-once</code> into your scheduler of choice.
       </p>
     {% elif timer.installed and timer.active %}
-      <p style="color:var(--text-2); font-size:14px; line-height:1.55; margin:0 0 8px;">
-        Runs are driven by the {{ _backend_label }} <code style="font-family:var(--mono);">{{ timer_unit }}</code>, independent of the WebUI process.
+      <p class="text-text-2 text-[14px] leading-relaxed mb-2">
+        Runs are driven by the {{ _backend_label }} <code>{{ timer_unit }}</code>, independent of the WebUI process.
         The in-process scheduler defers while the OS scheduler is active.
       </p>
       {% if not timer.linger_enabled %}
-        <div class="flash flash--warn" style="margin-top:10px; display:flex; gap:10px; align-items:flex-start;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:2px;"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-          <span style="font-size:14px; line-height:1.5;">
+        <div class="flash flash--warn mt-2.5 flex gap-2.5 items-start">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-0.5"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+          <span class="text-[14px] leading-normal">
             <strong>Scheduler stops firing when you log out.</strong>
             {% if _persist_is_command %}
               To make it persistent, run once as root:
-              <code style="display:block; margin-top:6px; padding:6px 8px; background:var(--surface-2); border-radius:4px; font-family:var(--mono); font-size:13px;">{{ timer.persistence_hint }}</code>
+              <code class="block mt-1.5 py-1.5 px-2 bg-surface-2 rounded text-[13px]">{{ timer.persistence_hint }}</code>
             {% elif timer.persistence_hint %}
-              <span style="display:block; margin-top:4px;">{{ timer.persistence_hint }}</span>
+              <span class="block mt-1">{{ timer.persistence_hint }}</span>
             {% endif %}
           </span>
         </div>
       {% endif %}
     {% elif timer.installed %}
-      <p style="color:var(--warn); font-size:14px; line-height:1.55; margin:0;">
+      <p class="text-warn text-[14px] leading-relaxed m-0">
         Unit files are present but the {{ _backend_label }} isn't active.
-        Detail: <span style="font-family:var(--mono);">{{ timer.detail }}</span>
+        Detail: <span class="font-mono">{{ timer.detail }}</span>
       </p>
     {% else %}
-      <p style="color:var(--text-2); font-size:14px; line-height:1.55; margin:0;">
+      <p class="text-text-2 text-[14px] leading-relaxed m-0">
         No {{ _backend_label }} installed yet. Click <strong>Enable</strong> to install
-        <code style="font-family:var(--mono);">{{ timer_unit }}</code> under
-        <code style="font-family:var(--mono);">{{ _backend_root }}</code>.
+        <code>{{ timer_unit }}</code> under
+        <code>{{ _backend_root }}</code>.
       </p>
     {% endif %}
   </div>
 </section>
 
 {# ── Run history ── #}
-<section class="card" style="margin-top:12px;">
+<section class="card mt-3">
   <div class="card-head">
     <h3>Recent runs</h3>
     <span class="sub">{{ recent_runs|length }} of last {{ settings.retain_runs }}</span>
   </div>
   {% if not recent_runs %}
-    <div class="empty" style="border:0; padding:32px 24px;">
-      <strong>No runs yet</strong>
-      <span style="color:var(--text-3);">Run an audit once to produce the first report — use the run button above.</span>
+    <div class="flex flex-col items-center justify-center py-8 px-6 text-center">
+      <strong class="mb-1.5">No runs yet</strong>
+      <span class="text-text-3">Run an audit once to produce the first report — use the run button above.</span>
     </div>
   {% else %}
-    <div style="overflow-x:auto;">
-      <table style="width:100%; border-collapse:collapse; font-size:15px;">
+    <div class="overflow-x-auto">
+      <table class="table-scroll w-full border-collapse text-[15px]">
         <thead>
-          <tr style="border-bottom:1px solid var(--line);">
-            <th style="text-align:left; padding:10px 14px; font-size:13px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Run ID</th>
-            <th style="text-align:left; padding:10px 14px; font-size:13px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Finished</th>
-            <th style="text-align:right; padding:10px 14px; font-size:13px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Duration</th>
-            <th style="text-align:left; padding:10px 14px; font-size:13px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">P / F / S</th>
-            <th style="text-align:right; padding:10px 14px; font-size:13px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Drift</th>
-            <th style="text-align:right; padding:10px 14px; font-size:13px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.06em;">Open</th>
+          <tr class="border-b border-line">
+            <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Run ID</th>
+            <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Finished</th>
+            <th class="text-right py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Duration</th>
+            <th class="text-left py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">P / F / S</th>
+            <th class="text-right py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Drift</th>
+            <th class="text-right py-2.5 px-3.5 text-[12px] text-text-3 font-semibold uppercase tracking-wide">Open</th>
           </tr>
         </thead>
         <tbody>
           {% for r in recent_runs %}
-            <tr style="border-bottom:1px solid var(--line);">
-              <td style="padding:7px 14px; font-family:var(--mono); font-size:14px; color:var(--text-2);">{{ r.run_id }}</td>
-              <td style="padding:7px 14px; font-family:var(--mono); font-size:14px; color:var(--text-3);">{{ r.finished_at }}</td>
-              <td style="padding:7px 14px; font-family:var(--mono); font-size:14px; text-align:right;">{{ r.duration_ms }} ms</td>
-              <td style="padding:7px 14px; font-family:var(--mono); font-size:14px;">
-                <span style="color:var(--ok);">{{ r.summary.pass_count or 0 }}</span> /
-                <span style="color:var(--bad);">{{ r.summary.fail_count or 0 }}</span> /
-                <span style="color:var(--text-3);">{{ r.summary.skip_count or 0 }}</span>
+            <tr class="border-b border-line last:border-b-0">
+              <td class="py-2 px-3.5 font-mono text-[14px] text-text-2">{{ r.run_id }}</td>
+              <td class="py-2 px-3.5 font-mono text-[14px] text-text-3">{{ r.finished_at }}</td>
+              <td class="py-2 px-3.5 font-mono text-[14px] text-right num-cell">{{ r.duration_ms }} ms</td>
+              <td class="py-2 px-3.5 font-mono text-[14px] num-cell">
+                <span class="text-ok">{{ r.summary.pass_count or 0 }}</span> /
+                <span class="text-bad">{{ r.summary.fail_count or 0 }}</span> /
+                <span class="text-text-3">{{ r.summary.skip_count or 0 }}</span>
               </td>
-              <td style="padding:7px 14px; text-align:right;">
+              <td class="py-2 px-3.5 text-right num-cell">
                 {% if r.summary.drifted_count and r.summary.drifted_count > 0 %}
-                  <strong style="color:var(--warn);">{{ r.summary.drifted_count }}</strong>
+                  <strong class="text-warn">{{ r.summary.drifted_count }}</strong>
                 {% else %}
-                  <span style="color:var(--text-4);">0</span>
+                  <span class="text-text-4">0</span>
                 {% endif %}
               </td>
-              <td style="padding:7px 14px; text-align:right;">
+              <td class="py-2 px-3.5 text-right">
                 <a class="btn sm" href="/continuous/runs/{{ r.run_id }}">Open</a>
               </td>
             </tr>

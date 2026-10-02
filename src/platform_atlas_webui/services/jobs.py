@@ -42,7 +42,20 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, AsyncIterator, Callable
 
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 logger = logging.getLogger(__name__)
+
+
+class JobBusyError(StarletteHTTPException):
+    """Another job is active; only one job may touch the shared CLI context at a time.
+
+    Subclasses the Starlette HTTPException (409) so the app's existing error
+    handler renders the message for browsers and JSON for htmx/API clients.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(status_code=409, detail=message)
 
 
 class JobCancelled(Exception):
@@ -91,6 +104,14 @@ class JobRecord:
     # approach which can't interrupt blocking C calls (paramiko/pymongo/etc.)
     # and could leave half-open network connections.
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    # True while the worker thread is actually executing ``fn``. A job that
+    # timed out is marked FAILED immediately but its thread may still be
+    # winding down; this flag keeps the single-flight guard honest about that.
+    worker_running: bool = False
+
+    def is_active(self) -> bool:
+        """Job (or its worker thread) may still be touching shared state."""
+        return (not self.is_terminal()) or self.worker_running
 
     def is_terminal(self) -> bool:
         return self.status in (JobStatus.SUCCEEDED, JobStatus.FAILED)
@@ -239,6 +260,20 @@ class JobRegistry:
         record = JobRecord(id=job_id, name=name, metadata=metadata or {})
 
         with self._lock:
+            # Single-flight (BUG-01): every job reads the process-wide CLI
+            # context (ctx()), and capture/validate/report re-initialise it
+            # for their session, so overlapping jobs could swap ruleset /
+            # environment / tier under one another mid-run. Serialise all jobs.
+            for other in self._jobs.values():
+                if other.is_active():
+                    if other.is_terminal():
+                        why = "is still shutting down after a timeout/failure"
+                    else:
+                        why = "is still running"
+                    raise JobBusyError(
+                        f"Another job ('{other.name}', id {other.id}) {why}. "
+                        f"Wait for it to finish (see /jobs/{other.id}) and try again."
+                    )
             self._jobs[job_id] = record
             self._evict_old_locked()
 
@@ -263,18 +298,35 @@ class JobRegistry:
 
             jlogger.info(f"Job '{name}' started", data={"job_id": job_id})
             try:
+                def _worker() -> Any:
+                    try:
+                        return fn(jlogger, **kwargs)
+                    finally:
+                        record.worker_running = False
+
+                # Set before the thread starts so the single-flight guard
+                # never sees a gap between "queued" and "running".
+                record.worker_running = True
                 if timeout is not None:
                     result = await asyncio.wait_for(
-                        asyncio.to_thread(fn, jlogger, **kwargs), timeout
+                        asyncio.to_thread(_worker), timeout
                     )
                 else:
-                    result = await asyncio.to_thread(fn, jlogger, **kwargs)
+                    result = await asyncio.to_thread(_worker)
                 record.result = result
                 record.status = JobStatus.SUCCEEDED
                 jlogger.success("Job completed successfully")
             except asyncio.TimeoutError:
+                # The worker thread cannot be killed; ask it to stop at its next
+                # cooperative checkpoint and report honestly that it may still
+                # be winding down (new jobs stay blocked until it exits).
+                record.cancel_event.set()
                 record.status = JobStatus.FAILED
-                record.error = f"Job timed out after {int(timeout)}s"
+                record.error = (
+                    f"Job timed out after {int(timeout)}s. A stop was requested, but the "
+                    "worker may still be finishing in the background; new jobs are blocked "
+                    "until it exits."
+                )
                 jlogger.error(record.error)
             except JobCancelled:
                 record.status = JobStatus.FAILED

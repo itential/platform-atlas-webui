@@ -1,0 +1,1079 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   atlas-studio.css — Platform Atlas WebUI design system (3.0)
+
+   LOAD ORDER (base.html):  atlas.css → atlas.tw.compiled.css → THIS FILE
+
+   Role
+   ────
+   atlas.css is the palette registry (modern — the 3.0 flagship — plus
+   itential, obsidian, carbon, each × light/dark) and the legacy
+   component library. This file is the one component system every page is
+   drawn with. It never hardcodes palette colours: everything reads the theme
+   tokens (--bg, --surface-*, --line-*, --text-*, --accent, --info, …), so each
+   theme gets the same modern design in its own colours.
+
+   Cascade
+   ───────
+   Tailwind v4 utilities live in @layer utilities; this file is unlayered, so
+   a rule here beats a utility on the same element. Rules therefore restyle
+   presentation (colour, border, radius, shadow, type treatment) and leave
+   spacing/layout to the templates.
+
+   Design language
+   ───────────────
+   · One surface model: ground → panel → inset, separated by hairlines and
+     tone, not heavy shadows.
+   · One radius family: control (--r-md) < panel (--r-lg) < shell (--r-xl).
+   · One type voice: sentence case everywhere. No tracked-out caps labels.
+   · Two accents with fixed jobs: brass (--accent / --action) marks action
+     and selection; sky blue (--info) marks information and live state.
+   · One expressive element: the dashboard masthead's crystal facets
+     (atlas-facets.js). Everything else stays quiet and precise.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+
+/* ── 1. Tokens ────────────────────────────────────────────────────────── */
+
+:root {
+  --brand-navy: #101625;
+  --brand-blue: #1B93D2;
+  --brand-orange: #FF6633;
+  --brand-green: #99CA3C;
+  --brand-pink: #C5258F;
+
+  /* Semantic aliases the component layer reads. Themes may override. */
+  --action: var(--accent);
+  --action-ink: var(--accent-ink);
+  --accent-2: var(--info, var(--accent));
+  --accent-2-soft: color-mix(in oklab, var(--accent-2) 14%, transparent);
+
+  /* Audit tiers are identity, not severity: sky for Standard, brass for
+     Extended (the full audit), brand pink for SaaS. Lifted in dark modes. */
+  --tier-standard: var(--accent-2);
+  --tier-extended: var(--action);
+  --tier-saas: #C5258F;
+
+  --st-ink: var(--text);
+  --st-elev-1: 0 1px 2px color-mix(in oklab, var(--st-ink) 6%, transparent);
+  --st-elev-2: 0 1px 2px color-mix(in oklab, var(--st-ink) 5%, transparent),
+               0 8px 24px -12px color-mix(in oklab, var(--st-ink) 16%, transparent);
+  --st-elev-3: 0 2px 6px color-mix(in oklab, var(--st-ink) 8%, transparent),
+               0 28px 64px -24px color-mix(in oklab, var(--st-ink) 34%, transparent);
+  --st-inner-hi: inset 0 1px 0 color-mix(in oklab, #fff 50%, transparent);
+
+  --st-glass: color-mix(in oklab, var(--bg) 78%, transparent);
+  --st-glass-strong: color-mix(in oklab, var(--surface) 94%, transparent);
+  --st-accent-glow: color-mix(in oklab, var(--action) 34%, transparent);
+  --st-focus: 0 0 0 3px color-mix(in oklab, var(--action) 26%, transparent);
+
+  --st-ease-out: cubic-bezier(.16, 1, .3, 1);
+  --st-ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --st-ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --st-fast: 140ms;
+  --st-base: 220ms;
+  --st-slow: 420ms;
+
+  --st-side-w: 256px;
+  --st-rail-w: 72px;
+  --st-top-h: 60px;
+  --st-content-max: 1480px;
+}
+
+/* Dark modes: depth comes from tone and a faint top highlight, not from
+   drop shadows (which are invisible on dark grounds anyway). */
+:root[data-mode="dark"] {
+  --st-inner-hi: inset 0 1px 0 color-mix(in oklab, #fff 5%, transparent);
+  --st-elev-1: 0 1px 2px rgba(0, 0, 0, .3);
+  --st-elev-2: var(--st-inner-hi), 0 1px 2px rgba(0, 0, 0, .25);
+  --st-elev-3: 0 1px 0 color-mix(in oklab, #fff 5%, transparent) inset, 0 30px 70px -26px rgba(0, 0, 0, .7);
+}
+
+/* Modern: the action colour is always the full brass, in both modes (the
+   light mode's --accent is a darker brass tuned for text on white). */
+:root[data-theme="modern"] { --action: #E0A867; --action-ink: #1C1206; }
+:root[data-mode="dark"] { --tier-saas: #E66FB8; }
+:root[data-theme="modern"][data-mode="light"] { --tier-extended: #B5773A; }
+
+/* Modern dark: brass tints read brown on navy at full strength, so the
+   selection wash is lighter and fades out across the row. */
+:root[data-theme="modern"][data-mode="dark"] { --accent-soft: rgba(224, 168, 103, 0.10); }
+:root[data-theme="modern"] .app-main tr.bg-accent-soft {
+  background: linear-gradient(90deg, color-mix(in oklab, var(--action) 13%, transparent), transparent 70%) !important;
+  box-shadow: inset 2px 0 0 var(--action);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --st-fast: 1ms; --st-base: 1ms; --st-slow: 1ms; }
+}
+
+
+/* ── 2. Ground ────────────────────────────────────────────────────────── */
+
+html { scroll-padding-top: calc(var(--st-top-h) + 16px); }
+
+/* Two soft washes of the accent colours at the top of the page, and a faint
+   dot lattice that fades out as it descends. Fixed to the viewport so
+   content glides over it. */
+body.app {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(60rem 28rem at 12% -8%, color-mix(in oklab, var(--accent-2) 9%, transparent), transparent 70%),
+    radial-gradient(50rem 26rem at 92% -10%, color-mix(in oklab, var(--action) 8%, transparent), transparent 70%),
+    radial-gradient(circle at 1px 1px, color-mix(in oklab, var(--text) 9%, transparent) 1px, transparent 1.2px);
+  background-size: auto, auto, 22px 22px;
+  background-attachment: fixed;
+}
+body.app::before {
+  /* Fade the dot lattice out below the fold. */
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+  background: linear-gradient(to bottom, transparent 0, var(--bg) 70vh);
+}
+
+::selection { background: var(--action); color: var(--action-ink); }
+
+* { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--text) 20%, transparent) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--text) 18%, transparent);
+  border: 3px solid transparent; border-radius: 999px; background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-color: color-mix(in oklab, var(--text) 32%, transparent); }
+
+
+/* ── 3. Typography ────────────────────────────────────────────────────── */
+
+body.app { font-size: 15px; letter-spacing: -0.006em; }
+.app-main h1:not(.dash-mast-title), .app-main h2, .app-main h3, .app-main h4 { color: var(--text); }
+.app-main h2 { font-weight: 600; letter-spacing: -0.015em; }
+.app-main h3 { font-weight: 600; letter-spacing: -0.01em; }
+.app-main td, .app-main .mono, .tabular { font-variant-numeric: tabular-nums; }
+
+/* Sentence case, everywhere. The legacy templates set small labels in
+   tracked-out caps (table headers, field labels, eyebrows); that print idiom
+   is what made the UI read as "older style". Normalise it in one place. */
+.app-main .uppercase,
+.app-main th,
+.app-main legend,
+.eyebrow,
+.tile-head,
+.row-head,
+.stat-strip-label,
+.pill .label,
+.palette-kind,
+.dossier-subhead,
+.upgrade-title {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+.app-main .uppercase { font-weight: 600; }
+/* Same rule for the standalone first-run wizard. */
+.ob-eyebrow, .ob-theme-tag, .ob-mode-label, .ob-step-text { text-transform: none !important; letter-spacing: 0 !important; }
+
+/* Inline code and keys. */
+.app-main code:not(pre code):not(.dash-mast-code), .app-main kbd {
+  font-family: var(--mono); font-size: .88em;
+  padding: .1em .45em; border-radius: 6px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  color: var(--text);
+}
+.app-main p a:not(.btn), .app-main .page-header a:not(.btn) {
+  text-decoration: underline; text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+.app-main p a:not(.btn):hover { text-decoration-color: currentColor; }
+
+
+/* ── 4. Application shell ─────────────────────────────────────────────── */
+
+body.app {
+  display: grid;
+  grid-template-columns: var(--st-side-w) minmax(0, 1fr);
+  min-height: 100vh;
+  transition: grid-template-columns var(--st-slow) var(--st-ease-out);
+}
+:root[data-rail="true"] body.app { grid-template-columns: var(--st-rail-w) minmax(0, 1fr); }
+
+/* Sidebar ("spine"). Themes re-declare tokens inside .side — Modern
+   and Itential keep it navy in both modes. */
+.app-side {
+  position: sticky; top: 0;
+  height: 100vh;
+  display: flex; flex-direction: column;
+  background: var(--bg-2);
+  border-right: 1px solid var(--line);
+  z-index: 40;
+  overflow: hidden;
+}
+:root[data-theme="modern"] .app-side {
+  background:
+    radial-gradient(120% 40% at 0% 0%, color-mix(in oklab, #4DB4EA 7%, transparent), transparent 60%),
+    #0D1424;
+}
+
+.app-brand {
+  display: flex; align-items: center; gap: 12px;
+  height: var(--st-top-h);
+  padding: 0 12px 0 18px;
+  flex-shrink: 0;
+}
+.app-brand-link { display: flex; align-items: center; gap: 11px; min-width: 0; color: inherit; text-decoration: none; }
+.app-brand .brand-mark { width: 28px; height: 28px; }
+.app-brand-name { display: flex; flex-direction: column; line-height: 1.1; min-width: 0; }
+.app-brand-name strong {
+  font-family: var(--display); font-weight: 600; font-size: 16px;
+  letter-spacing: -0.015em; white-space: nowrap;
+}
+.app-brand-name small { font-family: var(--mono); font-size: 11px; color: var(--text-4); margin-top: 2px; }
+.app-rail-toggle {
+  margin-left: auto; flex-shrink: 0;
+  width: 28px; height: 28px; border-radius: 8px;
+  display: inline-grid; place-items: center;
+  color: var(--text-4);
+  transition: color var(--st-fast), background-color var(--st-fast), transform var(--st-base) var(--st-ease-out);
+}
+.app-rail-toggle:hover { color: var(--text); background: color-mix(in oklab, var(--text) 8%, transparent); }
+:root[data-rail="true"] .app-rail-toggle { transform: rotate(180deg); }
+
+.app-nav {
+  position: relative;
+  flex: 1; min-height: 0;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 8px 12px 18px;
+  scrollbar-width: none;
+}
+.app-nav::-webkit-scrollbar { display: none; }
+
+.nav-group { margin-bottom: 18px; }
+.nav-group-label {
+  display: block;
+  padding: 4px 10px 6px;
+  font-size: 12px; font-weight: 600;
+  color: var(--text-4);
+  white-space: nowrap;
+}
+
+.app-nav .nav-link {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 11px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  color: var(--text-2);
+  font-size: 14.5px; font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--st-fast) ease;
+}
+.app-nav .nav-link svg {
+  width: 17px; height: 17px; flex-shrink: 0;
+  color: var(--text-3);
+  transition: color var(--st-fast) ease;
+}
+.app-nav .nav-link:hover { color: var(--text); }
+.app-nav .nav-link:hover svg { color: var(--text-2); }
+.app-nav .nav-link.is-active { color: var(--text); background: var(--surface-2); }
+.app-nav .nav-link.is-active svg { color: var(--accent); }
+.nav-link-label { overflow: hidden; text-overflow: ellipsis; }
+.nav-badge {
+  margin-left: auto;
+  min-width: 20px; height: 18px; padding: 0 6px;
+  display: inline-grid; place-items: center;
+  border-radius: 999px;
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  background: color-mix(in oklab, var(--bad) 22%, transparent); color: var(--bad);
+}
+
+/* Gliding active / hover layers (positioned by atlas-motion.js). */
+.nav-glide, .nav-hover {
+  position: absolute; left: 12px; right: 12px; top: 0;
+  height: 36px; border-radius: 9px;
+  pointer-events: none; z-index: 0;
+  opacity: 0;
+}
+.nav-glide {
+  background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 16%, transparent), color-mix(in oklab, var(--accent) 5%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent);
+}
+.nav-glide::before {
+  content: ""; position: absolute; left: -12px; top: 9px; bottom: 9px; width: 3px;
+  border-radius: 0 3px 3px 0; background: var(--accent);
+}
+.nav-hover { background: color-mix(in oklab, var(--text) 5%, transparent); }
+.app-nav.has-glide .nav-glide { opacity: 1; }
+:root .side .app-nav.has-glide .nav-link.is-active { background: transparent; }
+
+:root[data-theme="itential"] .nav-glide { background: var(--brand-blue); box-shadow: none; }
+:root[data-theme="itential"] .nav-glide::before { display: none; }
+:root[data-theme="itential"] .app-nav .nav-link.is-active,
+:root[data-theme="itential"] .app-nav .nav-link.is-active svg { color: #fff; }
+
+.app-side-foot { flex-shrink: 0; padding: 12px; }
+.app-side-version {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px 2px;
+  font-family: var(--mono); font-size: 11px; color: var(--text-4);
+  white-space: nowrap;
+}
+.app-side-version i {
+  width: 6px; height: 6px; border-radius: 999px; background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 20%, transparent);
+}
+
+:root[data-rail="true"] .app-brand { padding: 0 0 0 22px; }
+:root[data-rail="true"] .app-brand-name,
+:root[data-rail="true"] .nav-group-label,
+:root[data-rail="true"] .nav-link-label,
+:root[data-rail="true"] .nav-badge,
+:root[data-rail="true"] .app-side-foot .upgrade,
+:root[data-rail="true"] .app-side-version span { display: none; }
+:root[data-rail="true"] .app-rail-toggle { position: absolute; left: 50%; bottom: 14px; margin-left: -14px; }
+:root[data-rail="true"] .app-side-foot { padding-bottom: 48px; }
+:root[data-rail="true"] .app-nav .nav-link { justify-content: center; padding: 0; }
+:root[data-rail="true"] .nav-group { margin-bottom: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+:root[data-rail="true"] .nav-group:first-of-type { border-top: 0; }
+
+.nav-tip {
+  position: fixed; z-index: 90;
+  padding: 6px 10px; border-radius: 8px;
+  background: #0D1424; color: #fff; border: 1px solid rgba(150, 172, 214, .19);
+  font-size: 13px; font-weight: 500; white-space: nowrap;
+  box-shadow: var(--st-elev-3);
+  pointer-events: none;
+  opacity: 0; transform: translateX(-4px);
+  transition: opacity var(--st-fast), transform var(--st-base) var(--st-ease-out);
+}
+.nav-tip.is-shown { opacity: 1; transform: none; }
+
+.app-side .upgrade {
+  border-radius: var(--r-lg, 14px);
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 60%),
+    var(--surface);
+  margin-bottom: 8px;
+}
+
+/* Body column. */
+.app-body { min-width: 0; display: flex; flex-direction: column; }
+
+.app-top {
+  position: sticky; top: 0; z-index: 35;
+  height: var(--st-top-h);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 24px 0 32px;
+  background: var(--st-glass);
+  -webkit-backdrop-filter: saturate(1.5) blur(16px);
+  backdrop-filter: saturate(1.5) blur(16px);
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--st-base) ease, background-color var(--st-base) ease;
+}
+.app-top.is-scrolled { border-bottom-color: var(--line); }
+
+.app-menu-btn { display: none; }
+
+.app-crumbs {
+  display: flex; align-items: center; gap: 8px;
+  min-width: 90px; flex-shrink: 1;
+  white-space: nowrap;
+  font-size: 14px; color: var(--text-3);
+}
+.app-crumbs a { color: inherit; }
+.app-crumbs a:hover { color: var(--text); }
+.app-crumbs .sep { color: var(--text-4); }
+.app-crumbs .here { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+
+.app-top-spacer { flex: 1; }
+
+.app-search {
+  display: inline-flex; align-items: center; gap: 10px;
+  height: 36px; width: clamp(150px, 18vw, 280px); padding: 0 8px 0 12px; flex-shrink: 1;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-3); font-size: 14px;
+  transition: border-color var(--st-fast), color var(--st-fast);
+}
+.app-search:hover { border-color: var(--line-2); color: var(--text-2); }
+.app-search svg { width: 15px; height: 15px; flex-shrink: 0; }
+.app-search .ph { flex: 1; text-align: left; }
+.app-search kbd {
+  font-family: var(--mono); font-size: 11px;
+  padding: 2px 6px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text-3);
+}
+:root[data-palette-enabled="false"] .app-search { display: none; }
+
+.app-top-cluster { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.app-top .pill, .app-top .pill .val { white-space: nowrap; }
+@media (max-width: 1560px) { .app-top .pill-next { display: none; } }
+@media (max-width: 1360px) { .app-top .pill--continuous .val { display: none; } }
+
+.app-top .pill {
+  height: 36px; padding: 0 12px; gap: 8px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 13.5px;
+  transition: border-color var(--st-fast), background-color var(--st-fast);
+}
+.app-top .pill:hover { border-color: var(--line-2); }
+.app-top .pill .label { font-size: 12.5px; color: var(--text-3); font-weight: 500; }
+.app-top .pill .val { font-weight: 600; }
+.app-top .pill .dot { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 22%, transparent); }
+
+.app-top .theme-toggle {
+  width: 36px; height: 36px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  transition: border-color var(--st-fast), color var(--st-fast), background-color var(--st-fast);
+}
+.app-top .theme-toggle:hover { border-color: var(--line-2); color: var(--text); }
+.app-top .theme-toggle:active { transform: scale(.95); }
+.app-top .theme-toggle svg { width: 16px; height: 16px; }
+.app-top .theme-toggle[data-atlas-theme-toggle] svg { transition: transform var(--st-slow) var(--st-ease-spring); }
+.app-top .theme-toggle[data-atlas-theme-toggle]:hover svg { transform: rotate(-20deg); }
+
+/* Dropdown menus. */
+.st-menu {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 60;
+  min-width: 280px; padding: 6px;
+  border-radius: var(--r-lg, 14px);
+  background: var(--st-glass-strong);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--st-elev-3);
+  transform-origin: top right;
+}
+.st-menu-head { padding: 8px 10px 6px; font-size: 12.5px; font-weight: 600; color: var(--text-3); }
+.st-menu-item {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px;
+  font-size: 14.5px; text-align: left; color: var(--text-2);
+  transition: background-color var(--st-fast), color var(--st-fast);
+}
+.st-menu-item:hover { background: color-mix(in oklab, var(--text) 6%, transparent); color: var(--text); }
+.st-menu-item.is-active { color: var(--text); background: var(--accent-soft); }
+.st-menu-item .mark { width: 7px; height: 7px; border-radius: 999px; background: var(--text-4); flex-shrink: 0; }
+.st-menu-item.is-active .mark { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 25%, transparent); }
+.st-menu-foot { border-top: 1px solid var(--line); margin: 6px -6px -6px; padding: 4px 6px 6px; }
+.st-menu-foot a { display: block; padding: 8px 10px; border-radius: 8px; font-size: 13.5px; color: var(--text-2); }
+.st-menu-foot a:hover { color: var(--text); background: color-mix(in oklab, var(--text) 5%, transparent); }
+
+.app-main { flex: 1; padding: 28px 36px 72px; min-width: 0; }
+.app-main-inner { max-width: var(--st-content-max); margin: 0 auto; }
+
+/* Motion gate (see atlas-motion.js + the inline <head> fail-safe). */
+:root.motion-init .app-main-inner { visibility: hidden; }
+
+.app-progress { position: fixed; left: 0; top: 0; right: 0; height: 2px; z-index: 100; pointer-events: none; }
+.app-progress i {
+  display: block; height: 100%; width: 100%;
+  transform-origin: 0 50%; transform: scaleX(0);
+  background: linear-gradient(90deg, var(--accent-2), var(--action));
+  box-shadow: 0 0 12px var(--st-accent-glow);
+  opacity: 0;
+}
+
+
+/* ── 5. Page header ───────────────────────────────────────────────────── */
+
+.page-header {
+  position: relative;
+  margin-bottom: 24px; padding-bottom: 0;
+  border-bottom: 0;
+}
+.page-header::after { display: none; }
+.page-header h1 {
+  font-family: var(--display);
+  font-size: clamp(26px, .9vw + 18px, 32px);
+  line-height: 1.12;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+}
+.page-header p { margin-top: 8px; font-size: 15px; line-height: 1.6; color: var(--text-2); max-width: 72ch; }
+.page-header-title-row { gap: 12px; }
+.page-header-meta {
+  height: 26px; padding: 0 10px;
+  font-size: 12.5px; font-weight: 600;
+  border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--text-2);
+}
+.page-header-actions { gap: 8px; }
+.st-line-mask { display: block; overflow: hidden; padding-bottom: .08em; margin-bottom: -.08em; }
+
+
+/* ── 6. Buttons ───────────────────────────────────────────────────────── */
+
+.btn {
+  position: relative; isolation: isolate; overflow: hidden;
+  height: 36px; padding: 0 14px; gap: 8px;
+  border-radius: var(--r-md);
+  font-size: 14px; font-weight: 600; letter-spacing: -0.005em;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: var(--st-inner-hi);
+  transition: background-color var(--st-fast) ease, border-color var(--st-fast) ease, color var(--st-fast) ease, box-shadow var(--st-base) ease, transform 80ms ease;
+}
+.btn:hover { background: var(--surface-3); border-color: color-mix(in oklab, var(--text) 22%, transparent); }
+.btn:active { transform: scale(.97); }
+.btn svg { flex-shrink: 0; }
+.btn.sm { height: 30px; padding: 0 11px; font-size: 13px; border-radius: calc(var(--r-md) - 2px); }
+
+.btn.primary {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--action) 88%, #fff), var(--action));
+  color: var(--action-ink);
+  border-color: color-mix(in oklab, var(--action) 70%, #000);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 40%, transparent), 0 6px 16px -8px var(--st-accent-glow);
+}
+.btn.primary:hover {
+  filter: none;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--action) 80%, #fff), color-mix(in oklab, var(--action) 92%, #fff));
+  box-shadow: inset 0 1px 0 color-mix(in oklab, #fff 45%, transparent), 0 10px 24px -10px var(--st-accent-glow);
+}
+.btn.primary .kshort { background: rgba(0, 0, 0, .12); color: inherit; }
+
+.btn.danger {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--bad) 90%, #fff), var(--bad));
+  color: #fff; border-color: color-mix(in oklab, var(--bad) 70%, #000);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25);
+}
+.btn.danger:hover { background: var(--bad); }
+.btn[disabled], .btn[aria-disabled="true"], .btn.is-loading { transform: none !important; box-shadow: none; }
+
+.st-ripple {
+  position: absolute; z-index: -1; pointer-events: none;
+  width: 12px; height: 12px; margin: -6px 0 0 -6px;
+  border-radius: 999px; background: currentColor; opacity: .16;
+}
+
+.icon-btn {
+  width: 34px; height: 34px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--line);
+  transition: color var(--st-fast), border-color var(--st-fast), background-color var(--st-fast);
+}
+.icon-btn:hover { background: var(--surface-3); border-color: var(--line-2); }
+
+
+/* ── 7. Surfaces ──────────────────────────────────────────────────────── */
+
+.card,
+.dossier-card,
+.stat-strip,
+.form,
+.tip,
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--st-elev-2);
+}
+.card-head {
+  padding: 14px 20px; gap: 12px;
+  border-bottom: 1px solid var(--line);
+  min-height: 56px;
+}
+.card-head h3 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.card-head .sub { font-size: 13px; color: var(--text-3); }
+.card-body { padding: 18px 20px; }
+
+.card.is-clickable, .card.is-link, a.card, [data-card-link] {
+  transition: border-color var(--st-fast) ease, background-color var(--st-fast) ease, transform var(--st-base) var(--st-ease-out);
+}
+.card.is-clickable:hover, .card.is-link:hover, a.card:hover, [data-card-link]:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--line-2));
+  box-shadow: var(--st-elev-2);
+}
+
+.stat-strip-item { border-left-color: var(--line); }
+.stat-strip-num { font-family: var(--display); font-weight: 600; letter-spacing: -0.02em; }
+.stat-strip-label { font-size: 13px; color: var(--text-3); font-weight: 500; }
+.tile-value .num { font-family: var(--display); font-weight: 600; letter-spacing: -0.02em; }
+
+[data-spotlight] { position: relative; }
+[data-spotlight]::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; opacity: 0;
+  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), var(--st-spot, color-mix(in oklab, var(--accent) 12%, transparent)), transparent 60%);
+  transition: opacity var(--st-base) ease;
+}
+[data-spotlight]:hover::before { opacity: 1; }
+
+/* Flash banners: tinted panels; the text stays readable in the body colour
+   and the status colour lives on the edge and the icon. */
+.flash {
+  display: flex; align-items: center; gap: 12px;
+  border-radius: var(--r-lg);
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-2);
+  box-shadow: var(--st-elev-1);
+}
+.flash strong, .flash b { color: var(--text); }
+.flash .btn { flex-shrink: 0; }
+.flash--info    { border-color: color-mix(in oklab, var(--accent-2) 32%, var(--line)); background: color-mix(in oklab, var(--accent-2) 7%, var(--surface)); }
+.flash--info > svg { color: var(--accent-2); }
+.flash--success { border-color: color-mix(in oklab, var(--ok) 32%, var(--line)); background: color-mix(in oklab, var(--ok) 7%, var(--surface)); }
+.flash--success > svg { color: var(--ok); }
+.flash--error   { border-color: color-mix(in oklab, var(--bad) 35%, var(--line)); background: color-mix(in oklab, var(--bad) 7%, var(--surface)); }
+.flash--error > svg { color: var(--bad); }
+.flash--warn    { border-color: color-mix(in oklab, var(--warn) 35%, var(--line)) !important; background: color-mix(in oklab, var(--warn) 7%, var(--surface)) !important; color: var(--text-2) !important; }
+
+
+/* ── 8. Tables and lists ──────────────────────────────────────────────── */
+
+.app-main table thead th {
+  font-size: 12.5px; font-weight: 600;
+  color: var(--text-3);
+  background: color-mix(in oklab, var(--surface-2) 55%, transparent);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.app-main table tbody tr { transition: background-color var(--st-fast) ease, box-shadow var(--st-fast) ease; }
+.app-main table tbody tr:hover {
+  background: color-mix(in oklab, var(--text) 3%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.app-main table tbody tr + tr, .app-main table tbody tr { border-color: var(--line); }
+
+.row { transition: background-color var(--st-fast) ease, box-shadow var(--st-fast) ease; border-bottom-color: var(--line); }
+.row:hover { background: color-mix(in oklab, var(--text) 3%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.row-lite { transition: background-color var(--st-fast) ease, box-shadow var(--st-fast) ease; }
+.row-lite:hover { box-shadow: inset 2px 0 0 var(--accent); }
+
+
+/* ── 9. Forms ─────────────────────────────────────────────────────────── */
+
+.app-main input[type="text"],
+.app-main input[type="password"],
+.app-main input[type="url"],
+.app-main input[type="email"],
+.app-main input[type="number"],
+.app-main input[type="search"],
+.app-main input[type="tel"],
+.app-main input[type="date"],
+.app-main input[type="time"],
+.app-main input:not([type]),
+.app-main select,
+.app-main textarea {
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-2);
+  background-color: var(--surface-2);
+  color: var(--text);
+  transition: border-color var(--st-fast) ease, box-shadow var(--st-base) ease, background-color var(--st-fast) ease;
+}
+:root[data-mode="light"] .app-main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+:root[data-mode="light"] .app-main select,
+:root[data-mode="light"] .app-main textarea { background-color: var(--surface); }
+.app-main input::placeholder, .app-main textarea::placeholder { color: var(--text-4); }
+.app-main input:hover:not(:focus):not(:disabled),
+.app-main select:hover:not(:focus):not(:disabled),
+.app-main textarea:hover:not(:focus):not(:disabled) { border-color: color-mix(in oklab, var(--text) 26%, transparent); }
+.app-main input:focus, .app-main select:focus, .app-main textarea:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--action) 70%, var(--line-2));
+  box-shadow: var(--st-focus);
+}
+.app-main input[type="checkbox"], .app-main input[type="radio"], .app-main input[type="range"] { accent-color: var(--action); }
+.field label { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.field .hint { font-size: 13px; color: var(--text-3); }
+.form legend { font-size: 14px; font-weight: 600; color: var(--text); }
+
+.toggle { transition: background-color var(--st-base) ease; }
+.toggle.on { background: color-mix(in oklab, var(--action) 30%, transparent); }
+.toggle.on::after { background: var(--action); }
+.toggle::after { transition: transform var(--st-base) var(--st-ease-spring), background-color var(--st-base) ease; }
+
+/* Segmented controls and filter tabs. */
+.seg {
+  background: var(--surface-2) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--r-md) !important;
+}
+.filter-tab { border-radius: var(--r-md); background: var(--surface-2); border-color: var(--line); }
+.filter-tab.active { background: var(--accent-soft); color: var(--text); border-color: color-mix(in oklab, var(--accent) 35%, transparent); }
+
+
+/* ── 10. Chips, badges, status ────────────────────────────────────────── */
+
+.chip {
+  font-size: 12.5px; font-weight: 600;
+  padding: 2px 9px; gap: 6px;
+  border-radius: 999px;
+  background: var(--surface-2); border-color: var(--line); color: var(--text-2);
+}
+.chip.ok   { color: var(--ok);  background: var(--ok-soft);  border-color: color-mix(in oklab, var(--ok) 26%, transparent); }
+.chip.warn { color: var(--warn); background: var(--warn-soft); border-color: color-mix(in oklab, var(--warn) 26%, transparent); }
+.chip.bad  { color: var(--bad); background: var(--bad-soft); border-color: color-mix(in oklab, var(--bad) 26%, transparent); }
+/* Live state is sky blue: information, not action. */
+.chip.run  { color: var(--accent-2); background: var(--accent-2-soft); border-color: color-mix(in oklab, var(--accent-2) 26%, transparent); }
+.chip.run .dot { background: var(--accent-2); }
+.row .status-dot.run, .status-dot.run { background: var(--accent-2); box-shadow: 0 0 0 3px var(--accent-2-soft); }
+.status-dot.ok { background: var(--ok); }
+.status-dot.fail { background: var(--bad); }
+
+.progress { background: var(--surface-2); border-color: var(--line); }
+.progress > i { background: linear-gradient(90deg, var(--accent-2), var(--action)); }
+
+
+/* ── 11. Toasts, dialogs, palette ─────────────────────────────────────── */
+
+.atlas-toaster { top: calc(var(--st-top-h) + 14px); right: 20px; gap: 10px; }
+.toast {
+  border-radius: var(--r-lg, 14px);
+  border: 1px solid var(--line-2); border-left-width: 1px;
+  padding: 13px 40px 15px 44px;
+  background: var(--st-glass-strong);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  box-shadow: var(--st-elev-3);
+  overflow: hidden; min-width: 300px;
+  color: var(--text);
+}
+.toast::before {
+  content: ""; position: absolute; left: 16px; top: 16px;
+  width: 12px; height: 12px; border-radius: 999px;
+  background: var(--st-toast, var(--accent-2));
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--st-toast, var(--accent-2)) 20%, transparent);
+}
+.toast::after {
+  content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+  background: var(--st-toast, var(--accent-2));
+  transform-origin: 0 50%;
+  animation: st-toast-life 5s linear forwards;
+  opacity: .7;
+}
+.toast:hover::after { animation-play-state: paused; }
+@keyframes st-toast-life { to { transform: scaleX(0); } }
+.toast--success { --st-toast: var(--ok); }
+.toast--error   { --st-toast: var(--bad); }
+.toast--warning { --st-toast: var(--warn); }
+.toast--info    { --st-toast: var(--accent-2); }
+.toast-close { top: 8px; right: 8px; border-radius: 8px; }
+
+.st-dialog-backdrop {
+  background: color-mix(in oklab, #060A14 58%, transparent);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.st-dialog {
+  border-radius: var(--r-xl, 20px);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--st-elev-3);
+  padding: 24px;
+}
+.st-dialog h3 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+.st-dialog-icon {
+  width: 40px; height: 40px; border-radius: 12px;
+  display: grid; place-items: center; margin-bottom: 14px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.st-dialog[data-kind="danger"] .st-dialog-icon { background: var(--bad-soft); color: var(--bad); }
+
+.palette { background: color-mix(in oklab, #060A14 50%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.palette[data-open="true"] .palette-box { animation: st-pop var(--st-slow) var(--st-ease-out) both; }
+.palette-box { border-radius: var(--r-xl, 20px); box-shadow: var(--st-elev-3); width: 620px; border-color: var(--line-2); }
+.palette-input { font-size: 17px; padding: 18px 20px; }
+.palette-item { padding: 9px 12px; margin: 0 8px; border-radius: 8px; transition: background-color 80ms; }
+.palette-item[aria-selected="true"] { background: var(--accent-soft); }
+.palette-kind { border-radius: 6px; font-weight: 600; }
+.palette-footer { padding: 10px 20px; }
+@keyframes st-pop { from { opacity: 0; transform: translateY(-8px) scale(.975); } to { opacity: 1; transform: none; } }
+
+
+/* ── 12. Radius normalisation (Modern) ─────────────────────────────────── */
+/* Templates use a spread of Tailwind radii (md / lg / xl / 2xl). Under
+   Modern they collapse onto the theme's three-step scale, so every panel,
+   inset and control shares one family. */
+:root[data-theme="modern"] .app-main .rounded-md { border-radius: 8px; }
+:root[data-theme="modern"] .app-main .rounded-lg,
+:root[data-theme="modern"] .app-main .rounded-xl,
+:root[data-theme="modern"] .app-main .rounded-2xl { border-radius: var(--r-lg); }
+
+
+/* ── 13. Dashboard masthead + crystal facets ──────────────────────────── */
+
+.dash-mast {
+  position: relative; overflow: hidden; isolation: isolate;
+  border-radius: var(--r-xl, 20px);
+  background:
+    radial-gradient(90% 120% at 82% 38%, #1a2946 0%, transparent 60%),
+    linear-gradient(170deg, #16213A 0%, #0F1729 58%, #0B1120 100%);
+  color: #fff;
+  margin-bottom: 20px;
+  border: 1px solid rgba(150, 172, 214, .12);
+  box-shadow: 0 30px 70px -44px rgba(8, 12, 24, .9);
+  min-height: 380px;
+  display: flex; flex-direction: column;
+
+  /* Masthead palette. The mast is navy in every theme, so theme colours are
+     lifted toward white for contrast. --mast-accent drives the eyebrow dot,
+     title emphasis and primary button; --facet-a / --facet-b are the two
+     highlight colours of the crystal (read by atlas-facets.js through
+     .facets-probe). --facet-b is the complementary hue. */
+  --mast-accent: color-mix(in oklab, var(--accent) 62%, #fff);
+  --facet-a: var(--mast-accent);
+  --facet-b: #4DB4EA;
+}
+:root[data-theme="modern"] .dash-mast { --mast-accent: #E0A867; }
+:root[data-theme="itential"] .dash-mast { --mast-accent: #4DB4EA; --facet-b: #E0A867; }
+:root[data-theme="carbon"] .dash-mast { --mast-accent: #E4E4E4; --facet-b: #9AB3C2; }
+.dash-mast::before { display: none; }
+
+.dash-facets { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.dash-facets .facets-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; animation: st-facets-in 900ms var(--st-ease-out) both; }
+@keyframes st-facets-in { from { opacity: 0; } to { opacity: 1; } }
+.facets-probe { position: absolute; width: 0; height: 0; overflow: hidden; visibility: hidden; }
+.facets-probe [data-c="a"] { color: var(--facet-a); }
+.facets-probe [data-c="b"] { color: var(--facet-b); }
+
+.dash-mast-stage { position: relative; flex: 1; display: flex; flex-direction: column; }
+.dash-mast-top {
+  position: relative; z-index: 1; flex: 1;
+  display: flex; align-items: flex-start;
+  padding: 36px 40px 30px;
+  pointer-events: none;
+}
+.dash-mast-top a, .dash-mast-top button { pointer-events: auto; }
+.dash-mast-inner { max-width: min(580px, 56%); }
+.dash-mast-eyebrow {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: 13.5px; font-weight: 500; color: rgba(255, 255, 255, .72);
+}
+.dash-mast-eyebrow .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--mast-accent); box-shadow: 0 0 0 4px color-mix(in oklab, var(--mast-accent) 25%, transparent); }
+.dash-mast-title {
+  font-family: var(--display); font-weight: 600;
+  font-size: clamp(32px, 2vw + 18px, 48px);
+  line-height: 1.04; letter-spacing: -0.03em;
+  margin: 16px 0 14px; color: #fff;
+  text-wrap: balance;
+}
+.dash-mast-title em { color: var(--mast-accent); font-style: normal; }
+.dash-mast-sub { color: rgba(255, 255, 255, .72); font-size: 15.5px; line-height: 1.6; max-width: 52ch; }
+.dash-mast-sub b { color: #fff; font-weight: 600; }
+.dash-mast-code {
+  font-family: var(--mono); font-size: 12.5px;
+  color: #F2E6D2; background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .16); border-radius: 6px; padding: 2px 7px;
+}
+.dash-mast-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.dash-mast .btn { height: 40px; padding: 0 18px; font-size: 14.5px; }
+.dash-mast .btn.primary {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--mast-accent) 86%, #fff), var(--mast-accent));
+  color: #111a2c; border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 14px 30px -12px color-mix(in oklab, var(--mast-accent) 60%, transparent);
+}
+.dash-mast .btn.primary:hover { background: color-mix(in oklab, var(--mast-accent) 86%, #fff); }
+.dash-mast-btn-ghost {
+  background: rgba(255, 255, 255, .06) !important; border-color: rgba(255, 255, 255, .2) !important;
+  color: #fff !important; box-shadow: none !important;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.dash-mast-btn-ghost:hover { background: rgba(255, 255, 255, .13) !important; }
+
+.dash-ledger {
+  position: relative; z-index: 1;
+  display: flex; flex-wrap: wrap;
+  border-top: 1px solid rgba(255, 255, 255, .1);
+  background: rgba(8, 12, 24, .42);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.ledger-stat {
+  --st-spot: rgba(255, 255, 255, .07);
+  position: relative;
+  display: flex; flex-direction: column; gap: 6px;
+  color: #fff; text-decoration: none;
+  flex: 1 1 170px; min-width: 170px;
+  padding: 18px 24px 20px;
+  border-left: 1px solid rgba(255, 255, 255, .08);
+}
+.ledger-stat:first-child { border-left: 0; }
+.ledger-stat:hover { background: transparent; }
+.ledger-stat-num { font-family: var(--display); font-size: 30px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.ledger-stat-label { font-size: 13px; font-weight: 500; color: rgba(255, 255, 255, .62); }
+.ledger-stat-hint { font-family: var(--mono); font-size: 11.5px; color: rgba(255, 255, 255, .46); }
+.ledger-stat-icon { color: rgba(255, 255, 255, .5); transition: transform var(--st-base) var(--st-ease-spring), color var(--st-fast); }
+.ledger-stat:hover .ledger-stat-icon { transform: translateY(-2px); color: var(--mast-accent); }
+.ledger-stat-arrow {
+  position: absolute; right: 18px; top: 18px;
+  color: transparent;
+  transition: color var(--st-fast), transform var(--st-base) var(--st-ease-out);
+}
+.ledger-stat:hover .ledger-stat-arrow { color: rgba(255, 255, 255, .7); transform: translate(2px, -2px); }
+
+/* Dashboard body panels. */
+.dossier-card { padding: 20px 22px 22px; }
+.dossier-head {
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-bottom: 14px; margin-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.dossier-head::after { display: none; }
+.dossier-title { font-family: var(--display); font-size: 17px; font-weight: 600; letter-spacing: -0.015em; margin: 0; }
+.dossier-subhead { font-size: 13px; color: var(--text-2); font-weight: 600; }
+
+.calendar .cell { border-radius: 3px; transition: transform var(--st-fast) var(--st-ease-spring), box-shadow var(--st-fast); }
+.calendar .cell:hover { transform: scale(1.45); position: relative; z-index: 2; box-shadow: 0 0 0 2px var(--surface); }
+
+/* Light/dark circular reveal (atlas-motion.js drives the clip-path). */
+:root.st-vt-theme::view-transition-old(root),
+:root.st-vt-theme::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+:root.st-vt-theme::view-transition-new(root) { z-index: 2; }
+
+
+/* ── 14. Responsive ───────────────────────────────────────────────────── */
+
+@media (max-width: 1180px) {
+  :root:not([data-rail="false"]) body.app { grid-template-columns: var(--st-rail-w) minmax(0, 1fr); }
+  :root:not([data-rail="false"]) .app-brand-name,
+  :root:not([data-rail="false"]) .nav-group-label,
+  :root:not([data-rail="false"]) .nav-link-label,
+  :root:not([data-rail="false"]) .nav-badge,
+  :root:not([data-rail="false"]) .app-side-foot .upgrade,
+  :root:not([data-rail="false"]) .app-side-version span,
+  :root:not([data-rail="false"]) .app-rail-toggle { display: none; }
+  :root:not([data-rail="false"]) .app-brand { padding: 0 0 0 22px; }
+  :root:not([data-rail="false"]) .app-nav .nav-link { justify-content: center; padding: 0; }
+  .app-search { width: 36px; padding: 0; justify-content: center; }
+  .app-search .ph, .app-search kbd { display: none; }
+  .app-top .pill .label { display: none; }
+}
+
+@media (max-width: 760px) {
+  body.app, :root[data-rail] body.app { grid-template-columns: minmax(0, 1fr) !important; }
+  .app-side {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: min(300px, 86vw);
+    transform: translateX(-102%);
+    transition: transform var(--st-slow) var(--st-ease-out);
+    box-shadow: var(--st-elev-3);
+  }
+  :root[data-drawer="open"] .app-side { transform: none; }
+  :root[data-drawer="open"] .app-brand-name,
+  :root[data-drawer="open"] .nav-group-label,
+  :root[data-drawer="open"] .nav-link-label { display: revert; }
+  :root[data-drawer="open"] .app-nav .nav-link { justify-content: flex-start; padding: 0 10px; }
+  .app-scrim {
+    position: fixed; inset: 0; z-index: 38;
+    background: color-mix(in oklab, #060A14 50%, transparent);
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--st-base) ease;
+  }
+  :root[data-drawer="open"] .app-scrim { opacity: 1; pointer-events: auto; }
+  .app-menu-btn { display: inline-flex; }
+  .app-top { padding: 0 12px; gap: 6px; }
+  .app-top .pill:not(.pill--env-link):not(.pill--env-warn) { display: none; }
+  .app-top-cluster { gap: 6px; }
+  .app-crumbs { display: none; }
+  .app-top .pill .val { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+  .app-top .theme-toggle, .app-search { width: 34px; height: 34px; }
+  .app-main { padding: 20px 16px 56px; }
+  .app-main .overflow-x-auto > table { min-width: 1040px; }
+  .dash-mast { min-height: 0; }
+  .dash-mast-top { padding: 26px 22px 32px; }
+  .dash-mast-inner { max-width: none; }
+  .ledger-stat { flex-basis: 50%; min-width: 0; }
+}
+@media (min-width: 761px) { .app-scrim { display: none; } }
+
+
+/* ── 15. Reduced motion ───────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .toast::after { animation: none; transform: scaleX(0); }
+  .calendar .cell:hover { transform: none; }
+  :root.motion-init .app-main-inner { visibility: visible; }
+}
+
+
+/* ── 16. Page-header crystal watermark ────────────────────────────────── */
+/* A faint crystal behind the title block of every standard page header (the
+   shared partials/_page_header.html macro, plus the hand-written header in
+   continuous/run_detail.html). It is texture, not an object: strongest behind
+   the title, gone before the description ends, and toned from the page's own
+   ground so the title's contrast barely moves. Rendered by atlas-facets.js
+   ("watermark" variant), mounted and torn down by atlas-motion.js exactly like
+   the dashboard masthead. Without JS the host is empty and invisible. */
+.page-header { isolation: isolate; }
+.ph-watermark {
+  position: absolute; z-index: -1; pointer-events: none;
+  left: -36px; top: -30px;
+  width: min(760px, 88%); height: calc(100% + 54px);
+  /* The soft edge: an ellipse centred behind the title. */
+  -webkit-mask-image: radial-gradient(70% 90% at 18% 38%, #000 0%, rgba(0, 0, 0, .55) 45%, transparent 78%);
+          mask-image: radial-gradient(70% 90% at 18% 38%, #000 0%, rgba(0, 0, 0, .55) 45%, transparent 78%);
+  opacity: .9;
+  /* Tones (read by atlas-facets.js through .facets-probe): a face turned
+     away from the light is the page ground; a lit face is one step up the
+     surface scale. Highlights are the theme's accent and info colours. */
+  --facet-lo: var(--bg);
+  --facet-hi: var(--surface-3);
+  --facet-a: var(--accent);
+  --facet-b: var(--accent-2);
+}
+:root[data-mode="light"] .ph-watermark {
+  /* On a pale ground the shadow tone sits just below the ground and the lit
+     tone is the white surface, so the crystal reads as a soft emboss. */
+  --facet-lo: color-mix(in oklab, var(--bg) 90%, var(--text));
+  --facet-hi: var(--surface);
+}
+.ph-watermark .facets-canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  animation: st-facets-in 900ms var(--st-ease-out) both;
+}
+.facets-probe [data-c="lo"] { color: var(--facet-lo); }
+.facets-probe [data-c="hi"] { color: var(--facet-hi); }
+@media (max-width: 760px) {
+  .ph-watermark { left: -16px; width: calc(100% + 16px); }
+}
+@media print {
+  .ph-watermark { display: none; }
+}
+
+/* Large / hero headers use Onest (via --hero); smaller headings, numbers,
+   body and mono stay on their existing faces. */
+.page-header h1,
+.dash-mast-title {
+  font-family: var(--hero) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Setup crystal — a quiet faceted accent behind the onboarding flow (first-run
+   setup pages only; .ob-facets appears nowhere else). It uses the whats-new
+   hero's fixed palette (navy body, brass + sky glints) and does NOT recolour
+   with the theme, so it stays consistent everywhere. It sweeps in from the
+   right edge and fades out toward the left, leaving the left side open — an
+   ambient accent, not a background the eye lands on.
+   ───────────────────────────────────────────────────────────────────────── */
+.ob-facets {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .62;
+  /* Fixed highlight tones, matched to whats-new.html: brass accent + brand sky.
+     The crystal body is a fixed navy in atlas-facets.js (non-toned variant). */
+  --facet-a: #cf9152;   /* brass */
+  --facet-b: #6ab8e8;   /* sky   */
+  /* Sweep right → left: solid on the right, gone before the centre, so the
+     left stays open. Soft top/bottom taper keeps it from reading as a band. */
+  -webkit-mask-image:
+    linear-gradient(90deg, transparent 0%, transparent 26%, rgba(0,0,0,.45) 55%, #000 90%),
+    linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%);
+          mask-image:
+    linear-gradient(90deg, transparent 0%, transparent 26%, rgba(0,0,0,.45) 55%, #000 90%),
+    linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%);
+  -webkit-mask-composite: source-in;
+          mask-composite: intersect;
+}
+.ob-facets .facets-canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  animation: st-facets-in 1100ms var(--st-ease-out, cubic-bezier(.16,1,.3,1)) both;
+}
+/* Lift the onboarding content above the crystal. */
+.ob-shell, .done-shell { position: relative; z-index: 1; }

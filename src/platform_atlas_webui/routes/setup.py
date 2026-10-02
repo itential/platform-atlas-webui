@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import secrets
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -13,7 +12,7 @@ from platform_atlas.core._version import __version__ as ATLAS_VERSION
 from platform_atlas_webui.dependencies import get_templates
 from platform_atlas_webui.security.csrf import generate_csrf_token
 from platform_atlas_webui.security.redact import redact
-from platform_atlas_webui.security.tokens import COOKIE_NAME, _COOKIE_MAX_AGE, make_session_cookie_value
+from platform_atlas_webui.security.tokens import COOKIE_NAME
 from platform_atlas_webui.services import setup as setup_svc
 
 logger = logging.getLogger(__name__)
@@ -33,7 +32,9 @@ def _render_form(
 ) -> HTMLResponse:
     # Read prefs from config if it exists (so a half-bootstrapped state
     # still respects the user's chosen theme/mode), else use defaults.
-    prefs = {"theme": "itential", "mode": "dark"}
+    # Modern is the 3.0 flagship default and is dark-first (see
+    # services/config.resolve_appearance), so a fresh onboarding opens on it.
+    prefs = {"theme": "modern", "mode": "dark"}
     try:
         from platform_atlas_webui.services import config as _cfg_svc
         cfg = _cfg_svc.read_config()
@@ -291,19 +292,9 @@ async def submit_setup(
             status_code=200,
         )
 
-    session_id = secrets.token_hex(32)
-    cookie_value = make_session_cookie_value(session_id)
-    response = RedirectResponse(url="/setup/done", status_code=303)
-    response.set_cookie(
-        key=COOKIE_NAME,
-        value=cookie_value,
-        max_age=_COOKIE_MAX_AGE,
-        path="/",
-        httponly=True,
-        samesite="strict",
-        secure=True,
-    )
-    return response
+    # The caller is already authenticated (auth middleware guards /setup);
+    # never mint a session cookie here.
+    return RedirectResponse(url="/setup/done", status_code=303)
 
 
 def _done_tier(cfg: dict) -> str:

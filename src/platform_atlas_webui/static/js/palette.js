@@ -193,4 +193,11 @@
       open();
     }
   }, true);
+
+  // Public handle so UI affordances (the topbar search button in base.html)
+  // can open the palette without synthesising a keyboard event.
+  window.atlasPalette = {
+    open: function () { if (paletteEnabled()) open(); },
+    close: close,
+  };
 })();
