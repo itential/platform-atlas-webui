@@ -16,141 +16,49 @@ _summary_cache: dict[str, tuple[dict[str, Any], float]] = {}
 _SUMMARY_CACHE_TTL = 60.0  # seconds
 
 
-def _arch_value_filled(value: Any) -> bool:
-    """Whether an architecture-form answer counts as filled.
-
-    Mirrors the architecture page's own JS check: ``null``, empty string, and
-    empty collections are blank; numbers and booleans count.
-    """
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return value.strip() != ""
-    if isinstance(value, (list, tuple, dict)):
-        return len(value) > 0
-    return True
-
-
-# Mirror of the Architecture form's SECTIONS (templates/architecture/index.html).
-# Only the fields that COUNT toward the progress bar are listed — i.e. the
-# non-conditional ones. The form excludes `cond:true` fields from its total, and
-# every conditional field in the markup carries both `data-cond="true"` AND the
-# initial `hidden` class (verified), so "hidden" and "conditional" coincide: a
-# count of these non-conditional fields equals the form's own total exactly.
-# The sum is 60 with no sections skipped (3+7+6+7+9+9+5+8+1+4+1).
-#
-# KEEP IN SYNC if the form's SECTIONS change. This is only the fallback for envs
-# whose progress wasn't persisted on save; re-saved envs use the form's own
-# counts, so drift here is self-healing on the next save.
-_ARCH_SCHEMA: dict[str, list[str]] = {
-    "environment": ["environment_type", "datacenter_location", "hosting_provider"],
-    "platform": ["active_instance_count", "standby_instance_count", "deployment_type",
-                 "os_type", "cpu_cores", "memory_gb", "disk_space_gb"],
-    "mongodb": ["same_datacenter_as_platform", "replica_count", "os_type",
-                "cpu_cores", "memory_gb", "disk_space_gb"],
-    "redis": ["deployment_type", "redis_node_count", "same_datacenter_as_platform",
-              "os_type", "cpu_cores", "memory_gb", "disk_space_gb"],
-    "gateway4": ["instance_count", "same_datacenter_as_platform", "deployment_type",
-                 "os_type", "cpu_cores", "memory_gb", "disk_space_gb", "device_count",
-                 "plans_to_migrate_to_gw5"],
-    "gateway5": ["same_datacenter_as_platform", "cluster_count", "ha_enabled",
-                 "has_redundant_instances", "deployment_type", "os_type", "cpu_cores",
-                 "memory_gb", "disk_space_gb"],
-    "load_balancer": ["lb_type", "routing_policy", "session_stickiness",
-                      "platform_health_endpoint", "health_check_interval"],
-    "kubernetes": ["k8s_distribution", "node_instance_type", "node_count",
-                   "deployment_method", "hpa_enabled", "has_custom_resources",
-                   "pod_restarts_observed", "probes_customized"],
-    "monitoring": ["monitoring_tools"],
-    "network_security": ["mtu_size", "has_connectivity_concerns", "selinux_mode",
-                         "compliance_standards"],
-    "vulnerability_assessments": ["performs_assessments"],
-}
-
-
-def _compute_arch_progress(completed: Any, skipped: Any) -> tuple[int, int]:
-    """Recompute (filled, total) the way the Architecture form does, from saved
-    data + the known schema. Counts only non-conditional fields in non-skipped
-    sections — so e.g. a section marked merely ``present`` (no detail) still
-    contributes its fields to the total, matching the form's bar.
-    """
-    skipped_set = set(skipped) if isinstance(skipped, list) else set()
-    completed = completed if isinstance(completed, dict) else {}
-    filled = total = 0
-    for section, fields in _ARCH_SCHEMA.items():
-        if section in skipped_set:
-            continue
-        total += len(fields)
-        sec_data = completed.get(section)
-        if isinstance(sec_data, dict):
-            filled += sum(1 for key in fields if _arch_value_filled(sec_data.get(key)))
-    return filled, total
-
-
 def architecture_completion_summary(env: str | None) -> dict[str, Any]:
-    """Summarize how much of the Architecture form is filled for ``env``.
+    """Summarize how much of the Architecture questionnaire is answered for ``env``.
 
-    Powers the gentle, non-blocking nudge on the capture page. Derived purely
-    from the stored ``~/.atlas/architecture/<env>.json`` (status + filled-field
-    and section counts) — deliberately schema-free, because the canonical field
-    schema lives only in the architecture page's JavaScript and duplicating it
-    here would drift. Architecture answers are per-environment, so the summary
-    reflects the session's bound environment.
+    Powers the gentle, non-blocking nudge on the capture page. Derived from the
+    stored ``~/.atlas/architecture/<env>.json`` through the shared
+    ``architecture_schema`` — the same rules the CLI and the report use — never
+    from the stored ``status`` flag or a section merely having a key.
 
-    Returns ``{state, status, filled, total, pct, has_total, sections_skipped}``
-    where ``state`` is one of ``empty`` / ``in_progress`` / ``skipped`` /
-    ``complete``. The counts mirror the Architecture form's own "X / Y fields"
-    bar exactly. Architecture answers are per-environment, so this reflects the
-    session's bound environment.
+    Returns ``{state, status, filled, total, pct, has_total, sections_skipped,
+    sections_done, sections_total, incomplete}`` where ``state`` is one of
+    ``empty`` / ``in_progress`` / ``complete``. ``filled`` / ``total`` are
+    answered / applicable questions.
     """
     empty = {
         "state": "empty", "status": "in_progress",
         "filled": 0, "total": 0, "pct": 0, "has_total": False, "sections_skipped": 0,
+        "sections_done": 0, "sections_total": 0, "incomplete": [],
     }
     try:
         from platform_atlas.core import architecture_store
+        from platform_atlas.core.architecture_schema import SECTION_BY_NAME, evaluate
+        from platform_atlas_webui.services import environments as env_svc
         data = architecture_store.load(env)
+        is_saas, kind = env_svc.architecture_tier_scope(env or "")
+        report = evaluate(data.get("completed"), data.get("skipped"), is_saas=is_saas, saas_gateway_kind=kind)
     except Exception:  # noqa: BLE001 — a missing/unreadable file just means "nothing yet"
         return empty
 
-    completed = data.get("completed") or {}
     skipped = data.get("skipped") or []
-    status = (data.get("status") or "in_progress").lower()
-    sections_skipped = len(skipped) if isinstance(skipped, list) else 0
-
-    # Prefer the form's own persisted counts (drift-proof, exact); fall back to a
-    # server-side recompute from the schema so existing / never-re-saved envs
-    # still get an accurate "X / Y" bar.
-    filled = total = 0
-    progress = data.get("progress")
-    if isinstance(progress, dict):
-        try:
-            filled = max(0, int(progress.get("filled", 0)))
-            total = max(0, int(progress.get("total", 0)))
-        except (TypeError, ValueError):
-            filled = total = 0
-    if total <= 0:
-        filled, total = _compute_arch_progress(completed, skipped)
+    total, filled = report.total_fields, report.answered_fields
     has_total = total > 0
-    pct = round(filled / total * 100) if has_total else 0
-
-    if status == "complete" or (has_total and filled >= total):
-        state = "complete"
-    elif status == "skipped" and filled == 0:
-        state = "skipped"
-    elif filled == 0:
-        state = "empty"
-    else:
-        state = "in_progress"
-
+    state = {"complete": "complete", "partial": "in_progress", "empty": "empty"}[report.state]
     return {
         "state": state,
-        "status": status,
+        "status": "complete" if report.is_complete else "in_progress",
         "filled": filled,
         "total": total,
-        "pct": pct,
+        "pct": round(filled / total * 100) if has_total else 0,
         "has_total": has_total,
-        "sections_skipped": sections_skipped,
+        "sections_skipped": len(skipped) if isinstance(skipped, list) else 0,
+        "sections_done": report.done,
+        "sections_total": report.total,
+        "incomplete": [SECTION_BY_NAME[n].label for n in report.incomplete_sections],
     }
 
 

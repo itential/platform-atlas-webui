@@ -60,6 +60,8 @@ async def support_bundle_form(request: Request, job: str = "") -> HTMLResponse:
     active_env = ""
     tier = "standard"
     connections: list[dict] = []
+    mongo_configured = False
+    mongo_available = False
     try:
         from platform_atlas.core.context import ctx
         from platform_atlas.core.handlers.support_bundle import _describe_connections
@@ -70,6 +72,9 @@ async def support_bundle_form(request: Request, job: str = "") -> HTMLResponse:
             {"label": label, "value": value}
             for label, value in _describe_connections(atlas.config, tier)
         ]
+        mongo_configured = bool(getattr(atlas.config, "mongo_uri", None))
+        from platform_atlas.capture.collectors.mongo_export import mongodump_available
+        mongo_available = mongodump_available()
     except Exception:  # noqa: BLE001
         pass
 
@@ -91,8 +96,44 @@ async def support_bundle_form(request: Request, job: str = "") -> HTMLResponse:
             tier=tier,
             connections=connections,
             asset_types=asset_types,
+            mongo_configured=mongo_configured,
+            mongo_available=mongo_available,
         ),
     )
+
+
+@router.get("/mongo-collections")
+async def list_mongo_collections() -> JSONResponse:
+    """JSON: the MongoDB collections available to export (Extended only).
+
+    Returns ``{available, configured, collections}``. ``available`` reflects
+    whether ``mongodump`` is on the server PATH; ``configured`` whether this
+    environment has a MongoDB connection. Each entry in ``collections`` is
+    ``{name, size_bytes, doc_count}`` — ``size_bytes`` is the uncompressed BSON
+    data-size estimate, or ``null`` when stats can't be read. An empty
+    ``collections`` list means Mongo is unreachable or has none — the picker
+    shows that as "no collections".
+    """
+    from platform_atlas.core.context import ctx
+    try:
+        from platform_atlas.capture.collectors.mongo_export import (
+            list_exportable_collections_with_sizes, mongodump_available,
+        )
+    except ImportError:  # pymongo (or the export module's deps) not installed
+        return JSONResponse({"available": False, "configured": False, "collections": []})
+    try:
+        configured = bool(getattr(ctx().config, "mongo_uri", None))
+    except Exception:  # noqa: BLE001
+        configured = False
+    available = mongodump_available()
+    collections: list[dict] = []
+    if configured and available and not ctx().is_standard:
+        try:
+            collections = await run_in_threadpool(list_exportable_collections_with_sizes)
+        except Exception as exc:  # noqa: BLE001
+            _log.exception("mongo collection list failed")
+            raise HTTPException(status_code=502, detail=f"Could not list collections: {type(exc).__name__}: {exc}")
+    return JSONResponse({"available": available, "configured": configured, "collections": collections})
 
 
 @router.get("/assets/{asset_type}")
@@ -122,6 +163,8 @@ async def run_support_bundle(
     description: str = Form("", max_length=512),
     log_days: int = Form(7),
     assets: str = Form(""),
+    mongo_collections: str = Form("", max_length=4096),
+    mongo_db: str = Form("", max_length=128),
 ):
     """Validate form input, kick off a support bundle job, redirect to progress page."""
     import re
@@ -153,6 +196,27 @@ async def run_support_bundle(
             selection = {}
     asset_count = sum(len(v) for v in selection.values())
 
+    # Parse the optional MongoDB collection selection (JSON array from the picker,
+    # or a comma-separated fallback). Names are sanitised to a safe character set.
+    mongo_list: list[str] = []
+    if mongo_collections.strip():
+        raw_names: list = []
+        try:
+            parsed_m = _json.loads(mongo_collections)
+            if isinstance(parsed_m, list):
+                raw_names = parsed_m
+        except Exception:  # noqa: BLE001
+            raw_names = mongo_collections.split(",")
+        seen: set[str] = set()
+        for name in raw_names:
+            n = str(name).strip()
+            if n and re.fullmatch(r"[A-Za-z0-9_.$-]{1,120}", n) and n not in seen:
+                seen.add(n)
+                mongo_list.append(n)
+    mongo_db = mongo_db.strip()
+    if mongo_db and not re.fullmatch(r"[A-Za-z0-9_.$-]{1,128}", mongo_db):
+        mongo_db = ""
+
     # Capture tier before submission so the progress view can display it
     # even while the job is still queued/running.
     active_tier = "standard"
@@ -174,6 +238,8 @@ async def run_support_bundle(
         description=description,
         log_days=log_days,
         selection=selection,
+        mongo_collections=mongo_list,
+        mongo_db=mongo_db,
         metadata={},
     )
     # Set return_url and display metadata after submit — record.id is stable.
@@ -183,6 +249,7 @@ async def run_support_bundle(
     record.metadata["log_days"] = log_days
     record.metadata["tier"] = active_tier
     record.metadata["asset_count"] = asset_count
+    record.metadata["mongo_count"] = len(mongo_list)
 
     # Redirect to the dedicated support bundle progress/result page, not the
     # generic job stream — the support bundle page has purpose-built UX.

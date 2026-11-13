@@ -742,6 +742,41 @@
           </div>
         </div>
 
+        {# ── MongoDB collections (optional; Extended only) ───────── #}
+        {% if tier == 'extended' %}
+        <div class="border-t border-line pt-4">
+          <div class="text-[13px] font-semibold text-text-3 uppercase tracking-[0.07em]">
+            MongoDB collections
+            <span class="text-text-4 font-normal normal-case tracking-normal">(optional)</span>
+          </div>
+          <p class="text-[13px] text-text-4 mt-1 mb-2 m-0">
+            Export selected MongoDB collections with the server's
+            <span class="font-mono">mongodump</span> — written into the bundle under
+            <span class="font-mono">mongo/</span> as a <span class="font-mono">.tar.gz</span>
+            you can restore with <span class="font-mono">mongorestore</span>.
+          </p>
+          {% if not mongo_configured %}
+          <p class="text-[13px] text-text-4 m-0 italic">
+            MongoDB isn't configured for <span class="font-mono">{{ active_env or 'this environment' }}</span>, so there's nothing to export.
+          </p>
+          {% elif not mongo_available %}
+          <p class="text-[13px] text-warn m-0 italic">
+            <span class="font-mono">mongodump</span> isn't installed on this server. Install the
+            MongoDB Database Tools to enable this export.
+          </p>
+          {% else %}
+          <input type="hidden" name="mongo_collections" id="sbmc-input">
+          <div class="flex items-center gap-3">
+            <button type="button" class="btn" id="sbmc-open">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+              <span data-label>Select collections</span>
+            </button>
+            <span class="chip text-[13px]" id="sbmc-chip" style="display:none;"><span id="sbmc-chip-count">0</span>&nbsp;selected</span>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
         <div class="pt-1">
           <button class="btn primary" type="submit" data-loading-label="Collecting…">Collect bundle</button>
         </div>
@@ -791,6 +826,13 @@
           <span class="chip text-[12px]">Extended</span>
         </div>
         <div class="text-[13px] text-text-3">OS version, memory, disk, CPU, and uptime</div>
+      </div>
+      <div>
+        <div class="flex items-center gap-1.5 mb-1">
+          <span class="font-semibold text-text text-[14px]">MongoDB collections</span>
+          <span class="chip text-[12px]">optional</span>
+        </div>
+        <div class="text-[13px] text-text-3">Collections you pick, dumped with the server's <code class="font-mono">mongodump</code> into <code class="font-mono">mongo/</code></div>
       </div>
       {% else %}
       <div class="text-[13px] text-text-4 italic border-t border-line pt-3">
@@ -847,6 +889,159 @@
   </div>
 </div>
 
+{# ── MongoDB collection picker overlay (vanilla JS, CSP-safe) ──── #}
+{% if tier == 'extended' and mongo_configured and mongo_available %}
+<div class="sbap-overlay" id="sbmc-overlay" aria-hidden="true">
+  <div class="sbap-panel">
+    <div class="sbap-head">
+      <div class="sbap-head-row">
+        <div style="flex:1">
+          <h3 class="sbap-title">Select MongoDB collections</h3>
+          <p class="sbap-subtitle">Dumped with the server's <code style="font-family:var(--mono)">mongodump</code> into <code style="font-family:var(--mono)">mongo/</code> in the bundle ZIP.</p>
+        </div>
+        <button type="button" class="sbap-x" id="sbmc-close" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="sbap-toolbar">
+      <div class="sbap-srch">
+        <span class="sbap-mg" aria-hidden="true">⌕</span>
+        <input type="text" id="sbmc-search" autocomplete="off" spellcheck="false" placeholder="Filter collections…">
+      </div>
+    </div>
+    <div class="sbap-list" id="sbmc-list"></div>
+    <div class="sbap-foot">
+      <div class="sbap-pager"><span class="sbap-pginfo" id="sbmc-pageinfo"></span></div>
+      <div class="sbap-foot-r">
+        <span class="sbap-countpill" id="sbmc-count">0</span>
+        <span class="sbap-sel-lbl">selected</span>
+        <button type="button" class="sbap-linkbtn" id="sbmc-clear">Clear</button>
+        <button type="button" class="btn primary" id="sbmc-done">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var openBtn = document.getElementById('sbmc-open');
+  var overlay = document.getElementById('sbmc-overlay');
+  var input   = document.getElementById('sbmc-input');
+  if (!openBtn || !overlay || !input) return;
+
+  var panel    = overlay.querySelector('.sbap-panel');
+  var listEl   = document.getElementById('sbmc-list');
+  var searchEl = document.getElementById('sbmc-search');
+  var all = [];               // [{ name, size_bytes, doc_count }]
+  var sel = {};               // { name: true }
+  var loaded = false, loading = false, error = null, search = '';
+  function ANI() { return (typeof window.anime === 'function') ? window.anime : null; }
+  function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : String(s)); return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+  function selCount() { return Object.keys(sel).length; }
+  function fmtSize(n) {
+    // Uncompressed BSON data-size estimate; '—' when stats weren't available.
+    if (n == null || isNaN(n)) return '—';
+    if (n < 1024) return n + ' B';
+    var u = ['KB', 'MB', 'GB', 'TB'], i = -1, v = n;
+    do { v /= 1024; i++; } while (v >= 1024 && i < u.length - 1);
+    return v.toFixed(1) + ' ' + u[i];
+  }
+
+  function syncInput() {
+    var names = Object.keys(sel);
+    input.value = names.length ? JSON.stringify(names) : '';
+    var c = names.length;
+    var chip = document.getElementById('sbmc-chip'); if (chip) chip.style.display = c ? '' : 'none';
+    var cc = document.getElementById('sbmc-chip-count'); if (cc) cc.textContent = c;
+    var lbl = openBtn.querySelector('[data-label]'); if (lbl) lbl.textContent = c ? 'Edit selection (' + c + ')' : 'Select collections';
+  }
+
+  function filtered() {
+    if (!search) return all;
+    var q = search.toLowerCase();
+    return all.filter(function (c) { return c.name.toLowerCase().indexOf(q) !== -1; });
+  }
+
+  function renderList() {
+    if (!listEl) return;
+    if (loading) { listEl.innerHTML = '<div class="sbap-empty">Loading…</div>'; return; }
+    if (error) { listEl.innerHTML = '<div class="sbap-empty">⚠ Couldn’t list collections.<br><span style="font-size:13px;color:var(--text-4)">' + esc(error) + '</span></div>'; return; }
+    var rows = filtered();
+    if (!rows.length) { listEl.innerHTML = '<div class="sbap-empty">' + (all.length ? 'No matches.' : 'No collections found.') + '</div>'; return; }
+    listEl.innerHTML = rows.map(function (c) {
+      var n = c.name;
+      return '<div class="sbap-row' + (sel[n] ? ' is-sel' : '') + '" data-name="' + esc(n) + '">' +
+        '<span class="sbap-cbx"></span><span class="sbap-rowname">' + esc(n) + '</span>' +
+        '<span class="sbap-rowmeta">' + esc(fmtSize(c.size_bytes)) + '</span></div>';
+    }).join('');
+  }
+
+  function renderFoot() {
+    var cnt = document.getElementById('sbmc-count'); if (cnt) cnt.textContent = selCount();
+    var pi = document.getElementById('sbmc-pageinfo');
+    if (pi) pi.textContent = loading ? 'Loading…' : (all.length ? (filtered().length + ' of ' + all.length) : '');
+  }
+
+  function renderAll() { renderList(); renderFoot(); }
+
+  function load() {
+    loading = true; error = null; renderAll();
+    fetch('/support-bundle/mongo-collections', { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+      .then(function (r) {
+        if (r.ok) return r.json();
+        return r.text().then(function (t) { var m = 'HTTP ' + r.status; try { var j = JSON.parse(t); if (j && j.detail) m = j.detail; } catch (e) {} throw new Error(m); });
+      })
+      .then(function (d) { all = (d && d.collections) || []; loaded = true; loading = false; renderAll(); })
+      .catch(function (err) { all = []; loading = false; error = (err && err.message) ? err.message : String(err); renderAll(); });
+  }
+
+  if (listEl) listEl.addEventListener('click', function (e) {
+    var row = e.target.closest('.sbap-row'); if (!row) return;
+    var name = row.getAttribute('data-name'); if (name == null) return;
+    var a = ANI();
+    if (sel[name]) { delete sel[name]; row.classList.remove('is-sel'); }
+    else { sel[name] = true; row.classList.add('is-sel'); if (a) a({ targets: row.querySelector('.sbap-cbx'), scale: [0.6, 1], duration: 300, easing: 'easeOutBack' }); }
+    syncInput(); renderFoot();
+    var cnt = document.getElementById('sbmc-count'); if (cnt && a) a({ targets: cnt, scale: [1.3, 1], duration: 320, easing: 'easeOutBack' });
+  });
+
+  function openPicker() {
+    overlay.style.display = 'flex';
+    var a = ANI();
+    if (a && panel) {
+      a.set(overlay, { opacity: 0 }); a.set(panel, { opacity: 0, scale: 0.965, translateY: 12 });
+      a({ targets: overlay, opacity: 1, duration: 180, easing: 'easeOutQuad' });
+      a({ targets: panel, opacity: 1, scale: 1, translateY: 0, duration: 420, easing: 'easeOutExpo' });
+    }
+    if (!loaded && !loading) load(); else renderAll();
+    if (searchEl) setTimeout(function () { searchEl.focus(); }, 140);
+  }
+  function closePicker() {
+    var a = ANI();
+    if (a && panel) {
+      a({ targets: panel, opacity: 0, scale: 0.97, translateY: 8, duration: 160, easing: 'easeInQuad' });
+      a({ targets: overlay, opacity: 0, duration: 180, easing: 'linear', complete: function () { overlay.style.display = 'none'; } });
+    } else { overlay.style.display = 'none'; }
+  }
+
+  openBtn.addEventListener('click', openPicker);
+  var b;
+  b = document.getElementById('sbmc-close'); if (b) b.addEventListener('click', closePicker);
+  b = document.getElementById('sbmc-done');  if (b) b.addEventListener('click', closePicker);
+  b = document.getElementById('sbmc-clear'); if (b) b.addEventListener('click', function () {
+    sel = {};
+    if (listEl) listEl.querySelectorAll('.sbap-row.is-sel').forEach(function (r) { r.classList.remove('is-sel'); });
+    syncInput(); renderFoot();
+  });
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closePicker(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && overlay.style.display === 'flex') closePicker(); });
+  if (searchEl) {
+    searchEl.addEventListener('input', function (e) { search = e.target.value; renderAll(); });
+    searchEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+  }
+  syncInput();
+}());
+</script>
+{% endif %}
+
 <script src="{{ url_for('static', path='js/anime.min.js') }}?v={{ asset_version }}"></script>
 <script type="application/json" id="sbap-types">{{ asset_types | tojson }}</script>
 <script nonce="{{ csp_nonce }}">
@@ -883,7 +1078,7 @@
   var animateNext = false;  // stagger rows on navigation, not on every keystroke
   function ANI() { return (typeof window.anime === 'function') ? window.anime : null; }  // bundled anime.js
 
-  function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : String(s)); return d.innerHTML; }
+  function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : String(s)); return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function cur() { return tabs[active] || { items: [], total: 0, skip: 0, search: '', loading: false }; }
   function cartCount() { var n = 0; for (var t in cart) n += Object.keys(cart[t]).length; return n; }
   function cartCountFor(t) { return cart[t] ? Object.keys(cart[t]).length : 0; }

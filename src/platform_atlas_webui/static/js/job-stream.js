@@ -364,12 +364,14 @@
     var dot = document.createElement('span'); dot.className = 'pf-dot';
     var name = document.createElement('span'); name.className = 'pf-name';
     name.textContent = data.name || payload.message || '';
+    name.title = name.textContent;
     var badge = document.createElement('span'); badge.className = 'pf-badge';
     badge.textContent = status.toUpperCase();
     row.appendChild(dot); row.appendChild(name); row.appendChild(badge);
     if (data.message && data.message !== data.name) {
       var msg = document.createElement('span'); msg.className = 'pf-msg';
       msg.textContent = data.message;
+      msg.title = data.message;
       row.appendChild(msg);
     }
     pfList.appendChild(row);

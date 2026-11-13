@@ -8,23 +8,112 @@
 {% set tier_label = session.tier | capitalize %}
 {% set _tlk = session.tier_lock | default({}) %}
 {% set _locked = _tlk.locked %}
+{% set _agg_ok = session.tier not in ('standard', 'saas') %}
 
 {% call page_header(session.name,
     subtitle=(('<b>' ~ session.environment ~ '</b> environment · ') if session.environment else '') ~ '<b>' ~ tier_label ~ '</b> tier' ~ ((' · ruleset <b>' ~ session.ruleset_id ~ '</b>' ~ (' <small class="text-text-3">(' ~ session.ruleset_profile ~ ')</small>' if session.ruleset_profile else '')) if session.ruleset_id else '')) %}
   {% if active_job %}
     <span class="chip run"><span class="dot"></span>Audit running…</span>
-  {% elif all_done %}
-    <a class="btn primary" href="/reports/{{ session.name }}" target="_blank" rel="noopener">View report ↗</a>
-  {% elif not _locked %}
-    <form id="hero-run-all" action="/sessions/{{ session.name }}/run/all" method="post"
-          class="flex flex-col items-end gap-1.5">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="btn primary" type="submit">Run full pipeline</button>
-    </form>
-  {% else %}
+  {% elif _locked %}
     {# Tier-locked + incomplete shouldn't actually reach this page (route
        redirects view_blocked sessions away) — but be defensive. #}
     <a class="btn" href="/tier" title="{{ _tlk.fix }}">Switch tier →</a>
+  {% else %}
+    {% if all_done %}
+      <a class="btn primary" href="/reports/{{ session.name }}" target="_blank" rel="noopener">View report ↗</a>
+    {% endif %}
+    {# Run full audit is the default way to run a session. Capture-time options
+       (aggregation pipelines) live in a modal; the dialog sits inside this form
+       so its inputs submit natively. Per-stage re-runs are tucked into the
+       Advanced menu. #}
+    <form id="hero-run-all" action="/sessions/{{ session.name }}/run/all" method="post"
+          class="inline-flex items-center gap-1.5">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn{% if not all_done %} primary{% endif %}" type="submit">
+        {% if all_done %}Re-run full audit{% else %}Run full audit{% endif %}
+      </button>
+      {% if _agg_ok %}
+        <button class="btn" type="button" id="run-options-btn" aria-haspopup="dialog"
+                aria-label="Audit options" title="Audit options">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+          Options
+        </button>
+        <dialog id="run-options" class="run-dialog" aria-labelledby="run-options-title">
+          <div class="run-dialog-head">
+            <div>
+              <h3 id="run-options-title">Audit options</h3>
+              <p>Choose what the capture stage collects. Everything runs by default.</p>
+            </div>
+            <button type="button" class="run-dialog-x" data-run-close aria-label="Close">×</button>
+          </div>
+          <div class="run-dialog-body">
+            <label class="inline-flex items-center gap-2 text-[14px] text-text-2 cursor-pointer">
+              <input type="checkbox" id="agg-capture" checked class="m-0">
+              <span>Run MongoDB aggregation pipelines after capture</span>
+            </label>
+            <div id="ps-capture" class="w-full mt-3 px-3 py-2.5 bg-bg border border-line rounded-md">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[12px] font-semibold uppercase tracking-wide text-text-3">Pipelines to run</span>
+                <span>
+                  <button type="button" class="ps-all-btn text-[13px] bg-transparent border-0 text-accent cursor-pointer px-1" data-target="ps-capture">All</button>
+                  <span class="text-text-4 text-[12px]">·</span>
+                  <button type="button" class="ps-none-btn text-[13px] bg-transparent border-0 text-accent cursor-pointer px-1" data-target="ps-capture">None</button>
+                </span>
+              </div>
+              {% if available_pipelines %}
+                {% for p in available_pipelines %}
+                <label class="flex items-start gap-1.5 py-1 cursor-pointer border-t border-line text-[14px]">
+                  <input type="checkbox" name="pipeline_names" value="{{ p.name }}" checked class="mt-0.5 shrink-0">
+                  <span>
+                    <span class="font-medium text-text">{{ p.name }}</span>
+                    {% if p.collection %}
+                      <code class="text-[12px] text-text-4 bg-surface-2 px-1 py-px rounded ml-1 font-mono">{{ p.collection }}</code>
+                    {% endif %}
+                    {% if p.desc %}<span class="block text-[13px] text-text-3 mt-0.5">{{ p.desc }}</span>{% endif %}
+                  </span>
+                </label>
+                {% endfor %}
+              {% else %}
+                <p class="text-[13px] text-text-4 m-0 italic">
+                  No pipeline files found in <code class="font-mono">~/.atlas/pipelines/</code> — place <code class="font-mono">.json</code> files there to enable selection.
+                </p>
+              {% endif %}
+            </div>
+          </div>
+          <div class="run-dialog-foot">
+            <button type="button" class="btn" data-run-close>Done</button>
+            <button type="submit" class="btn primary">Run full audit</button>
+          </div>
+        </dialog>
+      {% endif %}
+    </form>
+
+    <details class="adv-menu" id="adv-menu">
+      <summary class="btn" aria-label="Advanced run options" title="Advanced">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+        Advanced
+      </summary>
+      <div class="adv-panel" role="menu">
+        <p class="adv-note">Most audits never need this. Re-running a single stage can leave later stages out of date.</p>
+        {% for stage, label, hint, ok, needs, confirm in [
+          ('capture', 'Re-run capture only', 'Re-collects data from the deployment.', true, '', true),
+          ('validate', 'Re-run validation only', 'Re-checks the existing capture, for example after a ruleset or profile change.', session.capture_completed, 'Run capture first', false),
+          ('report', 'Re-generate report only', 'Rebuilds the report from existing validation results.', session.validation_completed, 'Run validation first', false),
+        ] %}
+          <form action="/sessions/{{ session.name }}/run/{{ stage }}" method="post"
+                {% if confirm %}data-confirm-action data-confirm-title="Re-run capture only?"
+                data-confirm-message="This re-collects data and replaces the existing capture. Validation and the report will be out of date until you run them again."
+                data-confirm-label="Re-run capture"{% endif %}>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" role="menuitem" class="adv-item"
+                    {% if not ok %}disabled title="{{ needs }}"{% endif %}>
+              <b>{{ label }}</b>
+              <span>{{ hint }}</span>
+            </button>
+          </form>
+        {% endfor %}
+      </div>
+    </details>
   {% endif %}
 {% endcall %}
 
@@ -118,7 +207,7 @@
   <section class="card">
     <div class="card-head">
       <h3>Audit pipeline</h3>
-      <span class="sub">3 steps to a complete report</span>
+      <span class="sub">Run full audit does all three in order</span>
     </div>
 
     {# ── Step macro: bullet + connector ─────────────────────── #}
@@ -215,15 +304,15 @@
                 <a href="{{ _arch_href }}" class="text-accent hover:text-accent-hover font-semibold" style="text-decoration:underline;text-underline-offset:2px;">Fill it out →</a>
               </div>
               {% elif arch_summary.state == 'in_progress' %}
-              <div class="font-semibold text-text mb-0.5">Architecture form in progress</div>
+              <div class="font-semibold text-text mb-0.5">Architecture form not fully completed{% if arch_summary.sections_total %} ({{ arch_summary.sections_done }} of {{ arch_summary.sections_total }} sections){% endif %}</div>
               <div class="text-text-2">
-                The more you add, the richer your report's Architecture Overview.
+                Capture still runs, and the report will flag anything left unanswered. Every question has an Unknown / None option.
                 <a href="{{ _arch_href }}" class="text-accent hover:text-accent-hover font-semibold" style="text-decoration:underline;text-underline-offset:2px;">Continue →</a>
               </div>
               {% else %}
               <div class="font-semibold text-text mb-0.5">Architecture details not added yet</div>
               <div class="text-text-2">
-                Filling out the Architecture form gives your report a fuller Architecture Overview — optional, but it makes the delivered report far more useful.
+                Filling out the Architecture form gives your report a fuller Architecture Overview. Capture still runs without it, and the report will note that the form was not completed.
                 <a href="{{ _arch_href }}" class="text-accent hover:text-accent-hover font-semibold" style="text-decoration:underline;text-underline-offset:2px;">Open the Architecture form →</a>
               </div>
               {% endif %}
@@ -241,62 +330,6 @@
             </div>
           </div>
           {% endif %}
-          <form action="/sessions/{{ session.name }}/run/capture" method="post" class="flex flex-col items-start gap-2">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            {% set _agg_ok = session.tier not in ('standard', 'saas') %}
-            <label class="inline-flex items-center gap-2 text-[14px] text-text-2
-                          {% if not _agg_ok %}cursor-not-allowed{% else %}cursor-pointer{% endif %}">
-              <input type="checkbox" name="run_aggregations" value="1" id="agg-capture"
-                     {% if _agg_ok %}checked{% else %}disabled{% endif %} class="m-0">
-              <span>
-                Run MongoDB aggregation pipelines after capture
-                {% if not _agg_ok %}
-                  <span class="text-text-3 italic">— Extended tier only</span>
-                {% else %}
-                  <span class="text-text-3">(default on; uncheck to skip)</span>
-                {% endif %}
-              </span>
-            </label>
-            {% if _agg_ok %}
-            <div id="ps-capture" class="hidden w-full px-3 py-2.5 bg-bg border border-line rounded-md">
-              <div class="flex items-center justify-between mb-2">
-                <span class="text-[12px] font-semibold uppercase tracking-wide text-text-3">Pipelines to run</span>
-                <span>
-                  <button type="button" class="ps-all-btn text-[13px] bg-transparent border-0 text-accent cursor-pointer px-1" data-target="ps-capture">All</button>
-                  <span class="text-text-4 text-[12px]">·</span>
-                  <button type="button" class="ps-none-btn text-[13px] bg-transparent border-0 text-accent cursor-pointer px-1" data-target="ps-capture">None</button>
-                </span>
-              </div>
-              {% if available_pipelines %}
-                {% for p in available_pipelines %}
-                <label class="flex items-start gap-1.5 py-1 cursor-pointer border-t border-line text-[14px]">
-                  <input type="checkbox" name="pipeline_names" value="{{ p.name }}" checked class="mt-0.5 shrink-0">
-                  <span>
-                    <span class="font-medium text-text">{{ p.name }}</span>
-                    {% if p.collection %}
-                      <code class="text-[12px] text-text-4 bg-surface-2 px-1 py-px rounded ml-1 font-mono">{{ p.collection }}</code>
-                    {% endif %}
-                    {% if p.desc %}<span class="block text-[13px] text-text-3 mt-0.5">{{ p.desc }}</span>{% endif %}
-                  </span>
-                </label>
-                {% endfor %}
-              {% else %}
-                <p class="text-[13px] text-text-4 m-0 italic">
-                  No pipeline files found in <code class="font-mono">~/.atlas/pipelines/</code> — place <code class="font-mono">.json</code> files there to enable selection.
-                </p>
-              {% endif %}
-            </div>
-            {% endif %}
-            {# Drop the primary styling when credentials are missing — the
-               warning above is the recommended next action, so the run button
-               is de-emphasized (still functional) until creds are stored. #}
-            <button class="btn sm{% if not session.capture_completed and not _locked and not missing_creds %} primary{% endif %}"
-                    type="submit"
-                    {% if _locked %}disabled title="{{ _tlk.reason }} {{ _tlk.fix }}"{% endif %}>
-              {% if session.capture_completed %}Re-capture{% else %}Run capture{% endif %}
-            </button>
-          </form>
-
           {# Log capture failures — surface a retry-with-custom-path UI for each
              failed log module so the user can recover without re-running the
              whole pipeline. Populated from the capture JSON's
@@ -381,15 +414,6 @@
               out of {{ session.total_rules }} rules.
             {% endif %}
           </p>
-          <form action="/sessions/{{ session.name }}/run/validate" method="post" class="inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="btn sm{% if session.capture_completed and not session.validation_completed and not _locked %} primary{% endif %}"
-                    type="submit"
-                    {% if _locked %}disabled title="{{ _tlk.reason }} {{ _tlk.fix }}"
-                    {% elif not session.capture_completed %}disabled title="Run capture first"{% endif %}>
-              {% if session.validation_completed %}Re-validate{% else %}Run validate{% endif %}
-            </button>
-          </form>
         </div>
       </div>
     </div>
@@ -413,15 +437,6 @@
             Renders the compliance report, operational metrics, and architecture overview as HTML files you can share with stakeholders.
           </p>
           <div class="flex gap-2 items-center flex-wrap">
-            <form action="/sessions/{{ session.name }}/run/report" method="post" class="inline">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="btn sm{% if session.validation_completed and not session.report_completed and not _locked %} primary{% endif %}"
-                      type="submit"
-                      {% if _locked %}disabled title="{{ _tlk.reason }} {{ _tlk.fix }}"
-                      {% elif not session.validation_completed %}disabled title="Run validate first"{% endif %}>
-                {% if session.report_completed %}Re-generate report{% else %}Generate report{% endif %}
-              </button>
-            </form>
             {% if session.report_file %}
               <a class="btn sm primary" href="/reports/{{ session.name }}" target="_blank" rel="noopener">Open report ↗</a>
               <a class="btn sm" href="/sessions/{{ session.name }}/export/json" download="{{ session.name }}_report.json" title="Download a JSON version of the compliance results">Export JSON ↓</a>
@@ -512,55 +527,83 @@
   </div>
 </div>
 
+<style nonce="{{ csp_nonce }}">
+  .run-dialog { border:1px solid var(--line); border-radius:14px; background:var(--surface); color:var(--text);
+    padding:0; width:min(520px, calc(100vw - 32px)); max-height:min(640px, calc(100vh - 48px));
+    box-shadow:0 24px 60px rgba(0,0,0,.35); }
+  .run-dialog[open] { animation:run-dialog-in .18s ease-out; display:flex; flex-direction:column; }
+  .run-dialog::backdrop { background:rgba(8,12,22,.55); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+  @keyframes run-dialog-in { from { opacity:0; transform:translateY(-6px) scale(.98); } }
+  .run-dialog-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+    padding:18px 20px 12px; border-bottom:1px solid var(--line); }
+  .run-dialog-head h3 { margin:0; font-size:17px; font-weight:600; }
+  .run-dialog-head p { margin:3px 0 0; font-size:13.5px; color:var(--text-3); }
+  .run-dialog-x { border:0; background:none; color:var(--text-3); font-size:22px; line-height:1; cursor:pointer; padding:0 4px; }
+  .run-dialog-x:hover { color:var(--text); }
+  .run-dialog-body { padding:16px 20px; overflow:auto; }
+  .run-dialog-foot { display:flex; justify-content:flex-end; gap:8px; padding:12px 20px 16px; border-top:1px solid var(--line); }
+  .adv-menu { position:relative; }
+  .adv-menu > summary { list-style:none; cursor:pointer; }
+  .adv-menu > summary::-webkit-details-marker { display:none; }
+  .adv-panel { position:absolute; right:0; top:calc(100% + 6px); z-index:40; width:min(340px, calc(100vw - 32px));
+    padding:8px; border:1px solid var(--line); border-radius:12px; background:var(--surface);
+    box-shadow:0 16px 40px rgba(0,0,0,.3); display:grid; gap:2px; }
+  .adv-note { margin:2px 8px 8px; font-size:12.5px; color:var(--text-3); }
+  .adv-item { display:block; width:100%; text-align:left; border:0; background:none; color:var(--text);
+    padding:9px 10px; border-radius:8px; cursor:pointer; font:inherit; }
+  .adv-item b { display:block; font-size:14px; font-weight:600; }
+  .adv-item span { display:block; font-size:12.5px; color:var(--text-3); margin-top:1px; }
+  .adv-item:hover:not([disabled]) { background:var(--surface-2); }
+  .adv-item[disabled] { opacity:.45; cursor:not-allowed; }
+  @media (prefers-reduced-motion: reduce) { .run-dialog[open] { animation:none; } }
+</style>
 <script nonce="{{ csp_nonce }}">
 (function () {
   'use strict';
 
-  var pairs = [
-    { chk: document.getElementById('agg-capture'), panel: document.getElementById('ps-capture') },
-  ];
-  pairs.forEach(function (pair) {
-    if (!pair.chk || !pair.panel) return;
-    function sync() { pair.panel.style.display = pair.chk.checked ? 'block' : 'none'; }
-    pair.chk.addEventListener('change', sync);
-    sync();
-  });
+  var dlg = document.getElementById('run-options');
+  var openBtn = document.getElementById('run-options-btn');
+  var aggChk = document.getElementById('agg-capture');
+  var panel = document.getElementById('ps-capture');
 
-  document.querySelectorAll('.ps-all-btn').forEach(function (btn) {
+  if (dlg && openBtn) {
+    openBtn.addEventListener('click', function () { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); });
+    dlg.querySelectorAll('[data-run-close]').forEach(function (b) {
+      b.addEventListener('click', function () { dlg.close(); });
+    });
+    // Click on the backdrop (the dialog element itself) closes it.
+    dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+  }
+
+  function syncPanel() { if (aggChk && panel) panel.style.display = aggChk.checked ? 'block' : 'none'; }
+  if (aggChk) { aggChk.addEventListener('change', syncPanel); syncPanel(); }
+
+  document.querySelectorAll('.ps-all-btn, .ps-none-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var panel = document.getElementById(btn.dataset.target);
-      if (panel) panel.querySelectorAll('input[type="checkbox"]').forEach(function (cb) { cb.checked = true; });
+      var target = document.getElementById(btn.dataset.target);
+      var on = btn.classList.contains('ps-all-btn');
+      if (target) target.querySelectorAll('input[type="checkbox"]').forEach(function (cb) { cb.checked = on; });
     });
   });
-  document.querySelectorAll('.ps-none-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var panel = document.getElementById(btn.dataset.target);
-      if (panel) panel.querySelectorAll('input[type="checkbox"]').forEach(function (cb) { cb.checked = false; });
-    });
-  });
 
+  // The pipeline checkboxes submit natively (the dialog lives inside the form).
+  // Only the aggregation on/off flag needs mirroring: an unchecked box sends
+  // nothing, which the route would read as "JS didn't run" and default to on.
   var heroForm = document.getElementById('hero-run-all');
-  if (heroForm) {
+  if (heroForm && aggChk) {
     heroForm.addEventListener('submit', function () {
       heroForm.querySelectorAll('[data-mirrored="1"]').forEach(function (n) { n.remove(); });
-      function addHidden(name, value) {
-        var i = document.createElement('input');
-        i.type = 'hidden'; i.name = name; i.value = value; i.dataset.mirrored = '1';
-        heroForm.appendChild(i);
-      }
-      var aggChk = document.getElementById('agg-capture');
-      if (aggChk && !aggChk.disabled) {
-        addHidden('run_aggregations', aggChk.checked ? '1' : '0');
-        if (aggChk.checked) {
-          var panel = document.getElementById('ps-capture');
-          if (panel) {
-            panel.querySelectorAll('input[name="pipeline_names"]:checked').forEach(function (cb) {
-              addHidden('pipeline_names', cb.value);
-            });
-          }
-        }
-      }
+      var i = document.createElement('input');
+      i.type = 'hidden'; i.name = 'run_aggregations'; i.value = aggChk.checked ? '1' : '0'; i.dataset.mirrored = '1';
+      heroForm.appendChild(i);
     });
+  }
+
+  // Close the Advanced menu on outside click or Escape.
+  var adv = document.getElementById('adv-menu');
+  if (adv) {
+    document.addEventListener('click', function (e) { if (adv.open && !adv.contains(e.target)) adv.open = false; });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') adv.open = false; });
   }
 }());
 </script>

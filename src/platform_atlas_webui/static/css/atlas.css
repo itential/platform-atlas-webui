@@ -1723,8 +1723,12 @@ body { zoom: var(--ui-scale, 1); }
 }
 .pf-phase:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
 .pf-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 0;
+  /* One grid for every row so the columns line up: dot | check name | message | status.
+     Long names and messages truncate (the full text is in the title attribute). */
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1.3fr) minmax(0, 1.7fr) 62px;
+  align-items: center; column-gap: 12px;
+  padding: 7px 0;
   font-family: var(--mono);
   font-size: 14px;
   color: var(--text);
@@ -1743,32 +1747,40 @@ body { zoom: var(--ui-scale, 1); }
 .pf-row.fail .pf-dot { background: var(--bad); }
 .pf-row.skip .pf-dot { background: var(--text-4); }
 .pf-row.warn .pf-dot { background: var(--warn); }
-.pf-row .pf-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pf-row .pf-dot { grid-column: 1; }
+.pf-row .pf-name { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-row .pf-badge {
-  margin-left: auto;
+  grid-column: 4; grid-row: 1;
+  justify-self: end; width: 100%; text-align: center; box-sizing: border-box;
   font-family: var(--ui);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  padding: 1px 8px;
+  padding: 1px 0;
   border-radius: 999px;
   border: 1px solid;
   text-transform: uppercase;
-  flex-shrink: 0;
 }
 .pf-row.pass .pf-badge { color: var(--ok);  border-color: oklch(80% .14 155 / .35); background: oklch(80% .14 155 / .12); }
 .pf-row.fail .pf-badge { color: var(--bad); border-color: oklch(72% .16 25 / .35); background: oklch(72% .16 25 / .12); }
 .pf-row.skip .pf-badge { color: var(--text-3); border-color: var(--line-2); background: var(--surface-2); }
 .pf-row.warn .pf-badge { color: var(--warn); border-color: oklch(82% .13 75 / .35); background: oklch(82% .13 75 / .12); }
 .pf-row .pf-msg {
+  grid-column: 3; grid-row: 1;
   color: var(--text-3); font-size: 13px;
-  margin-left: 4px;
   font-family: var(--ui);
-  flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Failures and warnings are the rows worth reading: let their message wrap instead of truncating. */
+.pf-row.fail .pf-msg, .pf-row.warn .pf-msg { white-space: normal; line-height: 1.4; }
+@media (max-width: 760px) {
+  /* Narrow: the message drops under the name instead of fighting it for width. */
+  .pf-row { grid-template-columns: 8px minmax(0, 1fr) 62px; row-gap: 2px; }
+  .pf-row .pf-badge { grid-column: 3; }
+  .pf-row .pf-msg { grid-column: 2 / 4; grid-row: 2; white-space: normal; }
 }
 .pf-current {
   position: relative;
@@ -1840,7 +1852,7 @@ body { zoom: var(--ui-scale, 1); }
   font-family: var(--ui);
   font-size: 13px;
   line-height: 1.5;
-  padding: 1px 0 8px 17px;
+  padding: 0 0 9px 20px;   /* lines up under the check name (dot column + gap) */
   color: var(--text-3);
 }
 .pf-row.fail + .pf-detail { color: oklch(72% .12 25); }

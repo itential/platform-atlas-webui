@@ -1,0 +1,26 @@
+/* Hub tabs (3.1): the sidebar has one link per area; the pages inside an area
+   are tabs above the content. Colors come from theme tokens only. */
+.hub-tabs {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  margin: 0 0 18px; padding-bottom: 0; border-bottom: 1px solid var(--line);
+}
+.hub-tabs__title {
+  font: 600 11px var(--mono, ui-monospace, monospace); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-3); margin-right: 12px; padding: 0 2px;
+}
+.hub-tab {
+  position: relative; display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 12px; margin-bottom: -1px; font-size: 14px; font-weight: 600;
+  color: var(--text-3); text-decoration: none; border-bottom: 2px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+.hub-tab:hover { color: var(--text); }
+.hub-tab.is-active { color: var(--text); border-bottom-color: var(--accent); }
+.hub-tab__badge {
+  min-width: 18px; padding: 0 6px; border-radius: 99px; text-align: center;
+  font: 600 11px/18px var(--mono, ui-monospace, monospace); color: var(--accent-ink); background: var(--accent);
+}
+@media (max-width: 720px) {
+  .hub-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .hub-tab, .hub-tabs__title { white-space: nowrap; }
+}

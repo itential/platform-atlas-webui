@@ -5,6 +5,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.0] - 2026-11-13
+
+Requires `platform-atlas >=3.1.0,<4.0`.
+
+### Added
+
+- **The Support Bundle can now include a MongoDB export of collections you choose.** An Extended-tier option lets you pick collections and runs the server's `mongodump` to add them to the bundle under `mongo/`; it appears only when MongoDB is configured and `mongodump` is installed.
+- **There was no single place to see whether Atlas itself was healthy.** A new Health page shows the credential store, TLS certificate, local storage, version alignment, and scheduled audits at a glance, with a "Re-check now" button; configuration problems stay on Doctor.
+- **A run owned the page it was started from, so leaving that page meant losing sight of it.** A run dock now follows you on every page with the current stage, elapsed time, and Open and Cancel buttons, and says plainly when the connection drops ("Reconnecting…") or the server restarts and stops the run.
+- **An unreachable credential store (such as Vault) broke pages one at a time.** A slim banner now appears on every page with the reason and a Retry button while you keep browsing sessions and reports, and Preflight, Health, and the error page all show the same reason and fix from the CLI.
+- **The Sessions list could only be filtered on the page you were looking at.** It now has saved views (All, In progress, Complete, Pinned, Last 7 days) with counts, search across every session, and a sort menu, all held in the URL so they survive reloads and can be shared.
+
+### Changed
+
+- **The sidebar had 18 links, which made it hard to find anything.** It now has six (Dashboard, Fleet, Audit, Configuration, Continuous, System), and the pages inside each area appear as tabs at the top of the page; every page keeps its URL and stays in the ⌘K search, and Health and Support Bundle were added to that search.
+- **The Sessions list was crowded with sessions from every environment.** It now shows only the active environment's sessions, and a small help icon in the page header explains what's hidden with links to Environments and a "show all" view for sessions that live elsewhere.
+- **Filtering, searching, sorting, paging, or starring a session reloaded the whole page.** Those actions now refresh only the session list, so they feel instant, the page keeps its place, and the search box keeps focus while you type; the Back button still steps through your filters. Switching a view, sort, or page gets a quick cue (the rows ease in and the chosen chip pops) that is skipped when you have reduced motion on.
+- **Every session name had a single-letter avatar beside it.** It's gone, which leaves more room for the name.
+- **The Sessions page repeated the active session in a banner above the list.** The banner is gone, since the highlighted row already shows which session is active.
+- **Running a session meant choosing between three per-stage buttons.** The session page now leads with "Run full audit", moves the MongoDB pipeline selection into an Options dialog, and tucks per-stage re-runs into an Advanced menu, so the steps below are status-only.
+
+### Security
+
+- **Hardened redirects and export downloads against crafted names.** Redirects that include an environment or session name now go through one same-origin URL builder that encodes the name and rejects empty, `.`, and `..` names, and an export download is now named from the file the path check approved instead of the raw request value.
+- **A MongoDB collection name containing a quote could inject script into the export picker.** The picker now escapes quotes as well as angle brackets, so a hostile collection name shows as plain text.
+
+### Fixed
+
+- **Preflight results were ragged after a run.** The status badge and message landed at a different spot on every row depending on the check name's length. Results now sit in aligned columns (name, message, status), long text is cut off with the full text on hover, and failure and warning messages wrap so you can read them.
+- **A lone green dot sat at the bottom of the collapsed sidebar.** The version line, including its dot, is now hidden when the sidebar is collapsed and returns when it is expanded.
+- **An unreachable credential store, such as Vault being down, looked like a crash on Preflight.** Preflight now shows a "Credential store unreachable" notice with Retry and Credential settings buttons, logs one warning line instead of a full traceback, and every other page answers with a themed 503 instead of a 500.
+- **The Architecture page saved sections you hadn't answered, which made the form look finished.** It now saves only what you've answered, asks for MongoDB's topology and server count, adds the Artificial Intelligence section, every question accepts Unknown, None, or N/A, and the saved file records that it was last edited in the WebUI.
+- **Reports generated from the WebUI could show an "Architecture form incomplete" banner that never cleared, and lacked real hostnames in the diagram.** The WebUI now passes the same topology and SaaS gateway choice the CLI does, so the banner and diagram match a CLI-generated report.
+- **A missing, read-only, or unconfigured credential was reported as "Credential backend unavailable".** The error page now says what actually went wrong (backend down, access refused, store not configured, secret not stored, or read-only) and answers with the matching status.
+- **A large MongoDB export was loaded into memory twice while the support bundle was built.** The dump is now streamed from disk into the bundle, so big collections no longer risk running the server out of memory.
+- **A hung credential store could slowly use up the server's worker threads.** Each status poll started another check that waited behind the stuck one, so health checks now share a single in-flight check and stop piling up.
+- **The ⌘K palette offered pages that SaaS environments can't open.** Support Bundle, Continuous Audit, Alerts, and Notifications no longer appear in the palette under SaaS, matching the sidebar.
+- **The collection picker returned a server error when the MongoDB client library wasn't installed.** It now reports MongoDB as unavailable, like the rest of the Support Bundle page.
+
 ## [3.0.0] - 2026-10-02
 
 Requires `platform-atlas >=3.0.0,<4.0`.

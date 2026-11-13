@@ -1,0 +1,286 @@
+{# Sessions list panel. Rendered inside sessions/list.html and, on its own, as the
+   response to htmx filter / sort / page / pin requests (see routes/sessions.py). #}
+{% set _total = sessions_total | default(sessions | length) %}
+{% set _aenv = sessions_active_env | default(none) %}
+<div id="sessions-panel"{% if sessions_animate %} class="sess-anim"{% endif %}>
+  {% set _page = sessions_page | default(1) %}
+  {% set _per = sessions_per_page | default(20) %}
+  {% set _pages = sessions_total_pages | default(1) %}
+  {% set _opts = sessions_per_page_options | default((20, 50, 100)) %}
+  {% set _start = ((_page - 1) * _per) + 1 if _total else 0 %}
+  {% set _end = _start + (sessions | length) - 1 if sessions else 0 %}
+
+  <section class="card overflow-hidden shadow-xs">
+    <div class="card-head flex items-center gap-3 flex-wrap">
+      <h3 class="m-0">All sessions</h3>
+      <span class="sub">
+        {% if _total %}{{ _start }}–{{ _end }} of {{ _total }}{% else %}0 total{% endif %}
+      </span>
+
+      <form method="get" action="/sessions" id="sessions-search-form" role="search" class="relative ml-auto"
+            hx-get="/sessions" hx-trigger="submit, input delay:300ms from:#sessions-q" hx-sync="this:replace" hx-target="#sessions-panel" hx-swap="outerHTML" hx-replace-url="true">
+        {% for k, v in sessions_carry.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        {% if _per != 20 %}<input type="hidden" name="per_page" value="{{ _per }}">{% endif %}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+             class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="search" id="sessions-q" name="q" value="{{ sessions_q }}" placeholder="Search sessions…" aria-label="Search sessions by name, environment or ruleset"
+               autocomplete="off" maxlength="80"
+               class="h-8 pl-8 pr-3 w-[210px] text-[14px] bg-surface-2 text-text border border-line rounded-full
+                      placeholder:text-text-3 focus:outline-none focus:border-accent focus:bg-surface transition-colors">
+      </form>
+
+      <form method="get" action="/sessions" id="sessions-sort-form" class="inline-flex items-center gap-2 text-[14px] text-text-3"
+            hx-get="/sessions" hx-trigger="change" hx-target="#sessions-panel" hx-swap="outerHTML" hx-push-url="true">
+        {% for k, v in sessions_carry.items() if k != 'sort' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        {% if sessions_q %}<input type="hidden" name="q" value="{{ sessions_q }}">{% endif %}
+        {% if _per != 20 %}<input type="hidden" name="per_page" value="{{ _per }}">{% endif %}
+        <label for="sessions-sort" class="whitespace-nowrap">Sort</label>
+        <select id="sessions-sort" name="sort" 
+                class="bg-surface-2 text-text border border-line rounded-md px-2 py-0.5 font-inherit">
+          {% for key, label in sessions_sorts %}<option value="{{ key }}"{% if key == sessions_sort %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </form>
+
+      <form method="get" action="/sessions" id="sessions-perpage-form"
+            class="inline-flex items-center gap-2 text-[14px] text-text-3"
+            hx-get="/sessions" hx-trigger="change" hx-target="#sessions-panel" hx-swap="outerHTML" hx-push-url="true">
+        <label for="sessions-perpage" class="whitespace-nowrap">Show</label>
+        <select id="sessions-perpage" name="per_page" 
+                class="bg-surface-2 text-text border border-line rounded-md px-2 py-0.5 font-inherit">
+          {% for opt in _opts %}
+            <option value="{{ opt }}"{% if opt == _per %} selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+        <span>per page</span>
+        {% for k, v in sessions_carry.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+        {% if sessions_q %}<input type="hidden" name="q" value="{{ sessions_q }}">{% endif %}
+      </form>
+    </div>
+
+    {# Saved views — plain links, so the current view lives in the URL and survives
+       reload, back/forward and sharing. #}
+    <nav class="flex items-center gap-2 flex-wrap px-4 py-2.5 border-b border-line" aria-label="Session views">
+      {% for v in sessions_views %}
+        <a href="{{ v.href }}" hx-get="{{ v.href }}" hx-target="#sessions-panel" hx-swap="outerHTML" hx-push-url="true" class="sess-view{% if v.active %} is-active{% endif %}"{% if v.active %} aria-current="true"{% endif %}>
+          {{ v.label }}<span class="sess-view__n">{{ v.count }}</span>
+        </a>
+      {% endfor %}
+      {% if sessions_filtered %}
+        <a href="/sessions{% if sessions_show_all_envs %}?env=all{% endif %}" hx-get="/sessions{% if sessions_show_all_envs %}?env=all{% endif %}" hx-target="#sessions-panel" hx-swap="outerHTML" hx-push-url="true" class="text-[13px] text-accent hover:text-accent-hover ml-auto">Clear filters</a>
+      {% endif %}
+    </nav>
+
+    {% if not sessions %}
+    <div class="px-4 py-12 text-center text-text-3 text-[15px]">
+      <strong class="block text-text text-[16px] mb-1">No sessions match</strong>
+      {% if sessions_q %}Nothing matches "{{ sessions_q }}"{% if sessions_view != 'all' %} in this view{% endif %}.{% else %}No sessions in this view.{% endif %}
+      <div class="mt-3"><a class="btn sm" href="/sessions{% if sessions_show_all_envs %}?env=all{% endif %}" hx-get="/sessions{% if sessions_show_all_envs %}?env=all{% endif %}" hx-target="#sessions-panel" hx-swap="outerHTML" hx-push-url="true">Clear filters</a></div>
+    </div>
+    {% else %}
+    <div class="overflow-x-auto">
+      <table class="w-full border-collapse table-fixed">
+        <colgroup>
+          <col style="width:30px">
+          <col> {# Session — flexible, takes remaining space #}
+          <col style="width:136px">
+          <col style="width:96px">
+          <col style="width:132px">
+          <col style="width:210px">
+          <col style="width:90px">
+          <col style="width:104px">
+        </colgroup>
+        <thead>
+          <tr class="border-b border-line">
+            <th class="px-4 py-2"></th>
+            <th class="pr-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Session</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Environment</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Tier</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Progress</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Results</th>
+            <th class="px-3 py-2 text-left text-[13px] text-text-3 font-semibold uppercase tracking-wider">Updated</th>
+            <th class="pl-3 pr-4 py-2 text-right text-[13px] text-text-3 font-semibold uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sessions %}
+            {% set _lk = s.tier_lock | default({}) %}
+            {% if s.status == 'running' %}{% set dot_class = 'run' %}
+            {% elif s.report_completed %}{% set dot_class = 'ok' %}
+            {% elif s.fail_count and s.fail_count > 0 %}{% set dot_class = 'fail' %}
+            {% elif s.capture_completed %}{% set dot_class = 'run' %}
+            {% else %}{% set dot_class = 'idle' %}
+            {% endif %}
+
+            <tr x-data="{ pending: false }" style="--i: {{ loop.index0 }}"
+                :class="pending && 'bg-ok-soft transition-colors duration-150'"
+                class="border-b border-line last:border-b-0 transition-colors hover:bg-surface-2
+                       {% if s.is_active %}bg-accent-soft{% endif %}
+                       {% if _lk.locked %}opacity-[0.78]{% endif %}">
+
+              <td class="px-4 py-3 align-middle">
+                <span class="status-dot {{ dot_class }}"></span>
+              </td>
+
+              <td class="pr-3 py-3 align-middle min-w-0">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="min-w-0 flex items-center gap-1.5">
+                    {# Pin toggle — an htmx form that swaps just the list panel (no page reload). Gold
+                       filled star when pinned, hollow grey outline when not. #}
+                    <form action="/sessions/{{ s.name }}/pin" method="post" class="inline-flex shrink-0 m-0"
+                          hx-post="/sessions/{{ s.name }}/pin" hx-target="#sessions-panel" hx-swap="outerHTML">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button type="submit"
+                              class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-transparent border-0 cursor-pointer p-0 transition-colors
+                                     {% if s.is_pinned %}text-orange-400 hover:text-orange-300{% else %}text-text-4 hover:text-text-2{% endif %}"
+                              style="{% if s.is_pinned %}color: var(--brand-orange, #FF6633);{% endif %}"
+                              title="{% if s.is_pinned %}Unpin this session{% else %}Pin this session to the top{% endif %}"
+                              aria-label="{% if s.is_pinned %}Unpin {{ s.name }}{% else %}Pin {{ s.name }}{% endif %}">
+                        <svg width="13" height="13" viewBox="0 0 24 24"
+                             fill="{% if s.is_pinned %}currentColor{% else %}none{% endif %}"
+                             stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round" stroke-linejoin="round">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                      </button>
+                    </form>
+
+                    {% if _lk.locked %}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
+                           class="shrink-0 text-warn" title="{{ _lk.reason }} {{ _lk.fix }}"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    {% endif %}
+
+                    {% if _lk.view_blocked %}
+                      {# Tier-locked AND not complete — no <a> at all so the link doesn't tease an action that gets bounced. #}
+                      <span class="text-[15px] font-medium text-text-3 cursor-not-allowed truncate"
+                            title="{{ _lk.reason }} {{ _lk.fix }}">{{ s.name }}</span>
+                    {% else %}
+                      <a href="/sessions/{{ s.name }}" class="text-[15px] font-medium text-inherit no-underline hover:text-accent truncate">{{ s.name }}</a>
+                    {% endif %}
+                  </div>
+                </div>
+              </td>
+
+              <td class="px-3 py-3 align-middle min-w-0">
+                <div class="font-mono text-[14px] text-text-2 truncate" title="{{ s.environment or '(no environment)' }}">
+                  {{ s.environment or '(no environment)' }}
+                </div>
+              </td>
+
+              <td class="px-3 py-3 align-middle">
+                {% if s.tier == 'standard' %}
+                  <span class="chip px-1.5 py-px" style="color:var(--tier-standard); border-color:color-mix(in oklab, var(--tier-standard) 30%, transparent); background:color-mix(in oklab, var(--tier-standard) 9%, transparent);">Standard</span>
+                {% elif s.tier == 'saas' %}
+                  <span class="chip px-1.5 py-px" style="color:var(--tier-saas); border-color:color-mix(in oklab, var(--tier-saas) 30%, transparent); background:color-mix(in oklab, var(--tier-saas) 9%, transparent);">SaaS</span>
+                {% else %}
+                  <span class="chip px-1.5 py-px" style="color:var(--tier-extended); border-color:color-mix(in oklab, var(--tier-extended) 30%, transparent); background:color-mix(in oklab, var(--tier-extended) 9%, transparent);">Extended</span>
+                {% endif %}
+              </td>
+
+              {# Progress — the 3-node CAP/VAL/RPT tracker only earns its space
+                 while a session is genuinely mid-pipeline (it says WHERE you are).
+                 For the two terminal states — done, or not started — it was
+                 rendering as either three identical green checkmarks or three
+                 identical grey "1/2/3" circles on every row, adding visual noise
+                 without adding information. Collapse those two cases to one
+                 compact label instead. #}
+              {% set _all_done = s.capture_completed and s.validation_completed and s.report_completed %}
+              {% set _not_started = not s.capture_completed and s.status != 'running' %}
+              <td class="px-3 py-3 align-middle">
+                {% if _all_done %}
+                  <span class="chip ok"><span class="dot"></span>Complete</span>
+                {% elif _not_started %}
+                  <span class="chip"><span class="dot"></span>Not started</span>
+                {% else %}
+                  <div class="flex items-center gap-1.5">
+                    {% for step_label, step_done, step_active in [
+                      ('CAP', s.capture_completed,    (s.status == 'running' and not s.capture_completed)),
+                      ('VAL', s.validation_completed, (s.capture_completed and not s.validation_completed)),
+                      ('RPT', s.report_completed,     (s.validation_completed and not s.report_completed)),
+                    ] %}
+                      <span class="flex flex-col items-center gap-[3px]">
+                        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-semibold border-[1.5px]
+                          {% if step_done %}bg-ok-soft text-ok border-ok
+                          {% elif step_active %}bg-accent-soft text-accent border-accent
+                          {% else %}bg-surface-2 text-text-4 border-line{% endif %}">
+                          {% if step_done %}✓{% else %}{{ loop.index }}{% endif %}
+                        </span>
+                        <span class="text-[11px] text-text-4 tracking-wide">{{ step_label }}</span>
+                      </span>
+                      {% if not loop.last %}
+                        <span class="w-3 h-[1.5px] mb-3.5 {% if step_done or step_active %}bg-line-2{% else %}bg-line{% endif %}"></span>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </td>
+
+              {# Results — a small proportion bar (pass/fail/skip at a glance) plus
+                 real words instead of a terse "58P · 5F · 9S" string. Skip count
+                 moves into the bar's tooltip rather than always being spelled out
+                 inline, so the common case (pass, or pass+fail) stays one line and
+                 every row holds the same height. #}
+              <td class="px-3 py-3 align-middle">
+                {% if s.validation_completed and s.total_rules %}
+                  {% set _pass_pct = (s.pass_count / s.total_rules * 100) if s.total_rules else 0 %}
+                  {% set _fail_pct = (s.fail_count / s.total_rules * 100) if s.total_rules else 0 %}
+                  {% set _skip_pct = [100 - _pass_pct - _fail_pct, 0] | max %}
+                  <div class="flex items-center gap-2 min-w-0"
+                       title="{{ s.pass_count }} passed · {{ s.fail_count }} failed{% if s.skip_count %} · {{ s.skip_count }} skipped{% endif %}">
+                    <div class="flex h-1.5 w-9 rounded-full overflow-hidden bg-surface-2 shrink-0">
+                      <span style="width:{{ _pass_pct }}%; background:var(--ok);"></span>
+                      <span style="width:{{ _fail_pct }}%; background:var(--bad);"></span>
+                      {% if s.skip_count %}<span style="width:{{ _skip_pct }}%; background:var(--text-4);"></span>{% endif %}
+                    </div>
+                    <span class="text-[14px] whitespace-nowrap truncate">
+                      <span class="font-semibold text-text">{{ s.pass_count }}</span><span class="text-text-3"> passed</span>{% if s.fail_count %}<span class="text-text-4"> · </span><span class="font-semibold text-bad">{{ s.fail_count }}</span><span class="text-text-3"> failed</span>{% endif %}
+                    </span>
+                  </div>
+                {% elif s.capture_completed %}
+                  <span class="chip">Captured</span>
+                {% else %}
+                  <span class="text-text-4">—</span>
+                {% endif %}
+              </td>
+
+              <td class="px-3 py-3 align-middle text-[14px] text-text-3 whitespace-nowrap">
+                {% if s.updated_at %}<span data-ts="{{ s.updated_at }}">{{ s.updated_at[:10] }}</span>{% else %}—{% endif %}
+              </td>
+
+              <td class="pl-3 pr-4 py-3 align-middle text-right">
+                {% if s.is_active %}
+                  <a href="/sessions/{{ s.name }}"
+                     class="inline-flex items-center h-7 px-3.5 rounded-full text-[14px] font-medium border border-line-2 bg-surface-2 text-text-2 no-underline hover:bg-surface-3">Open</a>
+                {% else %}
+                  <form action="/sessions/{{ s.name }}/activate" method="post" @submit="pending = true">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit"
+                            data-loading-label="Activating…"
+                            :disabled="pending"
+                            class="inline-flex items-center h-7 px-3.5 rounded-full text-[14px] font-medium border-0 cursor-pointer bg-accent text-accent-ink hover:bg-accent-hover disabled:opacity-60 disabled:cursor-wait">Activate</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if _pages > 1 %}
+      <nav aria-label="Sessions pages"
+           class="flex items-center justify-between gap-3 px-4 py-3 border-t border-line text-[14px] text-text-3">
+        <span>Page <strong class="text-text">{{ _page }}</strong> of {{ _pages }}</span>
+        <span class="inline-flex items-center gap-1.5">
+          <a class="btn sm{% if _page <= 1 %} opacity-40 pointer-events-none{% endif %}"
+             {% if sessions_page_hrefs.prev %}href="{{ sessions_page_hrefs.prev }}" hx-get="{{ sessions_page_hrefs.prev }}" hx-target="#sessions-panel" hx-swap="outerHTML show:#sessions-panel:top" hx-push-url="true"{% endif %}
+             aria-disabled="{{ 'true' if _page <= 1 else 'false' }}">&larr; Prev</a>
+          <a class="btn sm{% if _page >= _pages %} opacity-40 pointer-events-none{% endif %}"
+             {% if sessions_page_hrefs.next %}href="{{ sessions_page_hrefs.next }}" hx-get="{{ sessions_page_hrefs.next }}" hx-target="#sessions-panel" hx-swap="outerHTML show:#sessions-panel:top" hx-push-url="true"{% endif %}
+             aria-disabled="{{ 'true' if _page >= _pages else 'false' }}">Next &rarr;</a>
+        </span>
+      </nav>
+    {% endif %}
+  </section>
+</div>

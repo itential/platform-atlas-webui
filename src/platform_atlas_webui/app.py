@@ -25,6 +25,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import Response as _StarletteResponse
 
 from platform_atlas.core.context import init_context
+from platform_atlas.core.exceptions import CredentialError
 from platform_atlas.core._version import __version__ as ATLAS_VERSION
 
 from platform_atlas_webui.config import WebUISettings
@@ -55,6 +56,7 @@ _ERROR_COPY: dict[int, tuple[str, str]] = {
     409: ("Another job is running", "Only one Atlas job can run at a time. Wait for the current job to finish, then try again."),
     404: ("Page not found", "The page you're looking for doesn't exist or has moved."),
     405: ("Method not allowed", "That action isn't supported on this page."),
+    503: ("Credential backend unavailable", "Atlas couldn't reach the credential store (for example Vault). Check that it is running and reachable, then try again."),
     500: ("Something went wrong", "Atlas hit an unexpected error. Try again, or head back to the dashboard."),
 }
 _ERROR_COPY_DEFAULT: tuple[str, str] = (
@@ -115,6 +117,13 @@ async def _lifespan(app: FastAPI):
             sync_bundled_files()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Bundled file sync failed at startup: %s", exc)
+        try:
+            # A long-running server shouldn't re-dial an unreachable credential
+            # backend (e.g. Vault) on every request; remember a failure briefly.
+            from platform_atlas.core.credentials import set_failure_backoff
+            set_failure_backoff(10)
+        except ImportError:  # CLI older than 3.1: no backoff hook, keep going
+            pass
         try:
             init_context()
             logger.info("Atlas context initialized for WebUI (tier=%s)", _safe_tier())
@@ -253,6 +262,51 @@ def create_app(settings: WebUISettings | None = None) -> FastAPI:
             )
         except Exception:  # noqa: BLE001 — never let error rendering itself 500
             return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+    # A credential backend that can't be reached (Vault down, locked keyring)
+    # is an operational state, not a bug. Answer with a themed page and a
+    # one-line warning instead of letting it bubble up as a 500 + traceback.
+    # Other credential failures (a secret that was never stored, a read-only
+    # backend, missing backend settings) get their own heading so they aren't
+    # misreported as the backend being down.
+    _credential_copy: dict[str, tuple[int, str, str]] = {
+        "backend_unreachable": (503, *_ERROR_COPY[503]),
+        "auth_failed": (503, "Credential backend refused access",
+                        "Atlas reached the credential store but it rejected the credentials (for example an expired Vault token). Renew them, then try again."),
+        "not_configured": (503, "Credential store not configured",
+                           "Atlas has no credential-store settings for this environment. Re-run setup or the environment's credential step."),
+        "missing_key": (409, "Credential not stored",
+                        "A secret this action needs hasn't been saved for the active environment. Add it from the environment's credentials, then try again."),
+        "read_only": (409, "Credential store is read-only",
+                      "This credential backend can't be written to from Atlas. Update the secret in the backend directly."),
+        "insecure_backend": (503, "Credential backend not trusted",
+                             "The OS keyring on this machine is considered unsafe for storing secrets. Choose the encrypted file or Vault backend."),
+    }
+
+    @app.exception_handler(CredentialError)
+    async def _render_credential_error(request: Request, exc: CredentialError):
+        code = str(getattr(getattr(exc, "code", ""), "value", getattr(exc, "code", "")) or "credential_error")
+        status, heading, default_hint = _credential_copy.get(code, (503, *_ERROR_COPY[503]))
+        logger.warning("Credential error (%s) on %s: %s", code, request.url.path, exc)
+        message = str(exc) or default_hint
+        hint = getattr(exc, "hint", "") or default_hint
+        if not _wants_html_error(request):
+            return JSONResponse({"detail": message, "code": code, "hint": hint}, status_code=status)
+        try:
+            return _ERROR_TEMPLATES.TemplateResponse(
+                request,
+                "errors/error.html",
+                {
+                    "request": request,
+                    "status_code": status,
+                    "heading": heading,
+                    "message": f"{message}. {hint}" if str(exc) else hint,
+                    "asset_version": _ASSET_VERSION,
+                },
+                status_code=status,
+            )
+        except Exception:  # noqa: BLE001 — never let error rendering itself 500
+            return JSONResponse({"detail": message}, status_code=status)
 
     app.add_middleware(AuditMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)

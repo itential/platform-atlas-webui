@@ -701,6 +701,16 @@ def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
     except Exception:
         _topo = None
     _topo_mode = _topo.mode.value if _topo and getattr(_topo, "mode", None) else ""
+    # Same derivations as the CLI report handler: real hostnames for the diagram
+    # and the SaaS gateway kind that decides which architecture sections apply.
+    try:
+        topology_nodes = [
+            {"role": n.role.value, "host": n.host, "label": n.label, "primary": bool(n.primary)}
+            for n in (_topo.nodes if _topo else [])
+        ]
+    except Exception:
+        topology_nodes = []
+    saas_gateway_kind = getattr(config, "saas_gateway_kind", "") or ""
 
     viewmodel = build_webui_viewmodel(
         results,
@@ -714,6 +724,8 @@ def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
         tier=session_tier,
         platform_uri=config.platform_uri,
         deployment_mode=_topo_mode,
+        topology_nodes=topology_nodes,
+        saas_gateway_kind=saas_gateway_kind,
     )
 
     render_unified_report(viewmodel, REPORT_TEMPLATE, output_path=session.report_file)
@@ -737,6 +749,8 @@ def run_report_job(jlogger, *, session_name: str) -> dict[str, Any]:
             tier=session_tier,
             platform_uri=config.platform_uri,
             deployment_mode=_topo_mode,
+            topology_nodes=topology_nodes,
+            saas_gateway_kind=saas_gateway_kind,
         )
     except Exception as exc:  # noqa: BLE001 — never block reporting on viewmodel failure
         jlogger.warning(f"WebUI viewmodel write failed: {exc}")
@@ -847,6 +861,8 @@ def run_support_bundle_job(
     description: str = "",
     log_days: int = 7,
     selection: dict | None = None,
+    mongo_collections: list[str] | None = None,
+    mongo_db: str = "",
 ) -> dict[str, Any]:
     """Collect Platform health + logs and pack into a support bundle ZIP.
 
@@ -863,7 +879,7 @@ def run_support_bundle_job(
 
     from platform_atlas.core.context import ctx
     from platform_atlas.core.handlers.support_bundle import (
-        _build_zip,
+        _write_zip,
         _collect_logs_and_system,
         _collect_platform_health,
         _redact_config,
@@ -947,6 +963,7 @@ def run_support_bundle_job(
     # When the picker supplied a selection, export each artifact via Platform
     # OAuth (raw JSON, no redaction) into exports/ inside the bundle.
     exports: dict[str, bytes] = {}
+    export_files: dict[str, Path] = {}  # on-disk payloads, streamed into the ZIP
     artifact_summary: dict | None = None
     if selection:
         n_sel = sum(len(v) for v in selection.values())
@@ -972,6 +989,52 @@ def run_support_bundle_job(
             errors.append(f"Artifact export failed: {exc}")
             jlogger.warning(f"Artifact export failed — {exc}")
 
+    # ── MongoDB collection export (optional; Extended only) ───────
+    # Atlas coordinates a native, system-installed mongodump (it never dumps
+    # documents itself). The chosen collections are written as a single .tar.gz
+    # and ride inside the bundle ZIP under mongo/ so the browser gets one file.
+    mongo_summary: dict | None = None
+    if mongo_collections and is_extended and getattr(config, "mongo_uri", None):
+        from platform_atlas.capture.collectors.mongo_export import mongodump_available, run_mongodump
+        if not mongodump_available():
+            msg = "mongodump not found on the server's PATH — install the MongoDB Database Tools to enable this export."
+            errors.append(f"MongoDB export skipped: {msg}")
+            jlogger.warning(f"MongoDB export skipped — {msg}")
+            mongo_summary = {"ok": 0, "collections": list(mongo_collections), "status": "skipped"}
+        else:
+            jlogger.info(f"Exporting {len(mongo_collections)} MongoDB collection(s) via mongodump…")
+            fd_m, tmp_m = tempfile.mkstemp(suffix=".tar.gz", prefix="atlas-mongo-")
+            os.close(fd_m)
+            tmp_mongo_path = Path(tmp_m)
+            keep_mongo_tmp = False
+            try:
+                result = run_mongodump(mongo_collections, tmp_mongo_path, db_override=(mongo_db or None))
+                if result.ok:
+                    slug = ticket.replace("/", "-").replace(" ", "-") if ticket else ""
+                    dump_name = f"atlas-mongo-dump-{slug}.tar.gz" if slug else "atlas-mongo-dump.tar.gz"
+                    export_files[f"mongo/{dump_name}"] = tmp_mongo_path
+                    keep_mongo_tmp = True  # removed once the ZIP is built
+                    size_mb = round(result.size_bytes / (1024 * 1024), 1)
+                    collected.append(f"MongoDB export ({len(result.collections)} collection(s), {size_mb} MB)")
+                    jlogger.success(f"MongoDB export written to mongo/{dump_name} ({size_mb} MB)")
+                    mongo_summary = {"ok": len(result.collections), "collections": list(result.collections), "status": "ok"}
+                else:
+                    detail = result.error or result.skipped_reason or "export did not run"
+                    status = "failed" if result.error else "skipped"
+                    errors.append(f"MongoDB export {status}: {detail}")
+                    jlogger.warning(f"MongoDB export {status} — {detail}")
+                    mongo_summary = {"ok": 0, "collections": list(mongo_collections), "status": status}
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"MongoDB export failed: {exc}")
+                jlogger.warning(f"MongoDB export failed — {exc}")
+                mongo_summary = {"ok": 0, "collections": list(mongo_collections), "status": "failed"}
+            finally:
+                if not keep_mongo_tmp:
+                    try:
+                        tmp_mongo_path.unlink()
+                    except OSError:
+                        pass
+
     # ── Assemble ZIP ──────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     ticket_slug = ticket.replace("/", "-").replace(" ", "-") if ticket else ""
@@ -995,26 +1058,30 @@ def run_support_bundle_job(
         "collected": collected,
         "errors": errors,
     }
+    if mongo_summary is not None:
+        manifest["mongo_export"] = mongo_summary
 
     jlogger.info("Assembling ZIP…")
-    try:
-        bundle_bytes = _build_zip(platform_health, logs, system, raw_logs, config_redacted, manifest, folder=bundle_name.removesuffix(".zip"), exports=exports)
-    except Exception as exc:  # noqa: BLE001
-        jlogger.error(f"Failed to build ZIP: {exc}")
-        return {"ok": False, "error": str(exc)}
-
-    # Write to a temp file — the download route reads result["bundle_path"]
-    # and serves it as a single-use FileResponse with a cleanup BackgroundTask.
+    # Write straight to the temp file the download route serves (single-use
+    # FileResponse with a cleanup BackgroundTask) so a large mongodump never
+    # sits in memory alongside its compressed copy.
+    bundle_path: Path | None = None
     try:
         fd, tmp = tempfile.mkstemp(suffix=".zip", prefix="atlas-bundle-")
         os.close(fd)
         bundle_path = Path(tmp)
-        bundle_path.write_bytes(bundle_bytes)
+        _write_zip(bundle_path, platform_health, logs, system, raw_logs, config_redacted, manifest,
+                   folder=bundle_name.removesuffix(".zip"), exports=exports, export_files=export_files)
     except Exception as exc:  # noqa: BLE001
-        jlogger.error(f"Failed to write bundle to temp file: {exc}")
+        jlogger.error(f"Failed to build ZIP: {exc}")
+        if bundle_path is not None:
+            bundle_path.unlink(missing_ok=True)
         return {"ok": False, "error": str(exc)}
+    finally:
+        for leftover in export_files.values():
+            leftover.unlink(missing_ok=True)
 
-    size_kb = round(len(bundle_bytes) / 1024, 1)
+    size_kb = round(bundle_path.stat().st_size / 1024, 1)
     jlogger.success(f"Bundle ready — {bundle_name} ({size_kb} KB)")
     if errors:
         jlogger.warning(f"{len(errors)} collection error(s) logged in manifest.json — bundle still complete")
@@ -1027,4 +1094,5 @@ def run_support_bundle_job(
         "collected": collected,
         "errors": errors,
         "artifacts": artifact_summary,
+        "mongo": mongo_summary,
     }
