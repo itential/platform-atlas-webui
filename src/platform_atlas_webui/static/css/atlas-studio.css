@@ -325,7 +325,7 @@ body.app {
 :root[data-rail="true"] .nav-link-label,
 :root[data-rail="true"] .nav-badge,
 :root[data-rail="true"] .app-side-foot .upgrade,
-:root[data-rail="true"] .app-side-version span { display: none; }
+:root[data-rail="true"] .app-side-version { display: none; }
 :root[data-rail="true"] .app-rail-toggle { position: absolute; left: 50%; bottom: 14px; margin-left: -14px; }
 :root[data-rail="true"] .app-side-foot { padding-bottom: 48px; }
 :root[data-rail="true"] .app-nav .nav-link { justify-content: center; padding: 0; }
@@ -935,7 +935,7 @@ body.app {
   :root:not([data-rail="false"]) .nav-link-label,
   :root:not([data-rail="false"]) .nav-badge,
   :root:not([data-rail="false"]) .app-side-foot .upgrade,
-  :root:not([data-rail="false"]) .app-side-version span,
+  :root:not([data-rail="false"]) .app-side-version,
   :root:not([data-rail="false"]) .app-rail-toggle { display: none; }
   :root:not([data-rail="false"]) .app-brand { padding: 0 0 0 22px; }
   :root:not([data-rail="false"]) .app-nav .nav-link { justify-content: center; padding: 0; }

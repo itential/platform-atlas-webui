@@ -17,6 +17,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from platform_atlas.core import architecture_store
+from platform_atlas.core.architecture_schema import SECTION_BY_NAME, evaluate, normalize_section
 
 from platform_atlas_webui.security.scriptjson import script_json
 from platform_atlas.core.config import environment_effective_tier
@@ -61,17 +62,9 @@ def _resolve_arch_tier(target_env: str) -> tuple[bool, str]:
 
     Keyed off the *target* env (not the active tier) so the env switcher renders
     the correct layout for whichever env is selected. Fails open to
-    ``(False, "")`` — the full form — on any error, which is harmless for
-    Standard/Extended and the only safe default when the env can't be read.
+    ``(False, "")`` — the full form — on any error.
     """
-    try:
-        env_rec = env_svc.get_environment(target_env)
-    except Exception:
-        return (False, "")
-    if not env_rec or env_rec.get("tier") != "saas":
-        return (False, "")
-    kind = str((env_rec.get("data") or {}).get("saas_gateway_kind") or "").strip().lower()
-    return (True, kind)
+    return env_svc.architecture_tier_scope(target_env)
 
 
 def _can_autofill(target_env: str) -> bool:
@@ -113,7 +106,7 @@ async def architecture_form(request: Request, env: str | None = None) -> HTMLRes
                 request,
                 target_env=target_env,
                 arch_data_json="{}",
-                arch_topology_seed_json="{}",
+                arch_seed_json="{}",
                 arch_suggested_skips_json="[]",
                 can_autofill=False,
                 arch_autofill_at="",
@@ -135,6 +128,14 @@ async def architecture_form(request: Request, env: str | None = None) -> HTMLRes
         )
 
     arch_data = await run_in_threadpool(architecture_store.load, target_env)
+    # Older forms saved shapes/option strings the current form can't restore
+    # (Redis "Sentinel", MongoDB replica_count, a boolean VA answer ...). Map them
+    # in memory so a saved answer always shows up; the file itself isn't rewritten.
+    arch_data = dict(arch_data)
+    arch_data["completed"] = {
+        name: (normalize_section(name, data) if name in SECTION_BY_NAME and isinstance(data, dict) else data)
+        for name, data in (arch_data.get("completed") or {}).items()
+    }
     arch_warnings = await run_in_threadpool(
         compute_arch_warnings, arch_data.get("completed", {})
     )
@@ -176,17 +177,17 @@ async def architecture_form(request: Request, env: str | None = None) -> HTMLRes
     # active tier the nav's ``is_saas`` uses. Fails open to the full form.
     arch_is_saas, saas_gateway_kind = _resolve_arch_tier(target_env)
 
-    # Free, zero-cost topology/config-derived suggestions (no SSH) — the same
-    # source the CLI's browser form seeds from. Layered client-side under the
-    # user's own completed answers and any prior SSH auto-detect run (already
-    # present in arch_data.autofill). "Suggested skip" sections are ones the
-    # topology confidently rules out (e.g. Gateway4-only ⇒ no Gateway5),
+    # Free, zero-cost topology/config-derived suggestions (no SSH) are the lowest
+    # layer of what the form starts from; saved answers sit above them, and a
+    # newer SSH auto-detect run sits above the answers (newest wins per field —
+    # see architecture_store.seeded_answers). "Suggested skip" sections are ones
+    # the topology confidently rules out (e.g. Gateway4-only => no Gateway5),
     # minus anything already answered (never second-guessed) or already
-    # explicitly skipped by the user (that's applied — and rendered — via
-    # SAVED.skipped already; re-listing it here would badge the user's own
-    # decision as if Atlas had made it).
+    # explicitly marked not present by the user.
     from platform_atlas.capture.collectors.manual import TopologyHints
     topology_hints = await run_in_threadpool(TopologyHints.from_config, target_env)
+    seeded = await run_in_threadpool(architecture_store.seeded_answers, target_env)
+    seed = architecture_store.merge_answers(topology_hints.as_seed_dict(), seeded)
     completed_sections = set(arch_data.get("completed") or {})
     already_skipped = set(arch_data.get("skipped") or [])
     suggested_skips = sorted(
@@ -200,7 +201,7 @@ async def architecture_form(request: Request, env: str | None = None) -> HTMLRes
             request,
             target_env=target_env,
             arch_data_json=script_json(arch_data),
-            arch_topology_seed_json=script_json(topology_hints.as_seed_dict()),
+            arch_seed_json=script_json(seed),
             arch_suggested_skips_json=script_json(suggested_skips),
             can_autofill=_can_autofill(target_env),
             arch_autofill_at=arch_data.get("autofill_at") or "",
@@ -346,13 +347,26 @@ async def save_architecture(request: Request, env: str | None = None) -> JSONRes
     data = _sanitize_arch_payload(payload)
     target_env = _resolve_target_env(env)
 
+    # The browser's idea of "complete" is advisory. What gets stored is derived
+    # from the answers by the shared schema — the same rules the CLI and the
+    # report apply — so a file can never claim to be finished when it isn't.
+    is_saas, saas_kind = _resolve_arch_tier(target_env)
+    report = evaluate(data["completed"], data["skipped"], is_saas=is_saas, saas_gateway_kind=saas_kind)
+    data["status"] = "complete" if report.is_complete else "in_progress"
+    data["progress"] = {"filled": report.answered_fields, "total": report.total_fields}
+
     try:
-        await run_in_threadpool(architecture_store.save, target_env, data)
+        await run_in_threadpool(lambda: architecture_store.save(target_env, data, source="webui"))
     except (OSError, ValueError) as exc:
         logger.error("Failed to write architecture file for env=%s: %s", target_env, exc)
         raise HTTPException(status_code=500, detail="Could not save architecture data") from exc
 
-    return JSONResponse({"ok": True, "status": data["status"], "environment": target_env})
+    return JSONResponse({
+        "ok": True, "status": data["status"], "environment": target_env,
+        "complete": report.is_complete,
+        "sections_done": report.done, "sections_total": report.total,
+        "incomplete": [SECTION_BY_NAME[n].label for n in report.incomplete_sections],
+    })
 
 
 @router.post("/copy")

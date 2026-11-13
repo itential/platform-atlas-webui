@@ -780,3 +780,19 @@ def delete_environment(name: str) -> None:
 def set_active(name: str) -> None:
     mgr = get_environment_manager()
     mgr.set_active(name)
+
+
+def architecture_tier_scope(env_name: str) -> tuple[bool, str]:
+    """``(is_saas, saas_gateway_kind)`` for the environment an architecture form targets.
+
+    Keyed off the *target* env (not the active tier). Fails open to
+    ``(False, "")`` — the full questionnaire — when the env can't be read.
+    """
+    try:
+        env_rec = get_environment(env_name)
+    except Exception:  # noqa: BLE001
+        return (False, "")
+    if not env_rec or env_rec.get("tier") != "saas":
+        return (False, "")
+    kind = str((env_rec.get("data") or {}).get("saas_gateway_kind") or "").strip().lower()
+    return (True, kind)

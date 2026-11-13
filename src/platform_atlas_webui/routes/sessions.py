@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+from urllib.parse import urlencode
+
 import os as _os
 import re as _re
 import tempfile as _tempfile
@@ -20,6 +23,7 @@ from platform_atlas.core.exceptions import SessionAlreadyExistsError
 
 from platform_atlas_webui.dependencies import get_templates, template_context
 from platform_atlas_webui.security.paths import safe_under
+from platform_atlas_webui.security.redirects import local_url
 from platform_atlas_webui.services import sessions as session_svc
 from platform_atlas_webui.services import rulesets as ruleset_svc
 from platform_atlas_webui.services.environments import get_environment
@@ -42,17 +46,97 @@ _templates = get_templates()
 _SESSIONS_PER_PAGE_OPTIONS = (20, 50, 100)
 
 
-@router.get("", response_class=HTMLResponse)
-async def list_sessions(
-    request: Request,
-    page: int = 1,
-    per_page: int = 20,
-    lock_view: str = "",
-    lock_run: str = "",
-) -> HTMLResponse:
-    # ``list_sessions`` opens N session.json files — push the disk I/O
-    # off the event loop so concurrent requests don't serialize behind it.
-    items = await run_in_threadpool(session_svc.list_sessions)
+# Saved views for the Sessions list. Counts are computed over the environment-scoped
+# list, so a chip never advertises sessions the page won't show.
+_SESSION_VIEWS = (
+    ("all", "All"),
+    ("incomplete", "In progress"),
+    ("complete", "Complete"),
+    ("pinned", "Pinned"),
+    ("recent", "Last 7 days"),
+)
+_SESSION_SORTS = (("updated", "Recently updated"), ("name", "Name"), ("score", "Pass rate"))
+_RECENT_DAYS = 7
+_MAX_QUERY_LEN = 80
+
+
+def _pass_rate(s: dict) -> float:
+    total = s.get("total_rules") or 0
+    return (s.get("pass_count") or 0) / total if total else -1.0
+
+
+def _is_recent(s: dict, cutoff: float) -> bool:
+    raw = s.get("updated_at")
+    if not raw:
+        return False
+    try:
+        return datetime.fromisoformat(raw).timestamp() >= cutoff
+    except ValueError:
+        return False
+
+
+def _matches_view(s: dict, view: str, cutoff: float) -> bool:
+    if view == "incomplete":
+        return not s.get("report_completed")
+    if view == "complete":
+        return bool(s.get("report_completed"))
+    if view == "pinned":
+        return bool(s.get("is_pinned"))
+    if view == "recent":
+        return _is_recent(s, cutoff)
+    return True
+
+
+def _matches_query(s: dict, q: str) -> bool:
+    hay = " ".join(str(s.get(k) or "") for k in ("name", "environment", "ruleset_id", "ruleset_profile", "description"))
+    return q in hay.lower()
+
+
+def _sessions_href(params: dict) -> str:
+    """Query string for a Sessions list URL, omitting values that equal the defaults."""
+    defaults = {"view": "all", "sort": "updated", "q": "", "env": "", "per_page": "20", "page": "1"}
+    kept = {k: v for k, v in params.items() if str(v) != defaults.get(k, "") and str(v) != ""}
+    return "/sessions" + (f"?{urlencode(kept)}" if kept else "")
+
+
+def _build_sessions_context(
+    all_items: list[dict], *, page: int, per_page: int, env: str, view: str, q: str, sort: str,
+    lock_view: str = "", lock_run: str = "",
+) -> dict:
+    """Everything the Sessions list (and its panel partial) renders, as a plain dict.
+
+    Pure with respect to the request so the full page, the htmx panel refresh and the
+    pin toggle all build the list the same way.
+    """
+    items = all_items
+    # Scope the list to the active environment so sessions from other
+    # environments don't clutter the page. ``?env=all`` is a per-request
+    # escape hatch (not persisted). With no active environment there is
+    # nothing to scope to, so every session is shown.
+    active_env = _active_environment()
+    show_all_envs = env == "all"
+    if active_env and not show_all_envs:
+        items = [s for s in all_items if s.get("environment") == active_env]
+    hidden_count = len(all_items) - len(items)
+    scope_total = len(items)
+
+    # Views, search and sort. Unknown values fall back to the defaults so a
+    # hand-edited URL can't surface an error.
+    valid_views = {k for k, _ in _SESSION_VIEWS}
+    view = view if view in valid_views else "all"
+    sort = sort if sort in {k for k, _ in _SESSION_SORTS} else "updated"
+    q = (q or "").strip()[:_MAX_QUERY_LEN]
+    cutoff = (datetime.now() - timedelta(days=_RECENT_DAYS)).timestamp()
+    view_counts = {k: sum(1 for x in items if _matches_view(x, k, cutoff)) for k, _ in _SESSION_VIEWS}
+    items = [x for x in items if _matches_view(x, view, cutoff)]
+    if q:
+        needle = q.lower()
+        items = [x for x in items if _matches_query(x, needle)]
+    if sort == "name":
+        items = sorted(items, key=lambda x: (x.get("name") or "").lower())
+    elif sort == "score":
+        items = sorted(items, key=_pass_rate, reverse=True)
+    # sort == "updated" keeps the service order: pinned first, then most recent.
     # Clamp inputs so a hand-crafted URL can't surface a 500 — drop unknown
     # per_page values back to the default and pin page to the valid range.
     if per_page not in _SESSIONS_PER_PAGE_OPTIONS:
@@ -62,9 +146,6 @@ async def list_sessions(
     page = max(1, min(page, total_pages))
     start = (page - 1) * per_page
     paged = items[start:start + per_page]
-    # Pull the active session out of the full list so the "active session"
-    # banner shows even when that session lives on a different page.
-    active = next((s for s in items if s.get("is_active")), None)
     # Build a tier-lock flash banner if the user was bounced here from a
     # blocked /sessions/<name> view or run attempt. Cap the inputs so a
     # hand-crafted URL can't render an arbitrary string as part of the page.
@@ -72,28 +153,106 @@ async def list_sessions(
     lock_kind = ""
     locked_name = (lock_view or lock_run or "").strip()[:64]
     if locked_name:
-        locked_session = next((s for s in items if s.get("name") == locked_name), None)
+        locked_session = next((s for s in all_items if s.get("name") == locked_name), None)
         if locked_session:
             lock_kind = "view" if lock_view else "run"
-    return _templates.TemplateResponse(
-        request,
-        "sessions/list.html",
-        template_context(
-            request,
-            atlas_version=ATLAS_VERSION,
-            sessions=paged,
-            sessions_total=total,
-            sessions_page=page,
-            sessions_per_page=per_page,
-            sessions_total_pages=total_pages,
-            sessions_per_page_options=_SESSIONS_PER_PAGE_OPTIONS,
-            active_session_banner=active,
-            tier_lock_flash={
-                "session": locked_session,
-                "kind": lock_kind,
-            } if locked_session else None,
-        ),
+    base_params = {
+        "env": "all" if show_all_envs else "", "view": view, "q": q, "sort": sort, "per_page": str(per_page),
+    }
+    views_ui = [
+        {"key": k, "label": label, "count": view_counts[k], "active": k == view,
+         "href": _sessions_href({**base_params, "view": k})}
+        for k, label in _SESSION_VIEWS
+    ]
+    page_hrefs = {
+        "prev": _sessions_href({**base_params, "page": str(page - 1)}) if page > 1 else "",
+        "next": _sessions_href({**base_params, "page": str(page + 1)}) if page < total_pages else "",
+    }
+    # Hidden inputs for the per-page and search forms so each keeps the other's state.
+    carry = {k: v for k, v in {"env": base_params["env"], "view": view if view != "all" else "",
+                               "sort": sort if sort != "updated" else ""}.items() if v}
+    return {
+        "atlas_version": ATLAS_VERSION,
+        "sessions": paged,
+        "sessions_total": total,
+        "sessions_scope_total": scope_total,
+        "sessions_page": page,
+        "sessions_per_page": per_page,
+        "sessions_total_pages": total_pages,
+        "sessions_per_page_options": _SESSIONS_PER_PAGE_OPTIONS,
+        "sessions_active_env": active_env,
+        "sessions_show_all_envs": show_all_envs,
+        "sessions_hidden_count": hidden_count,
+        "sessions_views": views_ui,
+        "sessions_view": view,
+        "sessions_q": q,
+        "sessions_sort": sort,
+        "sessions_sorts": _SESSION_SORTS,
+        "sessions_page_hrefs": page_hrefs,
+        "sessions_carry": carry,
+        "sessions_filtered": bool(q or view != "all"),
+        "tier_lock_flash": {"session": locked_session, "kind": lock_kind} if locked_session else None,
+    }
+
+
+def _wants_panel(request: Request) -> bool:
+    """True when htmx asked for just the list panel (a filter, sort, page or pin action)."""
+    return request.headers.get("HX-Request") == "true" and request.headers.get("HX-Target") == "sessions-panel"
+
+
+def _panel_params_from(request: Request) -> dict:
+    """List params (page, filters...) of the page the user is on, from htmx's HX-Current-URL.
+
+    Used by actions that re-render the panel without a navigation (pinning), so the
+    list stays on the same view, search and page afterwards.
+    """
+    from urllib.parse import parse_qs, urlparse
+
+    raw = request.headers.get("HX-Current-URL", "")
+    parsed = urlparse(raw)
+    qs = parse_qs(parsed.query) if parsed.path == "/sessions" else {}
+
+    def one(key: str, default: str = "") -> str:
+        return (qs.get(key) or [default])[0]
+
+    def number(key: str, default: int) -> int:
+        try:
+            return int(one(key, str(default)))
+        except ValueError:
+            return default
+
+    return {"page": number("page", 1), "per_page": number("per_page", 20), "env": one("env"),
+            "view": one("view", "all"), "q": one("q"), "sort": one("sort", "updated")}
+
+
+@router.get("", response_class=HTMLResponse)
+async def list_sessions(
+    request: Request,
+    page: int = 1,
+    per_page: int = 20,
+    lock_view: str = "",
+    lock_run: str = "",
+    env: str = "",
+    view: str = "all",
+    q: str = "",
+    sort: str = "updated",
+) -> HTMLResponse:
+    # ``list_sessions`` opens N session.json files — push the disk I/O
+    # off the event loop so concurrent requests don't serialize behind it.
+    all_items = await run_in_threadpool(session_svc.list_sessions)
+    ctx = _build_sessions_context(
+        all_items, page=page, per_page=per_page, env=env, view=view, q=q, sort=sort,
+        lock_view=lock_view, lock_run=lock_run,
     )
+    # Filter / sort / page changes ask htmx for the list panel only, so the rest of the
+    # page (and its entrance animation) isn't torn down and rebuilt for each keystroke.
+    template = "sessions/_panel.html" if _wants_panel(request) else "sessions/list.html"
+    # A short "new filter" cue on the refreshed rows. Not while typing in the search
+    # box (every pause would replay it), and not on a full page load.
+    ctx["sessions_animate"] = _wants_panel(request) and request.headers.get("HX-Trigger") != "sessions-search-form"
+    response = _templates.TemplateResponse(request, template, template_context(request, **ctx))
+    response.headers["Vary"] = "HX-Request, HX-Target"
+    return response
 
 
 def _active_tier() -> str:
@@ -321,13 +480,13 @@ async def activate_session(name: str):
 
 
 @router.post("/{name}/pin")
-async def toggle_pin(name: str):
+async def toggle_pin(request: Request, name: str):
     """Toggle the pinned state of ``name`` in config.json.
 
     Persists to ``~/.atlas/config.json::pinned_sessions``. The pin is per
-    Atlas-home, so it follows the user across browsers. After the toggle
-    we redirect back to the list so the new order is visible without a
-    client-side re-render — the list view already partitions pinned-first.
+    Atlas-home, so it follows the user across browsers. From the Sessions list
+    (htmx) we answer with just the refreshed list panel, on the same view, search
+    and page the user was on; anywhere else we redirect back to the list.
     """
     from platform_atlas_webui.dependencies import attach_toast
     from platform_atlas_webui.services import config as _cfg_svc
@@ -335,12 +494,16 @@ async def toggle_pin(name: str):
         is_pinned = _cfg_svc.toggle_pinned_session(name)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    response = RedirectResponse(url="/sessions", status_code=303)
-    return attach_toast(
-        response,
-        kind="success",
-        msg=f"Pinned “{name}” to top." if is_pinned else f"Unpinned “{name}”.",
-    )
+    msg = f"Pinned “{name}” to top." if is_pinned else f"Unpinned “{name}”."
+    if _wants_panel(request):
+        all_items = await run_in_threadpool(session_svc.list_sessions)
+        ctx = _build_sessions_context(all_items, **_panel_params_from(request))
+        response = _templates.TemplateResponse(
+            request, "sessions/_panel.html", template_context(request, **ctx),
+        )
+        response.headers["Vary"] = "HX-Request, HX-Target"
+        return attach_toast(response, kind="success", msg=msg)
+    return attach_toast(RedirectResponse(url="/sessions", status_code=303), kind="success", msg=msg)
 
 
 @router.post("/{name}/delete")
@@ -619,7 +782,8 @@ async def run_session_stage(
     # phase-based progress view; single-stage re-runs open the standalone job
     # log view. (Both use the same job/SSE infrastructure underneath.)
     if stage == "all":
+        # deepcode ignore OR: same-origin path built by local_url() (fixed prefix + one encoded segment); job id is server-generated
         return RedirectResponse(
-            url=f"/sessions/{_qs(name)}?job={record.id}", status_code=303,
+            url=local_url("/sessions", name, query={"job": str(record.id)}), status_code=303,
         )
     return RedirectResponse(url=f"/jobs/{record.id}", status_code=303)

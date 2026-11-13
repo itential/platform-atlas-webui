@@ -228,6 +228,25 @@
   <script src="{{ url_for('static', path='js/job-stream.js') }}?v={{ asset_version }}" defer></script>
   {% endif %}
 
+{% elif targets_error and targets_error_kind == 'credentials' %}
+  {# Credential backend (e.g. Vault) unreachable — an operational state, not a
+     crash. Say what's wrong, why it matters, and what to do next. #}
+  <div class="flash flash--warn flex items-start gap-3">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0" style="margin-top:2px;color:var(--warn);" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+    <div style="flex:1; min-width:0;">
+      <div style="font-weight:600; color:var(--text);">Credential store unreachable</div>
+      <p style="margin:4px 0 0; color:var(--text-2);">
+        Preflight needs the credential backend to look up SSH credentials for <code>{{ active_env }}</code>,
+        so its targets can't be listed yet. {{ targets_error_hint or "Start the backend (for example Vault) or check its address, then retry." }}
+      </p>
+      <p style="margin:6px 0 0; color:var(--text-3); font-family:var(--mono); font-size:13px; overflow-wrap:anywhere;">{{ targets_error }}</p>
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="btn sm primary" href="/preflight">Retry</a>
+        <a class="btn sm" href="/config/credentials">Credential settings</a>
+        <a class="btn sm" href="/environments/{{ active_env }}">View environment</a>
+      </div>
+    </div>
+  </div>
 {% elif targets_error %}
   <section class="card">
     <div class="card-body">

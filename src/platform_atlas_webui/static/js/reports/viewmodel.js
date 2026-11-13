@@ -818,7 +818,50 @@
   // ─────────────────────────────────────────────────────────────
   function paintArchitecture(arch) {
     paintExtendedChecks(arch.extended_checks || []);
+    paintArchIncomplete(arch.completeness);
     paintArchSections(arch.sections || {}, arch.section_labels || {});
+  }
+
+  // Soft gate: an unfinished architecture form never blocks the report, but it is
+  // flagged here with the command (or WebUI page) that finishes it.
+  // arch.completeness is built by reporting.webui_viewmodel._architecture_completeness.
+  function paintArchIncomplete(c) {
+    const wrap = root.querySelector('[data-vm-arch-sections]');
+    if (!wrap) return;
+    const prior = root.querySelector('[data-vm-arch-incomplete]');
+    if (prior) prior.remove();
+    if (!c || !c.applicable || c.complete) return;
+
+    const un = c.unanswered || [];
+    const started = (c.sections_done || 0) > 0 || un.some(function (u) { return u.state !== 'empty'; });
+    const lead = started
+      ? 'The architecture form has not been fully completed (' + c.sections_done + ' of ' + c.sections_total + ' sections answered).'
+      : 'The architecture form has not been completed for this environment.';
+    let list = '';
+    if (started && un.length) {
+      list = '<ul style="margin:8px 0 0 18px;padding:0;color:var(--text-2);">' + un.map(function (u) {
+        const open = u.state === 'empty' ? ' — not answered'
+          : (u.missing && u.missing.length
+            ? ' — still open: ' + escapeHTML(u.missing.slice(0, 6).join('; ')) + (u.missing.length > 6 ? '; +' + (u.missing.length - 6) + ' more' : '')
+            : ' — incomplete');
+        return '<li><strong>' + escapeHTML(u.label) + '</strong>' + open + '</li>';
+      }).join('') + '</ul>';
+    }
+    const box = document.createElement('div');
+    box.setAttribute('data-vm-arch-incomplete', '');
+    box.setAttribute('role', 'status');
+    box.style.cssText = 'display:flex;gap:10px;align-items:flex-start;padding:12px 14px;margin-bottom:14px;'
+      + 'border-radius:8px;border:1px solid var(--warn, var(--accent));background:var(--surface-2);font-size:14px;';
+    box.innerHTML =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+      + 'stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px;color:var(--warn, var(--accent));">'
+      + '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>'
+      + '<line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+      + '<div><div style="font-weight:600;margin-bottom:2px;">Architecture form incomplete</div>'
+      + '<div style="color:var(--text-2);">' + escapeHTML(lead) + ' Finish it with <code>' + escapeHTML(c.command || 'platform-atlas env architecture')
+      + '</code> or on the Architecture page of this WebUI; every question has an Unknown / None option. '
+      + 'Details and advisories below reflect only what was answered.</div>' + list + '</div>';
+    wrap.parentNode.insertBefore(box, wrap);
   }
 
   // Extended validation checks: horizontal tabs by category.

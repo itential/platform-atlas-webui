@@ -127,6 +127,22 @@
 .arch-skip-box svg { width: 10px; height: 10px; stroke: white; display: none; }
 .arch-skip.active .arch-skip-box svg { display: block; }
 
+/* ── Gates, Unknown answers, suggestions ─────────────────────────────── */
+.arch-gate .arch-field-hint { margin-top: 8px; }
+.arch-unknown {
+  display: inline-flex; align-items: center; gap: 7px; margin-top: 8px;
+  font-size: 13px; color: var(--text-3); cursor: pointer; user-select: none;
+}
+.arch-unknown.active { color: var(--text); font-weight: 600; }
+.arch-unknown input { accent-color: var(--accent); cursor: pointer; }
+.arch-field input:disabled, .arch-cluster-row input:disabled { opacity: .45; cursor: not-allowed; }
+.arch-chip {
+  margin-top: 8px; padding: 5px 11px; border: 1px dashed var(--line); border-radius: 999px;
+  background: transparent; color: var(--text-3); font-size: 12.5px; cursor: pointer; font-family: inherit;
+}
+.arch-chip:hover { color: var(--text); border-color: var(--accent); }
+.arch-subsection.hidden { display: none; }
+
 /* ── Fields ────────────────────────────────────────────────────────── */
 .arch-field { margin-bottom: 14px; }
 .arch-field.hidden { display: none; }
@@ -135,6 +151,7 @@
 .arch-field-hint  { font-size: 13px; color: var(--text-3); margin-bottom: 4px; }
 
 .arch-field select,
+.arch-field textarea,
 .arch-field input[type=text],
 .arch-field input[type=number] {
   width: 100%; padding: 7px 10px; font-size: 15px;
@@ -143,10 +160,14 @@
   transition: border-color .15s;
 }
 .arch-field select:focus,
+.arch-field textarea:focus,
 .arch-field input:focus { outline: none; border-color: var(--accent); }
 
 .arch-field select.filled,
+.arch-field textarea.filled,
 .arch-field input.filled { border-color: var(--accent); }
+.arch-field textarea { resize: vertical; min-height: 88px; line-height: 1.45; }
+.arch-field-opt { font-weight: 400; color: var(--text-3); font-size: 13px; }
 
 /* ── Confirm (Yes/No) ─────────────────────────────────────────────── */
 .arch-confirm { display: flex; gap: 8px; }
@@ -453,7 +474,7 @@
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-field" data-field="environment_type">
+      <div class="arch-field" data-field="environment.environment_type">
         <div class="arch-field-label">Environment type</div>
         <select id="f-environment-type" onchange="onAF(this)">
           <option value="">— Select —</option>
@@ -464,13 +485,13 @@
           <option value="DR / Failover">DR / Failover</option>
         </select>
       </div>
-      <div class="arch-field" data-field="datacenter_location">
-        <div class="arch-field-label">Datacenter location</div>
-        <input type="text" id="f-datacenter-location" placeholder="e.g., us-east-1, London-DC2" oninput="onAF(this)">
+      <div class="arch-field" data-field="environment.datacenter_location">
+        <div class="arch-field-label">Datacenter location (e.g., us-east-1, London-DC2, Building 4 Lab)</div>
+        <input type="text" id="f-datacenter-location" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div class="arch-field" data-field="hosting_provider">
+      <div class="arch-field" data-field="environment.hosting_provider">
         <div class="arch-field-label">Hosting provider</div>
-        <select id="f-hosting-provider" onchange="onAF(this); archCond('hosting_provider_other', this.value === 'Other')">
+        <select id="f-hosting-provider" onchange="onAF(this)">
           <option value="">— Select —</option>
           <option value="AWS">AWS</option>
           <option value="Azure">Azure</option>
@@ -478,11 +499,16 @@
           <option value="On-Premises">On-Premises</option>
           <option value="Hybrid (On-Prem + Cloud)">Hybrid (On-Prem + Cloud)</option>
           <option value="Other">Other</option>
+          <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field hidden" data-field="hosting_provider_other" data-cond="true">
-        <div class="arch-field-label">Specify provider</div>
-        <input type="text" id="f-hosting-provider-other" placeholder="e.g., OCI, IBM Cloud" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="environment.hosting_provider_other" data-cond="true">
+        <div class="arch-field-label">Specify hosting provider</div>
+        <input type="text" id="f-hosting-provider-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
+      </div>
+      <div class="arch-field" data-field="environment.automation_scope" data-optional="true">
+        <div class="arch-field-label">Network devices &amp; infrastructure automated with Itential <span class="arch-field-opt">(optional)</span></div>
+        <textarea id="f-automation-scope" rows="4" maxlength="2000" placeholder="e.g., Cisco IOS-XE and Juniper routers (config backup, compliance), Palo Alto firewalls (rule changes), F5 load balancers, VMware provisioning" oninput="onAF(this)"></textarea>
       </div>
     </div>
   </div>
@@ -504,31 +530,33 @@
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-field" data-field="active_instance_count">
+      <div class="arch-field" data-field="platform.active_instance_count">
         <div class="arch-field-label">Number of active Platform instances</div>
-        <input type="number" min="0" id="f-active-instance-count" placeholder="0" oninput="onAF(this); onTotalInstances()">
+        <input type="number" min="0" id="f-active-instance-count" placeholder="0" oninput="onAF(this)">
+        <label class="arch-unknown"><input type="checkbox" id="u-f-active-instance-count" onchange="toggleUnknown('f-active-instance-count', this)"><span>Unknown</span></label>
       </div>
-      <div class="arch-field" data-field="standby_instance_count">
+      <div class="arch-field" data-field="platform.standby_instance_count">
         <div class="arch-field-label">Number of standby Platform instances</div>
-        <input type="number" min="0" id="f-standby-instance-count" placeholder="0" value="0" oninput="onAF(this); onTotalInstances()">
+        <input type="number" min="0" id="f-standby-instance-count" placeholder="0" oninput="onAF(this)">
+        <label class="arch-unknown"><input type="checkbox" id="u-f-standby-instance-count" onchange="toggleUnknown('f-standby-instance-count', this)"><span>Unknown</span></label>
       </div>
-      <div class="arch-field hidden" data-field="all_in_same_datacenter" data-cond="true" id="ff-all-in-same-dc">
+      <div class="arch-field hidden" data-field="platform.all_in_same_datacenter" data-cond="true">
         <div class="arch-field-label">Are all Platform instances in the same datacenter?</div>
         <div class="arch-confirm">
           <div class="arch-confirm-opt" onclick="setConfirm('f-all-in-same-datacenter', true, this)">Yes</div>
           <div class="arch-confirm-opt" onclick="setConfirm('f-all-in-same-datacenter', false, this)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-all-in-same-datacenter', 'unknown', this)">Unknown</div>
         </div>
         <input type="hidden" id="f-all-in-same-datacenter">
       </div>
-      <div class="arch-field hidden" data-field="datacenter_details" data-cond="true">
-        <div class="arch-field-label">Describe the distribution</div>
-        <div class="arch-field-hint">e.g., 2 active in us-east-1, 1 standby in us-west-2</div>
-        <input type="text" id="f-datacenter-details" placeholder="Distribution details" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="platform.datacenter_details" data-cond="true">
+        <div class="arch-field-label">Describe the distribution (e.g., 2 active in us-east-1, 1 standby in us-west-2)</div>
+        <input type="text" id="f-datacenter-details" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div class="arch-subsection">Deployment Type</div>
-      <div class="arch-field" data-field="deployment_type" data-parent="deployment">
+      <div class="arch-subsection" data-sub-for="f-platform-deployment-type">Deployment Type</div>
+      <div class="arch-field" data-field="platform.deployment.deployment_type" data-parent="deployment">
         <div class="arch-field-label">Platform — Deployment type</div>
-        <select id="f-platform-deployment-type" onchange="onAF(this); archCond('platform_deployment_type_other', this.value === 'Other')">
+        <select id="f-platform-deployment-type" onchange="onAF(this)">
           <option value="">— Select —</option>
           <option value="Bare Metal">Bare Metal</option>
           <option value="Virtual Machines (VMs)">Virtual Machines (VMs)</option>
@@ -538,51 +566,68 @@
           <option value="AWS Fargate">AWS Fargate</option>
           <option value="Docker Containers">Docker Containers</option>
           <option value="Other">Other</option>
+          <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field hidden" data-field="platform_deployment_type_other" data-parent="deployment" data-cond="true">
+      <div class="arch-field hidden" data-field="platform.deployment.deployment_type_other" data-parent="deployment" data-cond="true">
         <div class="arch-field-label">Specify deployment type</div>
-        <input type="text" id="f-platform-deployment-type-other" placeholder="e.g., LXC, Podman" oninput="onAF(this)">
+        <input type="text" id="f-platform-deployment-type-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div class="arch-subsection">Server Specs</div>
-      <div class="arch-field" data-field="os_type" data-parent="server_specs">
+      <div class="arch-subsection" data-sub-for="f-platform-os-type">Server Specs</div>
+      <div class="arch-field" data-field="platform.server_specs.os_type" data-parent="server_specs">
         <div class="arch-field-label">Platform — Operating System</div>
-        <select id="f-platform-os-type" onchange="onAF(this); archCond('platform_os_type_other', this.value === 'Other')">
+        <select id="f-platform-os-type" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="RHEL 8">RHEL 8</option><option value="RHEL 9">RHEL 9</option>
-          <option value="Rocky 8">Rocky 8</option><option value="Rocky 9">Rocky 9</option>
-          <option value="Alpine">Alpine</option><option value="Amazon Linux 2">Amazon Linux 2</option>
+          <option value="RHEL 8">RHEL 8</option>
+          <option value="RHEL 9">RHEL 9</option>
+          <option value="Rocky 8">Rocky 8</option>
+          <option value="Rocky 9">Rocky 9</option>
+          <option value="Alpine">Alpine</option>
+          <option value="Amazon Linux 2">Amazon Linux 2</option>
           <option value="Other">Other</option>
+          <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field hidden" data-field="platform_os_type_other" data-parent="server_specs" data-cond="true">
-        <div class="arch-field-label">Specify OS</div>
-        <input type="text" id="f-platform-os-type-other" placeholder="OS name" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="platform.server_specs.os_type_other" data-parent="server_specs" data-cond="true">
+        <div class="arch-field-label">Specify operating system</div>
+        <input type="text" id="f-platform-os-type-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div class="arch-field" data-field="cpu_cores" data-parent="server_specs">
+      <div class="arch-field" data-field="platform.server_specs.cpu_cores" data-parent="server_specs">
         <div class="arch-field-label">Platform — CPU cores per server</div>
         <select id="f-platform-cpu-cores" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="2">2</option><option value="4">4</option><option value="8">8</option>
-          <option value="16">16</option><option value="32">32</option><option value="64+">64+</option>
+          <option value="2">2</option>
+          <option value="4">4</option>
+          <option value="8">8</option>
+          <option value="16">16</option>
+          <option value="32">32</option>
+          <option value="64+">64+</option>
           <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field" data-field="memory_gb" data-parent="server_specs">
+      <div class="arch-field" data-field="platform.server_specs.memory_gb" data-parent="server_specs">
         <div class="arch-field-label">Platform — Memory (GB) per server</div>
         <select id="f-platform-memory-gb" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="4">4</option><option value="8">8</option><option value="16">16</option>
-          <option value="32">32</option><option value="64">64</option><option value="128+">128+</option>
+          <option value="4">4</option>
+          <option value="8">8</option>
+          <option value="16">16</option>
+          <option value="32">32</option>
+          <option value="64">64</option>
+          <option value="128+">128+</option>
           <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field" data-field="disk_space_gb" data-parent="server_specs">
+      <div class="arch-field" data-field="platform.server_specs.disk_space_gb" data-parent="server_specs">
         <div class="arch-field-label">Platform — Disk space (GB) per server</div>
         <select id="f-platform-disk-space-gb" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="20">20</option><option value="50">50</option><option value="100">100</option>
-          <option value="200">200</option><option value="500">500</option><option value="1000+">1000+</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+          <option value="500">500</option>
+          <option value="1000+">1000+</option>
           <option value="Unknown">Unknown</option>
         </select>
       </div>
@@ -602,70 +647,99 @@
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-field" data-field="same_datacenter_as_platform">
-        <div class="arch-field-label">MongoDB in same datacenter as Platform?</div>
+      <div class="arch-field" data-field="mongodb.deployment_type">
+        <div class="arch-field-label">MongoDB deployment topology</div>
+        <select id="f-mongo-deployment-type" onchange="onAF(this)">
+          <option value="">— Select —</option>
+          <option value="Standalone">Standalone</option>
+          <option value="Replica Set (recommended for HA)">Replica Set (recommended for HA)</option>
+          <option value="Sharded Cluster">Sharded Cluster</option>
+          <option value="Other">Other</option>
+          <option value="Unknown">Unknown</option>
+        </select>
+      </div>
+      <div class="arch-field" data-field="mongodb.mongo_node_count">
+        <div class="arch-field-label">Number of MongoDB servers (total, including the primary)</div>
+        <input type="number" min="0" id="f-mongo-node-count" placeholder="0" oninput="onAF(this)">
+        <label class="arch-unknown"><input type="checkbox" id="u-f-mongo-node-count" onchange="toggleUnknown('f-mongo-node-count', this)"><span>Unknown</span></label>
+      </div>
+      <div class="arch-field" data-field="mongodb.same_datacenter_as_platform">
+        <div class="arch-field-label">Is MongoDB in the same datacenter as Platform?</div>
         <div class="arch-confirm">
           <div class="arch-confirm-opt" onclick="setConfirm('f-mongo-same-dc', true, this)">Yes</div>
           <div class="arch-confirm-opt" onclick="setConfirm('f-mongo-same-dc', false, this)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mongo-same-dc', 'unknown', this)">Unknown</div>
         </div>
         <input type="hidden" id="f-mongo-same-dc">
       </div>
-      <div class="arch-field" data-field="replica_count">
-        <div class="arch-field-label">Number of MongoDB replica set members</div>
-        <input type="number" min="1" id="f-mongo-replica-count" placeholder="3" oninput="onAF(this); archCond('mongo_across_dc', parseInt(this.value) > 1)">
-      </div>
-      <div class="arch-field hidden" data-field="replicas_across_datacenters" data-cond="true" id="ff-mongo-across-dc">
-        <div class="arch-field-label">Are replicas spread across multiple datacenters?</div>
+      <div class="arch-field hidden" data-field="mongodb.replicas_across_datacenters" data-cond="true">
+        <div class="arch-field-label">Are replica members distributed across multiple datacenters?</div>
         <div class="arch-confirm">
-          <div class="arch-confirm-opt" onclick="setConfirm('f-mongo-across-dc', true, this); archCond('mongo_dc_distribution', true)">Yes</div>
-          <div class="arch-confirm-opt" onclick="setConfirm('f-mongo-across-dc', false, this); archCond('mongo_dc_distribution', false)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mongo-across-dc', true, this)">Yes</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mongo-across-dc', false, this)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mongo-across-dc', 'unknown', this)">Unknown</div>
         </div>
         <input type="hidden" id="f-mongo-across-dc">
       </div>
-      <div class="arch-field hidden" data-field="datacenter_distribution" data-cond="true">
-        <div class="arch-field-label">Datacenter distribution</div>
-        <div class="arch-field-hint">e.g., 2 in us-east-1, 1 in us-west-2</div>
-        <input type="text" id="f-mongo-dc-distribution" placeholder="Distribution details" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="mongodb.datacenter_distribution" data-cond="true">
+        <div class="arch-field-label">Describe distribution (e.g., 2 in us-east-1, 1 arbiter in us-west-2)</div>
+        <input type="text" id="f-mongo-dc-distribution" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div class="arch-subsection">Server Specs</div>
-      <div class="arch-field" data-field="os_type" data-parent="server_specs">
+      <div class="arch-subsection" data-sub-for="f-mongo-os-type">Server Specs</div>
+      <div class="arch-field" data-field="mongodb.server_specs.os_type" data-parent="server_specs">
         <div class="arch-field-label">MongoDB — Operating System</div>
-        <select id="f-mongo-os-type" onchange="onAF(this); archCond('mongo_os_type_other', this.value === 'Other')">
+        <select id="f-mongo-os-type" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="RHEL 8">RHEL 8</option><option value="RHEL 9">RHEL 9</option>
-          <option value="Rocky 8">Rocky 8</option><option value="Rocky 9">Rocky 9</option>
-          <option value="Alpine">Alpine</option><option value="Amazon Linux 2">Amazon Linux 2</option>
+          <option value="RHEL 8">RHEL 8</option>
+          <option value="RHEL 9">RHEL 9</option>
+          <option value="Rocky 8">Rocky 8</option>
+          <option value="Rocky 9">Rocky 9</option>
+          <option value="Alpine">Alpine</option>
+          <option value="Amazon Linux 2">Amazon Linux 2</option>
           <option value="Other">Other</option>
+          <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field hidden" data-field="mongo_os_type_other" data-parent="server_specs" data-cond="true">
-        <div class="arch-field-label">Specify OS</div>
-        <input type="text" id="f-mongo-os-type-other" placeholder="OS name" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="mongodb.server_specs.os_type_other" data-parent="server_specs" data-cond="true">
+        <div class="arch-field-label">Specify operating system</div>
+        <input type="text" id="f-mongo-os-type-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div class="arch-field" data-field="cpu_cores" data-parent="server_specs">
+      <div class="arch-field" data-field="mongodb.server_specs.cpu_cores" data-parent="server_specs">
         <div class="arch-field-label">MongoDB — CPU cores per server</div>
         <select id="f-mongo-cpu-cores" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="2">2</option><option value="4">4</option><option value="8">8</option>
-          <option value="16">16</option><option value="32">32</option><option value="64+">64+</option>
+          <option value="2">2</option>
+          <option value="4">4</option>
+          <option value="8">8</option>
+          <option value="16">16</option>
+          <option value="32">32</option>
+          <option value="64+">64+</option>
           <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field" data-field="memory_gb" data-parent="server_specs">
+      <div class="arch-field" data-field="mongodb.server_specs.memory_gb" data-parent="server_specs">
         <div class="arch-field-label">MongoDB — Memory (GB) per server</div>
         <select id="f-mongo-memory-gb" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="4">4</option><option value="8">8</option><option value="16">16</option>
-          <option value="32">32</option><option value="64">64</option><option value="128+">128+</option>
+          <option value="4">4</option>
+          <option value="8">8</option>
+          <option value="16">16</option>
+          <option value="32">32</option>
+          <option value="64">64</option>
+          <option value="128+">128+</option>
           <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field" data-field="disk_space_gb" data-parent="server_specs">
+      <div class="arch-field" data-field="mongodb.server_specs.disk_space_gb" data-parent="server_specs">
         <div class="arch-field-label">MongoDB — Disk space (GB) per server</div>
         <select id="f-mongo-disk-space-gb" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="20">20</option><option value="50">50</option><option value="100">100</option>
-          <option value="200">200</option><option value="500">500</option><option value="1000+">1000+</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+          <option value="500">500</option>
+          <option value="1000+">1000+</option>
           <option value="Unknown">Unknown</option>
         </select>
       </div>
@@ -685,78 +759,100 @@
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-field" data-field="deployment_type">
-        <div class="arch-field-label">Redis deployment type</div>
-        <select id="f-redis-deployment-type" onchange="onAF(this); onRedisTopology()">
+      <div class="arch-field" data-field="redis.deployment_type">
+        <div class="arch-field-label">Redis deployment topology</div>
+        <select id="f-redis-deployment-type" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="Standalone">Standalone</option>
-          <option value="Sentinel">Sentinel</option>
+          <option value="Single Instance">Single Instance</option>
+          <option value="Sentinel (recommended for HA)">Sentinel (recommended for HA)</option>
           <option value="Cluster">Cluster</option>
+          <option value="Other">Other</option>
+          <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field" data-field="redis_node_count">
-        <div class="arch-field-label">Number of Redis nodes</div>
-        <input type="number" min="1" id="f-redis-node-count" placeholder="1" oninput="onAF(this)">
+      <div class="arch-field" data-field="redis.redis_node_count">
+        <div class="arch-field-label">Number of Redis server nodes</div>
+        <input type="number" min="0" id="f-redis-node-count" placeholder="0" oninput="onAF(this)">
+        <label class="arch-unknown"><input type="checkbox" id="u-f-redis-node-count" onchange="toggleUnknown('f-redis-node-count', this)"><span>Unknown</span></label>
       </div>
-      <div class="arch-field hidden" data-field="sentinel_count" data-cond="true" id="ff-redis-sentinel">
-        <div class="arch-field-label">Number of Sentinel nodes</div>
-        <input type="number" min="1" id="f-redis-sentinel-count" placeholder="3" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="redis.sentinel_count" data-cond="true">
+        <div class="arch-field-label">Number of Sentinel instances</div>
+        <input type="number" min="0" id="f-redis-sentinel-count" placeholder="0" oninput="onAF(this)">
+        <label class="arch-unknown"><input type="checkbox" id="u-f-redis-sentinel-count" onchange="toggleUnknown('f-redis-sentinel-count', this)"><span>Unknown</span></label>
       </div>
-      <div class="arch-field" data-field="same_datacenter_as_platform">
-        <div class="arch-field-label">Redis in same datacenter as Platform?</div>
+      <div class="arch-field" data-field="redis.same_datacenter_as_platform">
+        <div class="arch-field-label">Are Redis nodes in the same datacenter as Platform?</div>
         <div class="arch-confirm">
-          <div class="arch-confirm-opt" onclick="setConfirm('f-redis-same-dc', true, this); archCond('redis_across_dc', false)">Yes</div>
-          <div class="arch-confirm-opt" onclick="setConfirm('f-redis-same-dc', false, this); archCond('redis_across_dc', true)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-redis-same-dc', true, this)">Yes</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-redis-same-dc', false, this)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-redis-same-dc', 'unknown', this)">Unknown</div>
         </div>
         <input type="hidden" id="f-redis-same-dc">
       </div>
-      <div class="arch-field hidden" data-field="nodes_across_datacenters" data-cond="true" id="ff-redis-across-dc">
-        <div class="arch-field-label">Are Redis nodes spread across multiple datacenters?</div>
+      <div class="arch-field hidden" data-field="redis.nodes_across_datacenters" data-cond="true">
+        <div class="arch-field-label">Are Redis nodes distributed across multiple datacenters?</div>
         <div class="arch-confirm">
           <div class="arch-confirm-opt" onclick="setConfirm('f-redis-across-dc', true, this)">Yes</div>
           <div class="arch-confirm-opt" onclick="setConfirm('f-redis-across-dc', false, this)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-redis-across-dc', 'unknown', this)">Unknown</div>
         </div>
         <input type="hidden" id="f-redis-across-dc">
       </div>
-      <div class="arch-subsection">Server Specs</div>
-      <div class="arch-field" data-field="os_type" data-parent="server_specs">
+      <div class="arch-subsection" data-sub-for="f-redis-os-type">Server Specs</div>
+      <div class="arch-field" data-field="redis.server_specs.os_type" data-parent="server_specs">
         <div class="arch-field-label">Redis — Operating System</div>
-        <select id="f-redis-os-type" onchange="onAF(this); archCond('redis_os_type_other', this.value === 'Other')">
+        <select id="f-redis-os-type" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="RHEL 8">RHEL 8</option><option value="RHEL 9">RHEL 9</option>
-          <option value="Rocky 8">Rocky 8</option><option value="Rocky 9">Rocky 9</option>
-          <option value="Alpine">Alpine</option><option value="Amazon Linux 2">Amazon Linux 2</option>
+          <option value="RHEL 8">RHEL 8</option>
+          <option value="RHEL 9">RHEL 9</option>
+          <option value="Rocky 8">Rocky 8</option>
+          <option value="Rocky 9">Rocky 9</option>
+          <option value="Alpine">Alpine</option>
+          <option value="Amazon Linux 2">Amazon Linux 2</option>
           <option value="Other">Other</option>
+          <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field hidden" data-field="redis_os_type_other" data-parent="server_specs" data-cond="true">
-        <div class="arch-field-label">Specify OS</div>
-        <input type="text" id="f-redis-os-type-other" placeholder="OS name" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="redis.server_specs.os_type_other" data-parent="server_specs" data-cond="true">
+        <div class="arch-field-label">Specify operating system</div>
+        <input type="text" id="f-redis-os-type-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div class="arch-field" data-field="cpu_cores" data-parent="server_specs">
+      <div class="arch-field" data-field="redis.server_specs.cpu_cores" data-parent="server_specs">
         <div class="arch-field-label">Redis — CPU cores per server</div>
         <select id="f-redis-cpu-cores" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="2">2</option><option value="4">4</option><option value="8">8</option>
-          <option value="16">16</option><option value="32">32</option><option value="64+">64+</option>
+          <option value="2">2</option>
+          <option value="4">4</option>
+          <option value="8">8</option>
+          <option value="16">16</option>
+          <option value="32">32</option>
+          <option value="64+">64+</option>
           <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field" data-field="memory_gb" data-parent="server_specs">
+      <div class="arch-field" data-field="redis.server_specs.memory_gb" data-parent="server_specs">
         <div class="arch-field-label">Redis — Memory (GB) per server</div>
         <select id="f-redis-memory-gb" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="4">4</option><option value="8">8</option><option value="16">16</option>
-          <option value="32">32</option><option value="64">64</option><option value="128+">128+</option>
+          <option value="4">4</option>
+          <option value="8">8</option>
+          <option value="16">16</option>
+          <option value="32">32</option>
+          <option value="64">64</option>
+          <option value="128+">128+</option>
           <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field" data-field="disk_space_gb" data-parent="server_specs">
+      <div class="arch-field" data-field="redis.server_specs.disk_space_gb" data-parent="server_specs">
         <div class="arch-field-label">Redis — Disk space (GB) per server</div>
         <select id="f-redis-disk-space-gb" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="20">20</option><option value="50">50</option><option value="100">100</option>
-          <option value="200">200</option><option value="500">500</option><option value="1000+">1000+</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+          <option value="500">500</option>
+          <option value="1000+">1000+</option>
           <option value="Unknown">Unknown</option>
         </select>
       </div>
@@ -775,110 +871,144 @@
         <div class="arch-section-title">Gateway 4 Architecture</div>
         <div class="arch-section-sub">Automation Gateway 4 topology and specs</div>
       </div>
-      <span class="arch-tag conditional">Conditional</span>
+      <span class="arch-tag required">Required</span>
       <span class="arch-section-mini" id="mini-gateway4">—</span>
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-skip" id="skip-gateway4" onclick="archSkip('gateway4', this)">
-        <div class="arch-skip-box"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1.5,6 4.5,9.5 10.5,2.5"/></svg></div>
-        <span>This environment does not have Gateway 4 — skip section</span>
-      </div>
-      <div id="body-gateway4">
-        <div class="arch-field" data-field="instance_count">
-          <div class="arch-field-label">Number of Gateway 4 servers</div>
-          <input type="number" min="1" id="f-gw4-instance-count" placeholder="1" oninput="onAF(this)">
+      <div class="arch-field arch-gate" data-gate="gateway4">
+        <div class="arch-field-label">Does this environment have Gateway4?</div>
+        <div class="arch-confirm" id="skip-gateway4">
+          <div class="arch-confirm-opt" data-gate="yes" onclick="setGate('gateway4', true)">Yes</div>
+          <div class="arch-confirm-opt" data-gate="no" onclick="setGate('gateway4', false)">No</div>
         </div>
-        <div class="arch-field" data-field="same_datacenter_as_platform">
-          <div class="arch-field-label">Gateway 4 in same datacenter as Platform?</div>
+        <div class="arch-field-hint">Answer this first — the questions below apply only when the answer is Yes.</div>
+      </div>
+      <div id="body-gateway4" style="display:none">
+        <div class="arch-field" data-field="gateway4.instance_count">
+          <div class="arch-field-label">Number of Gateway4 servers</div>
+          <input type="number" min="0" id="f-gw4-instance-count" placeholder="0" oninput="onAF(this)">
+          <label class="arch-unknown"><input type="checkbox" id="u-f-gw4-instance-count" onchange="toggleUnknown('f-gw4-instance-count', this)"><span>Unknown</span></label>
+        </div>
+        <div class="arch-field" data-field="gateway4.same_datacenter_as_platform">
+          <div class="arch-field-label">Are Gateway4 servers in the same datacenter as Platform?</div>
           <div class="arch-confirm">
             <div class="arch-confirm-opt" onclick="setConfirm('f-gw4-same-dc', true, this)">Yes</div>
             <div class="arch-confirm-opt" onclick="setConfirm('f-gw4-same-dc', false, this)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-gw4-same-dc', 'unknown', this)">Unknown</div>
           </div>
           <input type="hidden" id="f-gw4-same-dc">
         </div>
-        <div class="arch-subsection">Deployment Type</div>
-        <div class="arch-field" data-field="deployment_type" data-parent="deployment">
-          <div class="arch-field-label">Gateway 4 — Deployment type</div>
-          <select id="f-gw4-deployment-type" onchange="onAF(this); archCond('gw4_deployment_type_other', this.value === 'Other')">
+        <div class="arch-subsection" data-sub-for="f-gw4-deployment-type">Deployment Type</div>
+        <div class="arch-field" data-field="gateway4.deployment.deployment_type" data-parent="deployment">
+          <div class="arch-field-label">Gateway4 — Deployment type</div>
+          <select id="f-gw4-deployment-type" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="Bare Metal">Bare Metal</option><option value="Virtual Machines (VMs)">Virtual Machines (VMs)</option>
-            <option value="Kubernetes (AWS EKS)">Kubernetes (AWS EKS)</option><option value="Kubernetes (Azure AKS)">Kubernetes (Azure AKS)</option>
+            <option value="Bare Metal">Bare Metal</option>
+            <option value="Virtual Machines (VMs)">Virtual Machines (VMs)</option>
+            <option value="Kubernetes (AWS EKS)">Kubernetes (AWS EKS)</option>
+            <option value="Kubernetes (Azure AKS)">Kubernetes (Azure AKS)</option>
             <option value="Kubernetes (Self-Managed)">Kubernetes (Self-Managed)</option>
-            <option value="AWS Fargate">AWS Fargate</option><option value="Docker Containers">Docker Containers</option>
+            <option value="AWS Fargate">AWS Fargate</option>
+            <option value="Docker Containers">Docker Containers</option>
             <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field hidden" data-field="gw4_deployment_type_other" data-parent="deployment" data-cond="true">
+        <div class="arch-field hidden" data-field="gateway4.deployment.deployment_type_other" data-parent="deployment" data-cond="true">
           <div class="arch-field-label">Specify deployment type</div>
-          <input type="text" id="f-gw4-deployment-type-other" placeholder="e.g., LXC, Podman" oninput="onAF(this)">
+          <input type="text" id="f-gw4-deployment-type-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
         </div>
-        <div class="arch-subsection">Server Specs</div>
-        <div class="arch-field" data-field="os_type" data-parent="server_specs">
-          <div class="arch-field-label">Gateway 4 — Operating System</div>
-          <select id="f-gw4-os-type" onchange="onAF(this); archCond('gw4_os_type_other', this.value === 'Other')">
+        <div class="arch-subsection" data-sub-for="f-gw4-os-type">Server Specs</div>
+        <div class="arch-field" data-field="gateway4.server_specs.os_type" data-parent="server_specs">
+          <div class="arch-field-label">Gateway4 — Operating System</div>
+          <select id="f-gw4-os-type" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="RHEL 8">RHEL 8</option><option value="RHEL 9">RHEL 9</option>
-            <option value="Rocky 8">Rocky 8</option><option value="Rocky 9">Rocky 9</option>
-            <option value="Alpine">Alpine</option><option value="Amazon Linux 2">Amazon Linux 2</option>
+            <option value="RHEL 8">RHEL 8</option>
+            <option value="RHEL 9">RHEL 9</option>
+            <option value="Rocky 8">Rocky 8</option>
+            <option value="Rocky 9">Rocky 9</option>
+            <option value="Alpine">Alpine</option>
+            <option value="Amazon Linux 2">Amazon Linux 2</option>
             <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field hidden" data-field="gw4_os_type_other" data-parent="server_specs" data-cond="true">
-          <input type="text" id="f-gw4-os-type-other" placeholder="OS name" oninput="onAF(this)">
+        <div class="arch-field hidden" data-field="gateway4.server_specs.os_type_other" data-parent="server_specs" data-cond="true">
+          <div class="arch-field-label">Specify operating system</div>
+          <input type="text" id="f-gw4-os-type-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
         </div>
-        <div class="arch-field" data-field="cpu_cores" data-parent="server_specs">
-          <div class="arch-field-label">Gateway 4 — CPU cores per server</div>
+        <div class="arch-field" data-field="gateway4.server_specs.cpu_cores" data-parent="server_specs">
+          <div class="arch-field-label">Gateway4 — CPU cores per server</div>
           <select id="f-gw4-cpu-cores" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="2">2</option><option value="4">4</option><option value="8">8</option>
-            <option value="16">16</option><option value="32">32</option><option value="64+">64+</option>
+            <option value="2">2</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+            <option value="16">16</option>
+            <option value="32">32</option>
+            <option value="64+">64+</option>
             <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field" data-field="memory_gb" data-parent="server_specs">
-          <div class="arch-field-label">Gateway 4 — Memory (GB) per server</div>
+        <div class="arch-field" data-field="gateway4.server_specs.memory_gb" data-parent="server_specs">
+          <div class="arch-field-label">Gateway4 — Memory (GB) per server</div>
           <select id="f-gw4-memory-gb" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="4">4</option><option value="8">8</option><option value="16">16</option>
-            <option value="32">32</option><option value="64">64</option><option value="128+">128+</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+            <option value="16">16</option>
+            <option value="32">32</option>
+            <option value="64">64</option>
+            <option value="128+">128+</option>
             <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field" data-field="disk_space_gb" data-parent="server_specs">
-          <div class="arch-field-label">Gateway 4 — Disk space (GB) per server</div>
+        <div class="arch-field" data-field="gateway4.server_specs.disk_space_gb" data-parent="server_specs">
+          <div class="arch-field-label">Gateway4 — Disk space (GB) per server</div>
           <select id="f-gw4-disk-space-gb" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="20">20</option><option value="50">50</option><option value="100">100</option>
-            <option value="200">200</option><option value="500">500</option><option value="1000+">1000+</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+            <option value="1000+">1000+</option>
             <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field" data-field="device_count">
-          <div class="arch-field-label">Approximate number of managed network devices</div>
+        <div class="arch-field" data-field="gateway4.device_count">
+          <div class="arch-field-label">Approximate number of network devices managed</div>
           <select id="f-gw4-device-count" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="1-500">1–500</option><option value="500-2000">500–2000</option>
-            <option value="2000-5000">2000–5000</option><option value="5000-10000">5000–10000</option>
-            <option value="10000+">10000+</option><option value="Unknown">Unknown</option>
+            <option value="1-500">1-500</option>
+            <option value="500-2000">500-2000</option>
+            <option value="2000-5000">2000-5000</option>
+            <option value="5000-10000">5000-10000</option>
+            <option value="10000+">10000+</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-subsection">Gateway 5 Migration</div>
-        <div class="arch-field" data-field="plans_to_migrate_to_gw5">
-          <div class="arch-field-label">Plans to migrate from Gateway 4 to Gateway 5?</div>
+        <div class="arch-subsection" data-sub-for="f-gw4-plans-migrate">Gateway 5 Migration</div>
+        <div class="arch-field" data-field="gateway4.plans_to_migrate_to_gw5">
+          <div class="arch-field-label">Are there plans to migrate from Gateway4 to Gateway5?</div>
           <div class="arch-confirm">
-            <div class="arch-confirm-opt" onclick="setConfirm('f-gw4-plans-migrate', true, this); archCond('gw4_migration_timeline', true)">Yes</div>
-            <div class="arch-confirm-opt" onclick="setConfirm('f-gw4-plans-migrate', false, this); archCond('gw4_migration_timeline', false)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-gw4-plans-migrate', true, this)">Yes</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-gw4-plans-migrate', false, this)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-gw4-plans-migrate', 'unknown', this)">Unknown</div>
           </div>
           <input type="hidden" id="f-gw4-plans-migrate">
         </div>
-        <div class="arch-field hidden" data-field="gw4_migration_timeline" data-cond="true">
+        <div class="arch-field hidden" data-field="gateway4.migration_timeline" data-cond="true">
           <div class="arch-field-label">Expected migration timeline</div>
           <select id="f-gw4-migration-timeline" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="Next 3 months">Next 3 months</option><option value="3-6 months">3–6 months</option>
-            <option value="6-12 months">6–12 months</option><option value="12+ months">12+ months</option>
+            <option value="Next 3 months">Next 3 months</option>
+            <option value="3-6 months">3-6 months</option>
+            <option value="6-12 months">6-12 months</option>
+            <option value="12+ months">12+ months</option>
             <option value="No timeline yet">No timeline yet</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
       </div>
@@ -897,109 +1027,140 @@
         <div class="arch-section-title">Gateway 5 Architecture</div>
         <div class="arch-section-sub">Cluster configuration and HA</div>
       </div>
-      <span class="arch-tag conditional">Conditional</span>
+      <span class="arch-tag required">Required</span>
       <span class="arch-section-mini" id="mini-gateway5">—</span>
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-skip" id="skip-gateway5" onclick="archSkip('gateway5', this)">
-        <div class="arch-skip-box"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1.5,6 4.5,9.5 10.5,2.5"/></svg></div>
-        <span>This environment does not have Gateway 5 — skip section</span>
+      <div class="arch-field arch-gate" data-gate="gateway5">
+        <div class="arch-field-label">Does this environment have Gateway5?</div>
+        <div class="arch-confirm" id="skip-gateway5">
+          <div class="arch-confirm-opt" data-gate="yes" onclick="setGate('gateway5', true)">Yes</div>
+          <div class="arch-confirm-opt" data-gate="no" onclick="setGate('gateway5', false)">No</div>
+        </div>
+        <div class="arch-field-hint">Answer this first — the questions below apply only when the answer is Yes.</div>
       </div>
-      <div id="body-gateway5">
-        <div class="arch-field" data-field="same_datacenter_as_platform">
-          <div class="arch-field-label">Gateway 5 in same datacenter as Platform?</div>
+      <div id="body-gateway5" style="display:none">
+        <div class="arch-field" data-field="gateway5.same_datacenter_as_platform">
+          <div class="arch-field-label">Are Gateway5 servers in the same datacenter as Platform?</div>
           <div class="arch-confirm">
             <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-same-dc', true, this)">Yes</div>
             <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-same-dc', false, this)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-same-dc', 'unknown', this)">Unknown</div>
           </div>
           <input type="hidden" id="f-gw5-same-dc">
         </div>
-        <div class="arch-subsection">Cluster Configuration</div>
-        <div class="arch-field" data-field="cluster_count">
-          <div class="arch-field-label">Number of Gateway 5 clusters</div>
-          <input type="number" min="1" id="f-gw5-cluster-count" placeholder="1" oninput="onAF(this); rebuildGw5Clusters()">
+        <div class="arch-subsection" data-sub-for="f-gw5-cluster-count">Cluster Configuration</div>
+        <div class="arch-field" data-field="gateway5.cluster_count">
+          <div class="arch-field-label">Number of Gateway5 clusters</div>
+          <input type="number" min="0" id="f-gw5-cluster-count" placeholder="0" oninput="onAF(this)">
+          <label class="arch-unknown"><input type="checkbox" id="u-f-gw5-cluster-count" onchange="toggleUnknown('f-gw5-cluster-count', this)"><span>Unknown</span></label>
         </div>
         <div id="gw5-clusters-wrap"></div>
-        <div class="arch-subsection">High Availability</div>
-        <div class="arch-field" data-field="ha_enabled">
-          <div class="arch-field-label">Is HA enabled for Gateway 5?</div>
+        <div class="arch-subsection" data-sub-for="f-gw5-ha-enabled">High Availability</div>
+        <div class="arch-field" data-field="gateway5.ha_enabled">
+          <div class="arch-field-label">Is HA enabled for Gateway5?</div>
           <div class="arch-confirm">
-            <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-ha-enabled', true, this); archCond('gw5_ha_mode', true)">Yes</div>
-            <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-ha-enabled', false, this); archCond('gw5_ha_mode', false)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-ha-enabled', true, this)">Yes</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-ha-enabled', false, this)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-ha-enabled', 'unknown', this)">Unknown</div>
           </div>
           <input type="hidden" id="f-gw5-ha-enabled">
         </div>
-        <div class="arch-field hidden" data-field="gw5_ha_mode" data-cond="true">
+        <div class="arch-field hidden" data-field="gateway5.ha_mode" data-cond="true">
           <div class="arch-field-label">HA mode</div>
           <select id="f-gw5-ha-mode" onchange="onAF(this)">
             <option value="">— Select —</option>
             <option value="Active-Standby">Active-Standby</option>
             <option value="Active-Active">Active-Active</option>
             <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field" data-field="has_redundant_instances">
-          <div class="arch-field-label">Are there redundant Gateway 5 instances for failover?</div>
+        <div class="arch-field" data-field="gateway5.has_redundant_instances">
+          <div class="arch-field-label">Are there redundant Gateway5 instances for failover?</div>
           <div class="arch-confirm">
             <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-redundant', true, this)">Yes</div>
             <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-redundant', false, this)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-gw5-redundant', 'unknown', this)">Unknown</div>
           </div>
           <input type="hidden" id="f-gw5-redundant">
         </div>
-        <div class="arch-subsection">Deployment Type</div>
-        <div class="arch-field" data-field="deployment_type" data-parent="deployment">
-          <div class="arch-field-label">Gateway 5 — Deployment type</div>
-          <select id="f-gw5-deployment-type" onchange="onAF(this); archCond('gw5_deployment_type_other', this.value === 'Other')">
+        <div class="arch-subsection" data-sub-for="f-gw5-deployment-type">Deployment Type</div>
+        <div class="arch-field" data-field="gateway5.deployment.deployment_type" data-parent="deployment">
+          <div class="arch-field-label">Gateway5 — Deployment type</div>
+          <select id="f-gw5-deployment-type" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="Bare Metal">Bare Metal</option><option value="Virtual Machines (VMs)">Virtual Machines (VMs)</option>
-            <option value="Kubernetes (AWS EKS)">Kubernetes (AWS EKS)</option><option value="Kubernetes (Azure AKS)">Kubernetes (Azure AKS)</option>
+            <option value="Bare Metal">Bare Metal</option>
+            <option value="Virtual Machines (VMs)">Virtual Machines (VMs)</option>
+            <option value="Kubernetes (AWS EKS)">Kubernetes (AWS EKS)</option>
+            <option value="Kubernetes (Azure AKS)">Kubernetes (Azure AKS)</option>
             <option value="Kubernetes (Self-Managed)">Kubernetes (Self-Managed)</option>
-            <option value="AWS Fargate">AWS Fargate</option><option value="Docker Containers">Docker Containers</option>
+            <option value="AWS Fargate">AWS Fargate</option>
+            <option value="Docker Containers">Docker Containers</option>
             <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field hidden" data-field="gw5_deployment_type_other" data-parent="deployment" data-cond="true">
-          <input type="text" id="f-gw5-deployment-type-other" placeholder="e.g., LXC, Podman" oninput="onAF(this)">
+        <div class="arch-field hidden" data-field="gateway5.deployment.deployment_type_other" data-parent="deployment" data-cond="true">
+          <div class="arch-field-label">Specify deployment type</div>
+          <input type="text" id="f-gw5-deployment-type-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
         </div>
-        <div class="arch-subsection">Server Specs</div>
-        <div class="arch-field" data-field="os_type" data-parent="server_specs">
-          <div class="arch-field-label">Gateway 5 — Operating System</div>
-          <select id="f-gw5-os-type" onchange="onAF(this); archCond('gw5_os_type_other', this.value === 'Other')">
+        <div class="arch-subsection" data-sub-for="f-gw5-os-type">Server Specs</div>
+        <div class="arch-field" data-field="gateway5.server_specs.os_type" data-parent="server_specs">
+          <div class="arch-field-label">Gateway5 — Operating System</div>
+          <select id="f-gw5-os-type" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="RHEL 8">RHEL 8</option><option value="RHEL 9">RHEL 9</option>
-            <option value="Rocky 8">Rocky 8</option><option value="Rocky 9">Rocky 9</option>
-            <option value="Alpine">Alpine</option><option value="Amazon Linux 2">Amazon Linux 2</option>
+            <option value="RHEL 8">RHEL 8</option>
+            <option value="RHEL 9">RHEL 9</option>
+            <option value="Rocky 8">Rocky 8</option>
+            <option value="Rocky 9">Rocky 9</option>
+            <option value="Alpine">Alpine</option>
+            <option value="Amazon Linux 2">Amazon Linux 2</option>
             <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field hidden" data-field="gw5_os_type_other" data-parent="server_specs" data-cond="true">
-          <input type="text" id="f-gw5-os-type-other" placeholder="OS name" oninput="onAF(this)">
+        <div class="arch-field hidden" data-field="gateway5.server_specs.os_type_other" data-parent="server_specs" data-cond="true">
+          <div class="arch-field-label">Specify operating system</div>
+          <input type="text" id="f-gw5-os-type-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
         </div>
-        <div class="arch-field" data-field="cpu_cores" data-parent="server_specs">
-          <div class="arch-field-label">Gateway 5 — CPU cores per server</div>
+        <div class="arch-field" data-field="gateway5.server_specs.cpu_cores" data-parent="server_specs">
+          <div class="arch-field-label">Gateway5 — CPU cores per server</div>
           <select id="f-gw5-cpu-cores" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="2">2</option><option value="4">4</option><option value="8">8</option>
-            <option value="16">16</option><option value="32">32</option><option value="64+">64+</option>
+            <option value="2">2</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+            <option value="16">16</option>
+            <option value="32">32</option>
+            <option value="64+">64+</option>
             <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field" data-field="memory_gb" data-parent="server_specs">
-          <div class="arch-field-label">Gateway 5 — Memory (GB) per server</div>
+        <div class="arch-field" data-field="gateway5.server_specs.memory_gb" data-parent="server_specs">
+          <div class="arch-field-label">Gateway5 — Memory (GB) per server</div>
           <select id="f-gw5-memory-gb" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="4">4</option><option value="8">8</option><option value="16">16</option>
-            <option value="32">32</option><option value="64">64</option><option value="128+">128+</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+            <option value="16">16</option>
+            <option value="32">32</option>
+            <option value="64">64</option>
+            <option value="128+">128+</option>
             <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field" data-field="disk_space_gb" data-parent="server_specs">
-          <div class="arch-field-label">Gateway 5 — Disk space (GB) per server</div>
+        <div class="arch-field" data-field="gateway5.server_specs.disk_space_gb" data-parent="server_specs">
+          <div class="arch-field-label">Gateway5 — Disk space (GB) per server</div>
           <select id="f-gw5-disk-space-gb" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="20">20</option><option value="50">50</option><option value="100">100</option>
-            <option value="200">200</option><option value="500">500</option><option value="1000+">1000+</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+            <option value="1000+">1000+</option>
             <option value="Unknown">Unknown</option>
           </select>
         </div>
@@ -1016,60 +1177,76 @@
         <div class="arch-section-title">Load Balancer</div>
         <div class="arch-section-sub">Type, routing, health checks</div>
       </div>
-      <span class="arch-tag conditional">Conditional</span>
+      <span class="arch-tag required">Required</span>
       <span class="arch-section-mini" id="mini-load_balancer">—</span>
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-skip" id="skip-load_balancer" onclick="archSkip('load_balancer', this)">
-        <div class="arch-skip-box"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1.5,6 4.5,9.5 10.5,2.5"/></svg></div>
-        <span>No load balancer in front of Platform — skip section</span>
+      <div class="arch-field arch-gate" data-gate="load_balancer">
+        <div class="arch-field-label">Is a load balancer deployed in front of Platform?</div>
+        <div class="arch-confirm" id="skip-load_balancer">
+          <div class="arch-confirm-opt" data-gate="yes" onclick="setGate('load_balancer', true)">Yes</div>
+          <div class="arch-confirm-opt" data-gate="no" onclick="setGate('load_balancer', false)">No</div>
+        </div>
+        <div class="arch-field-hint">Answer this first — the questions below apply only when the answer is Yes.</div>
       </div>
-      <div id="body-load_balancer">
-        <div class="arch-field" data-field="lb_type">
+      <div id="body-load_balancer" style="display:none">
+        <div class="arch-field" data-field="load_balancer.lb_type">
           <div class="arch-field-label">Load balancer type</div>
-          <select id="f-lb-type" onchange="onAF(this); archCond('lb_type_other', this.value === 'Other')">
+          <select id="f-lb-type" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="F5 BIG-IP">F5 BIG-IP</option><option value="Nginx">Nginx</option>
-            <option value="AWS ALB">AWS ALB</option><option value="AWS NLB">AWS NLB</option>
+            <option value="F5 BIG-IP">F5 BIG-IP</option>
+            <option value="Nginx">Nginx</option>
+            <option value="AWS ALB">AWS ALB</option>
+            <option value="AWS NLB">AWS NLB</option>
             <option value="Azure Load Balancer">Azure Load Balancer</option>
-            <option value="HAProxy">HAProxy</option><option value="Other">Other</option>
+            <option value="HAProxy">HAProxy</option>
+            <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field hidden" data-field="lb_type_other" data-cond="true">
-          <div class="arch-field-label">Specify load balancer type</div>
-          <input type="text" id="f-lb-type-other" placeholder="e.g., Traefik, Envoy" oninput="onAF(this)">
+        <div class="arch-field hidden" data-field="load_balancer.lb_type_other" data-cond="true">
+          <div class="arch-field-label">Specify (e.g., Traefik, Envoy, Citrix)</div>
+          <input type="text" id="f-lb-type-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
         </div>
-        <div class="arch-field" data-field="routing_policy">
+        <div class="arch-field" data-field="load_balancer.routing_policy">
           <div class="arch-field-label">Routing policy</div>
           <select id="f-lb-routing-policy" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="Round Robin">Round Robin</option><option value="Least Connections">Least Connections</option>
-            <option value="IP Hash">IP Hash</option><option value="Weighted">Weighted</option>
+            <option value="Round Robin">Round Robin</option>
+            <option value="Least Connections">Least Connections</option>
+            <option value="IP Hash">IP Hash</option>
+            <option value="Weighted">Weighted</option>
             <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field" data-field="session_stickiness">
-          <div class="arch-field-label">Session stickiness (sticky sessions) enabled?</div>
+        <div class="arch-field" data-field="load_balancer.session_stickiness">
+          <div class="arch-field-label">Is session stickiness (sticky sessions) enabled?</div>
           <div class="arch-confirm">
-            <div class="arch-confirm-opt" onclick="setConfirm('f-lb-stickiness', true, this); document.getElementById('lb-sticky-warn').classList.remove('visible')">Yes</div>
-            <div class="arch-confirm-opt" onclick="setConfirm('f-lb-stickiness', false, this); document.getElementById('lb-sticky-warn').classList.add('visible')">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-lb-stickiness', true, this)">Yes</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-lb-stickiness', false, this)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-lb-stickiness', 'unknown', this)">Unknown</div>
           </div>
           <input type="hidden" id="f-lb-stickiness">
-          <div class="arch-warning" id="lb-sticky-warn">⚠ Session stickiness is recommended for Platform.</div>
+          <div class="arch-warning" id="warn-f-lb-stickiness">⚠ Session stickiness is recommended for Platform.</div>
         </div>
-        <div class="arch-subsection">Health Checks</div>
-        <div class="arch-field" data-field="platform_health_endpoint">
-          <div class="arch-field-label">Platform health check endpoint</div>
-          <input type="text" id="f-lb-health-endpoint" placeholder="/health/status?exclude-services=true" value="/health/status?exclude-services=true" oninput="onAF(this)">
+        <div class="arch-subsection" data-sub-for="f-lb-health-endpoint">Health Checks</div>
+        <div class="arch-field" data-field="load_balancer.platform_health_endpoint">
+          <div class="arch-field-label">Platform health check endpoint (e.g., /health/status)</div>
+          <input type="text" id="f-lb-health-endpoint" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
+          <button type="button" class="arch-chip" onclick="useSuggestion('f-lb-health-endpoint', '/health/status?exclude-services=true')">Use the usual value: /health/status?exclude-services=true</button>
         </div>
-        <div class="arch-field" data-field="health_check_interval">
+        <div class="arch-field" data-field="load_balancer.health_check_interval">
           <div class="arch-field-label">Health check interval</div>
           <select id="f-lb-health-interval" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="5 seconds">5 seconds</option><option value="10 seconds">10 seconds</option>
-            <option value="30 seconds">30 seconds</option><option value="60 seconds">60 seconds</option>
-            <option value="Other">Other</option><option value="Unknown">Unknown</option>
+            <option value="5 seconds">5 seconds</option>
+            <option value="10 seconds">10 seconds</option>
+            <option value="30 seconds">30 seconds</option>
+            <option value="60 seconds">60 seconds</option>
+            <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
       </div>
@@ -1084,65 +1261,80 @@
         <div class="arch-section-title">Kubernetes Configuration</div>
         <div class="arch-section-sub">Deployment method, probes, resources</div>
       </div>
-      <span class="arch-tag conditional">Conditional</span>
+      <span class="arch-tag required">Required</span>
       <span class="arch-section-mini" id="mini-kubernetes">—</span>
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-skip" id="skip-kubernetes" onclick="archSkip('kubernetes', this)">
-        <div class="arch-skip-box"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1.5,6 4.5,9.5 10.5,2.5"/></svg></div>
-        <span>Not deployed on Kubernetes — skip section</span>
+      <div class="arch-field arch-gate" data-gate="kubernetes">
+        <div class="arch-field-label">Is this environment deployed on Kubernetes?</div>
+        <div class="arch-confirm" id="skip-kubernetes">
+          <div class="arch-confirm-opt" data-gate="yes" onclick="setGate('kubernetes', true)">Yes</div>
+          <div class="arch-confirm-opt" data-gate="no" onclick="setGate('kubernetes', false)">No</div>
+        </div>
+        <div class="arch-field-hint">Answer this first — the questions below apply only when the answer is Yes.</div>
       </div>
-      <div id="body-kubernetes">
-        <div class="arch-field" data-field="k8s_distribution">
+      <div id="body-kubernetes" style="display:none">
+        <div class="arch-field" data-field="kubernetes.k8s_distribution">
           <div class="arch-field-label">Kubernetes distribution</div>
           <select id="f-k8s-distribution" onchange="onAF(this)">
             <option value="">— Select —</option>
-            <option value="AWS EKS">AWS EKS</option><option value="Azure AKS">Azure AKS</option>
-            <option value="Google GKE">Google GKE</option><option value="OpenShift">OpenShift</option>
+            <option value="AWS EKS">AWS EKS</option>
+            <option value="Azure AKS">Azure AKS</option>
+            <option value="Google GKE">Google GKE</option>
+            <option value="OpenShift">OpenShift</option>
             <option value="Rancher (RKE/RKE2)">Rancher (RKE/RKE2)</option>
             <option value="Self-Managed (kubeadm)">Self-Managed (kubeadm)</option>
             <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-subsection">Node Infrastructure</div>
-        <div class="arch-field" data-field="node_instance_type">
-          <div class="arch-field-label">Worker node instance type <span class="arch-optional">(optional)</span></div>
-          <input type="text" id="f-k8s-node-instance-type" placeholder="e.g., m5.2xlarge, c6i.4xlarge" oninput="onAF(this)">
+        <div class="arch-subsection" data-sub-for="f-k8s-node-instance-type">Node Infrastructure</div>
+        <div class="arch-field" data-field="kubernetes.node_instance_type">
+          <div class="arch-field-label">Worker node instance type (e.g., m5.2xlarge, c6i.4xlarge)</div>
+          <input type="text" id="f-k8s-node-instance-type" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
         </div>
-        <div class="arch-field" data-field="node_count">
-          <div class="arch-field-label">Number of worker nodes in the cluster <span class="arch-optional">(optional)</span></div>
-          <input type="number" min="1" id="f-k8s-node-count" placeholder="e.g., 3" oninput="onAF(this)">
+        <div class="arch-field" data-field="kubernetes.node_count">
+          <div class="arch-field-label">Number of worker nodes in the cluster</div>
+          <input type="number" min="0" id="f-k8s-node-count" placeholder="0" oninput="onAF(this)">
+          <label class="arch-unknown"><input type="checkbox" id="u-f-k8s-node-count" onchange="toggleUnknown('f-k8s-node-count', this)"><span>Unknown</span></label>
         </div>
-        <div class="arch-field" data-field="deployment_method">
+        <div class="arch-subsection" data-sub-for="f-k8s-deployment-method">Deployment Method</div>
+        <div class="arch-field" data-field="kubernetes.deployment_method">
           <div class="arch-field-label">How are Itential components deployed to Kubernetes?</div>
-          <select id="f-k8s-deployment-method" onchange="onAF(this); document.getElementById('k8s-method-warn').classList.toggle('visible', this.value !== '' && !this.value.includes('Helm'))">
+          <select id="f-k8s-deployment-method" onchange="onAF(this)">
             <option value="">— Select —</option>
             <option value="Helm Charts (recommended)">Helm Charts (recommended)</option>
-            <option value="ArgoCD + Helm">ArgoCD + Helm</option><option value="FluxCD">FluxCD</option>
+            <option value="ArgoCD + Helm">ArgoCD + Helm</option>
+            <option value="FluxCD">FluxCD</option>
             <option value="kubectl / Raw Manifests">kubectl / Raw Manifests</option>
-            <option value="Kustomize">Kustomize</option><option value="Other">Other</option>
+            <option value="Kustomize">Kustomize</option>
+            <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
-          <div class="arch-warning" id="k8s-method-warn">⚠ Itential recommends Helm charts for consistent, repeatable deployments.</div>
+          <div class="arch-warning" id="warn-f-k8s-deployment-method">⚠ Itential recommends Helm charts for consistent, repeatable deployments.</div>
         </div>
-        <div class="arch-subsection">Autoscaling (HPA)</div>
-        <div class="arch-field" data-field="hpa_enabled">
-          <div class="arch-field-label">Horizontal Pod Autoscaler (HPA) configured for Itential pods?</div>
+        <div class="arch-subsection" data-sub-for="f-k8s-hpa-enabled">Autoscaling (HPA)</div>
+        <div class="arch-field" data-field="kubernetes.hpa_enabled">
+          <div class="arch-field-label">Is Horizontal Pod Autoscaler (HPA) configured for Itential pods?</div>
           <div class="arch-confirm">
-            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-hpa-enabled', true, this); archCond('hpa_min_replicas', true); archCond('hpa_max_replicas', true); archCond('hpa_scaling_metric', true)">Yes</div>
-            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-hpa-enabled', false, this); archCond('hpa_min_replicas', false); archCond('hpa_max_replicas', false); archCond('hpa_scaling_metric', false)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-hpa-enabled', true, this)">Yes</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-hpa-enabled', false, this)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-hpa-enabled', 'unknown', this)">Unknown</div>
           </div>
           <input type="hidden" id="f-k8s-hpa-enabled">
         </div>
-        <div class="arch-field hidden" data-field="hpa_min_replicas" data-cond="true">
+        <div class="arch-field hidden" data-field="kubernetes.hpa_min_replicas" data-cond="true">
           <div class="arch-field-label">HPA minimum replica count</div>
-          <input type="number" min="1" id="f-k8s-hpa-min-replicas" placeholder="e.g., 2" oninput="onAF(this)">
+          <input type="number" min="0" id="f-k8s-hpa-min-replicas" placeholder="0" oninput="onAF(this)">
+          <label class="arch-unknown"><input type="checkbox" id="u-f-k8s-hpa-min-replicas" onchange="toggleUnknown('f-k8s-hpa-min-replicas', this)"><span>Unknown</span></label>
         </div>
-        <div class="arch-field hidden" data-field="hpa_max_replicas" data-cond="true">
+        <div class="arch-field hidden" data-field="kubernetes.hpa_max_replicas" data-cond="true">
           <div class="arch-field-label">HPA maximum replica count</div>
-          <input type="number" min="1" id="f-k8s-hpa-max-replicas" placeholder="e.g., 10" oninput="onAF(this)">
+          <input type="number" min="0" id="f-k8s-hpa-max-replicas" placeholder="0" oninput="onAF(this)">
+          <label class="arch-unknown"><input type="checkbox" id="u-f-k8s-hpa-max-replicas" onchange="toggleUnknown('f-k8s-hpa-max-replicas', this)"><span>Unknown</span></label>
         </div>
-        <div class="arch-field hidden" data-field="hpa_scaling_metric" data-cond="true">
+        <div class="arch-field hidden" data-field="kubernetes.hpa_scaling_metric" data-cond="true">
           <div class="arch-field-label">Scaling metric</div>
           <select id="f-k8s-hpa-scaling-metric" onchange="onAF(this)">
             <option value="">— Select —</option>
@@ -1150,57 +1342,62 @@
             <option value="Memory utilization">Memory utilization</option>
             <option value="Both CPU &amp; Memory">Both CPU &amp; Memory</option>
             <option value="Custom metric">Custom metric</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-subsection">Resource Configuration</div>
-        <div class="arch-field" data-field="has_custom_resources">
-          <div class="arch-field-label">Customized CPU/memory limits or Helm values for Itential pods?</div>
+        <div class="arch-subsection" data-sub-for="f-k8s-custom-resources">Resource Configuration</div>
+        <div class="arch-field" data-field="kubernetes.has_custom_resources">
+          <div class="arch-field-label">Have you customized CPU/memory limits or Helm values for Itential pods?</div>
           <div class="arch-confirm">
-            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-custom-resources', true, this); archCond('k8s_values_source', true); archCond('k8s_resource_notes', true)">Yes</div>
-            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-custom-resources', false, this); archCond('k8s_values_source', false); archCond('k8s_resource_notes', false)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-custom-resources', true, this)">Yes</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-custom-resources', false, this)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-custom-resources', 'unknown', this)">Unknown</div>
           </div>
           <input type="hidden" id="f-k8s-custom-resources">
         </div>
-        <div class="arch-field hidden" data-field="k8s_values_source" data-cond="true">
-          <div class="arch-field-label">Where are Helm values / resource configs stored?</div>
+        <div class="arch-field hidden" data-field="kubernetes.values_source" data-cond="true">
+          <div class="arch-field-label">Where are your Helm values / resource configs stored?</div>
           <select id="f-k8s-values-source" onchange="onAF(this)">
             <option value="">— Select —</option>
             <option value="Git repository">Git repository</option>
             <option value="Local files on bastion/admin host">Local files on bastion/admin host</option>
             <option value="ArgoCD ApplicationSet">ArgoCD ApplicationSet</option>
             <option value="Rancher Fleet">Rancher Fleet</option>
-            <option value="Other">Other</option><option value="Unknown">Unknown</option>
+            <option value="Other">Other</option>
+            <option value="Unknown">Unknown</option>
           </select>
         </div>
-        <div class="arch-field hidden" data-field="k8s_resource_notes" data-cond="true">
-          <div class="arch-field-label">Notable resource overrides (optional)</div>
-          <input type="text" id="f-k8s-resource-notes" placeholder="e.g., Platform pods set to 8Gi memory" oninput="onAF(this)">
+        <div class="arch-field hidden" data-field="kubernetes.resource_notes" data-cond="true">
+          <div class="arch-field-label">Any notable resource overrides? (e.g., Platform pods set to 8Gi memory, 4 CPU)</div>
+          <input type="text" id="f-k8s-resource-notes" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
         </div>
-        <div class="arch-subsection">Pod Health</div>
-        <div class="arch-field" data-field="pod_restarts_observed">
-          <div class="arch-field-label">Pod restarts observed?</div>
+        <div class="arch-subsection" data-sub-for="f-k8s-pod-restarts">Pod Health</div>
+        <div class="arch-field" data-field="kubernetes.pod_restarts_observed">
+          <div class="arch-field-label">Have pod restarts been observed?</div>
           <div class="arch-confirm">
-            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-pod-restarts', true, this); archCond('pod_restart_notes', true)">Yes</div>
-            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-pod-restarts', false, this); archCond('pod_restart_notes', false)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-pod-restarts', true, this)">Yes</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-pod-restarts', false, this)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-pod-restarts', 'unknown', this)">Unknown</div>
           </div>
           <input type="hidden" id="f-k8s-pod-restarts">
         </div>
-        <div class="arch-field hidden" data-field="pod_restart_notes" data-cond="true">
-          <div class="arch-field-label">Approximate frequency or restart count (optional)</div>
-          <input type="text" id="f-k8s-pod-restart-notes" placeholder="e.g., 3 restarts in last 24h, crash-looping weekly" oninput="onAF(this)">
+        <div class="arch-field hidden" data-field="kubernetes.pod_restart_notes" data-cond="true">
+          <div class="arch-field-label">Approximate frequency or restart count (e.g., 3 restarts in the last 24h)</div>
+          <input type="text" id="f-k8s-pod-restart-notes" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
         </div>
-        <div class="arch-subsection">Probe Configuration</div>
-        <div class="arch-field" data-field="probes_customized">
-          <div class="arch-field-label">Liveness/readiness/startup probes customized from Itential defaults?</div>
+        <div class="arch-subsection" data-sub-for="f-k8s-probes-customized">Probe Configuration</div>
+        <div class="arch-field" data-field="kubernetes.probes_customized">
+          <div class="arch-field-label">Have liveness/readiness/startup probes been customized from Itential defaults?</div>
           <div class="arch-confirm">
-            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-probes-customized', true, this); archCond('k8s_probe_notes', true)">Yes</div>
-            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-probes-customized', false, this); archCond('k8s_probe_notes', false)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-probes-customized', true, this)">Yes</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-probes-customized', false, this)">No</div>
+            <div class="arch-confirm-opt" onclick="setConfirm('f-k8s-probes-customized', 'unknown', this)">Unknown</div>
           </div>
           <input type="hidden" id="f-k8s-probes-customized">
         </div>
-        <div class="arch-field hidden" data-field="k8s_probe_notes" data-cond="true">
-          <div class="arch-field-label">Describe the probe changes (optional)</div>
-          <input type="text" id="f-k8s-probe-notes" placeholder="e.g., startup probe timeout increased to 120s" oninput="onAF(this)">
+        <div class="arch-field hidden" data-field="kubernetes.probe_notes" data-cond="true">
+          <div class="arch-field-label">Describe the changes (e.g., startup probe timeout increased to 120s)</div>
+          <input type="text" id="f-k8s-probe-notes" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
         </div>
       </div>
     </div>
@@ -1219,8 +1416,8 @@
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-field" data-field="monitoring_tools">
-        <div class="arch-field-label">Monitoring tools in use (select all that apply)</div>
+      <div class="arch-field" data-field="monitoring.monitoring_tools">
+        <div class="arch-field-label">Which monitoring tools are in use? (select all that apply)</div>
         <div class="arch-checkbox-group" id="g-monitoring-tools">
           <label class="arch-cb-opt"><input type="checkbox" value="Prometheus" onchange="onCB(this, 'monitoring_tools')"><span>Prometheus</span></label>
           <label class="arch-cb-opt"><input type="checkbox" value="Grafana" onchange="onCB(this, 'monitoring_tools')"><span>Grafana</span></label>
@@ -1232,91 +1429,104 @@
           <label class="arch-cb-opt"><input type="checkbox" value="Nagios / Icinga" onchange="onCB(this, 'monitoring_tools')"><span>Nagios / Icinga</span></label>
           <label class="arch-cb-opt"><input type="checkbox" value="AWS CloudWatch" onchange="onCB(this, 'monitoring_tools')"><span>AWS CloudWatch</span></label>
           <label class="arch-cb-opt"><input type="checkbox" value="Azure Monitor" onchange="onCB(this, 'monitoring_tools')"><span>Azure Monitor</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="Elastic / ELK Stack" onchange="onCB(this, 'monitoring_tools')"><span>Elastic / ELK</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="Other" onchange="onCB(this, 'monitoring_tools'); archCond('monitoring_tools_other', this.checked)"><span>Other</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="None" onchange="onCB(this, 'monitoring_tools'); onMonitoringNone()"><span>None</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Elastic / ELK Stack" onchange="onCB(this, 'monitoring_tools')"><span>Elastic / ELK Stack</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="PagerDuty (alerting only)" onchange="onCB(this, 'monitoring_tools')"><span>PagerDuty (alerting only)</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Itential Platform APIs" onchange="onCB(this, 'monitoring_tools')"><span>Itential Platform APIs</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Other" onchange="onCB(this, 'monitoring_tools')"><span>Other</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="None" onchange="onCB(this, 'monitoring_tools')"><span>None</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Unknown" onchange="onCB(this, 'monitoring_tools')"><span>Unknown</span></label>
         </div>
-        <div class="arch-warning" id="monitoring-none-warn">⚠ Itential recommends monitoring for production environments.</div>
+        <div class="arch-warning" id="warn-g-monitoring-tools">⚠ Itential recommends monitoring for production environments.</div>
       </div>
-      <div class="arch-field hidden" data-field="monitoring_tools_other" data-cond="true">
+      <div class="arch-field hidden" data-field="monitoring.monitoring_tools_other" data-cond="true">
         <div class="arch-field-label">Specify other monitoring tools</div>
-        <input type="text" id="f-monitoring-tools-other" placeholder="Tool names" oninput="onAF(this)">
+        <input type="text" id="f-monitoring-tools-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div id="monitoring-coverage-group">
-        <div class="arch-subsection">Monitoring Coverage</div>
-        <div class="arch-field" data-field="monitored_components">
-          <div class="arch-field-label">Which components are actively monitored? (select all that apply)</div>
-          <div class="arch-checkbox-group" id="g-monitored-components">
-            <label class="arch-cb-opt"><input type="checkbox" value="Platform (IAP) — application health and performance" onchange="onCB(this, 'monitored_components')"><span>Platform (IAP)</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="MongoDB — replica set status, query performance, disk usage" onchange="onCB(this, 'monitored_components')"><span>MongoDB</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="Redis — memory usage, key eviction, sentinel status" onchange="onCB(this, 'monitored_components')"><span>Redis</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="Automation Gateway — job execution, health endpoints" onchange="onCB(this, 'monitored_components')"><span>Automation Gateway</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="Host / VM — CPU, memory, disk, network at the OS level" onchange="onCB(this, 'monitored_components')"><span>Host / VM</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="Load Balancer — backend health, request rates" onchange="onCB(this, 'monitored_components')"><span>Load Balancer</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="None of the above are monitored specifically" onchange="onCB(this, 'monitored_components')"><span>None specifically</span></label>
-          </div>
+      <div class="arch-subsection" data-sub-for="g-monitored-components">Monitoring Coverage</div>
+      <div class="arch-field hidden" data-field="monitoring.monitored_components" data-cond="true">
+        <div class="arch-field-label">Which Itential components are actively monitored? (select all that apply)</div>
+        <div class="arch-checkbox-group" id="g-monitored-components">
+          <label class="arch-cb-opt"><input type="checkbox" value="Platform (IAP) — application health and performance" onchange="onCB(this, 'monitored_components')"><span>Platform (IAP) — application health and performance</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="MongoDB — replica set status, query performance, disk usage" onchange="onCB(this, 'monitored_components')"><span>MongoDB — replica set status, query performance, disk usage</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Redis — memory usage, key eviction, sentinel status" onchange="onCB(this, 'monitored_components')"><span>Redis — memory usage, key eviction, sentinel status</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Automation Gateway — job execution, health endpoints" onchange="onCB(this, 'monitored_components')"><span>Automation Gateway — job execution, health endpoints</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Host / VM — CPU, memory, disk, network at the OS level" onchange="onCB(this, 'monitored_components')"><span>Host / VM — CPU, memory, disk, network at the OS level</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Load Balancer — backend health, request rates" onchange="onCB(this, 'monitored_components')"><span>Load Balancer — backend health, request rates</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="None of the above are monitored specifically" onchange="onCB(this, 'monitored_components')"><span>None of the above are monitored specifically</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Unknown" onchange="onCB(this, 'monitored_components')"><span>Unknown</span></label>
         </div>
-        <div class="arch-subsection">Alerting</div>
-        <div class="arch-field" data-field="has_alerting">
-          <div class="arch-field-label">Automated alerts configured for Itential component failures?</div>
-          <div class="arch-confirm">
-            <div class="arch-confirm-opt" onclick="setConfirm('f-mon-has-alerting', true, this); archCond('alert_channels', true)">Yes</div>
-            <div class="arch-confirm-opt" onclick="setConfirm('f-mon-has-alerting', false, this); archCond('alert_channels', false)">No</div>
-          </div>
-          <input type="hidden" id="f-mon-has-alerting">
+      </div>
+      <div class="arch-subsection" data-sub-for="f-mon-has-alerting">Alerting</div>
+      <div class="arch-field hidden" data-field="monitoring.has_alerting" data-cond="true">
+        <div class="arch-field-label">Are automated alerts configured for Itential component failures?</div>
+        <div class="arch-confirm">
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mon-has-alerting', true, this)">Yes</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mon-has-alerting', false, this)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mon-has-alerting', 'unknown', this)">Unknown</div>
         </div>
-        <div class="arch-field hidden" data-field="alert_channels" data-cond="true">
-          <div class="arch-field-label">Alert delivery channels (select all that apply)</div>
-          <div class="arch-checkbox-group" id="g-alert-channels">
-            <label class="arch-cb-opt"><input type="checkbox" value="Email" onchange="onCB(this, 'alert_channels')"><span>Email</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="Slack / Teams" onchange="onCB(this, 'alert_channels')"><span>Slack / Teams</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="PagerDuty / OpsGenie" onchange="onCB(this, 'alert_channels')"><span>PagerDuty / OpsGenie</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="ServiceNow / Ticketing" onchange="onCB(this, 'alert_channels')"><span>ServiceNow</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="SMS" onchange="onCB(this, 'alert_channels')"><span>SMS</span></label>
-            <label class="arch-cb-opt"><input type="checkbox" value="Other" onchange="onCB(this, 'alert_channels')"><span>Other</span></label>
-          </div>
+        <input type="hidden" id="f-mon-has-alerting">
+      </div>
+      <div class="arch-field hidden" data-field="monitoring.alert_channels" data-cond="true">
+        <div class="arch-field-label">Alert delivery channels (select all that apply)</div>
+        <div class="arch-checkbox-group" id="g-alert-channels">
+          <label class="arch-cb-opt"><input type="checkbox" value="Email" onchange="onCB(this, 'alert_channels')"><span>Email</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Slack / Teams" onchange="onCB(this, 'alert_channels')"><span>Slack / Teams</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="PagerDuty / OpsGenie" onchange="onCB(this, 'alert_channels')"><span>PagerDuty / OpsGenie</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="ServiceNow / Ticketing" onchange="onCB(this, 'alert_channels')"><span>ServiceNow / Ticketing</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="SMS" onchange="onCB(this, 'alert_channels')"><span>SMS</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Other" onchange="onCB(this, 'alert_channels')"><span>Other</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Unknown" onchange="onCB(this, 'alert_channels')"><span>Unknown</span></label>
         </div>
-        <div class="arch-subsection">Platform Health Endpoint</div>
-        <div class="arch-field" data-field="monitors_health_endpoint">
-          <div class="arch-field-label">Is <code>/health/status</code> polled by an external monitor?</div>
-          <div class="arch-confirm">
-            <div class="arch-confirm-opt" onclick="setConfirm('f-mon-health-endpoint', true, this); archCond('health_poll_interval', true)">Yes</div>
-            <div class="arch-confirm-opt" onclick="setConfirm('f-mon-health-endpoint', false, this); archCond('health_poll_interval', false)">No</div>
-          </div>
-          <input type="hidden" id="f-mon-health-endpoint">
+      </div>
+      <div class="arch-subsection" data-sub-for="f-mon-health-endpoint">Platform Health Endpoint</div>
+      <div class="arch-field hidden" data-field="monitoring.monitors_health_endpoint" data-cond="true">
+        <div class="arch-field-label">Is the Platform /health/status endpoint being polled by an external monitor?</div>
+        <div class="arch-confirm">
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mon-health-endpoint', true, this)">Yes</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mon-health-endpoint', false, this)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mon-health-endpoint', 'unknown', this)">Unknown</div>
         </div>
-        <div class="arch-field hidden" data-field="health_poll_interval" data-cond="true">
-          <div class="arch-field-label">Polling interval</div>
-          <select id="f-mon-health-poll-interval" onchange="onAF(this)">
-            <option value="">— Select —</option>
-            <option value="10 seconds">10 seconds</option><option value="30 seconds">30 seconds</option>
-            <option value="60 seconds">60 seconds</option><option value="5 minutes">5 minutes</option>
-            <option value="Other">Other</option><option value="Unknown">Unknown</option>
-          </select>
+        <input type="hidden" id="f-mon-health-endpoint">
+      </div>
+      <div class="arch-field hidden" data-field="monitoring.health_poll_interval" data-cond="true">
+        <div class="arch-field-label">Polling interval</div>
+        <select id="f-mon-health-poll-interval" onchange="onAF(this)">
+          <option value="">— Select —</option>
+          <option value="10 seconds">10 seconds</option>
+          <option value="30 seconds">30 seconds</option>
+          <option value="60 seconds">60 seconds</option>
+          <option value="5 minutes">5 minutes</option>
+          <option value="Other">Other</option>
+          <option value="Unknown">Unknown</option>
+        </select>
+      </div>
+      <div class="arch-subsection" data-sub-for="f-mon-log-agg">Log Aggregation</div>
+      <div class="arch-field hidden" data-field="monitoring.has_log_aggregation" data-cond="true">
+        <div class="arch-field-label">Are Itential Platform logs being shipped to a central log aggregator?</div>
+        <div class="arch-confirm">
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mon-log-agg', true, this)">Yes</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mon-log-agg', false, this)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-mon-log-agg', 'unknown', this)">Unknown</div>
         </div>
-        <div class="arch-subsection">Log Aggregation</div>
-        <div class="arch-field" data-field="has_log_aggregation">
-          <div class="arch-field-label">Platform logs shipped to a central log aggregator?</div>
-          <div class="arch-confirm">
-            <div class="arch-confirm-opt" onclick="setConfirm('f-mon-log-agg', true, this); archCond('log_aggregator', true)">Yes</div>
-            <div class="arch-confirm-opt" onclick="setConfirm('f-mon-log-agg', false, this); archCond('log_aggregator', false)">No</div>
-          </div>
-          <input type="hidden" id="f-mon-log-agg">
-        </div>
-        <div class="arch-field hidden" data-field="log_aggregator" data-cond="true">
-          <div class="arch-field-label">Log aggregation tool</div>
-          <select id="f-mon-log-aggregator" onchange="onAF(this); archCond('log_aggregator_other', this.value === 'Other')">
-            <option value="">— Select —</option>
-            <option value="Splunk">Splunk</option><option value="Elastic / ELK">Elastic / ELK</option>
-            <option value="Datadog Logs">Datadog Logs</option><option value="Grafana Loki">Grafana Loki</option>
-            <option value="AWS CloudWatch Logs">AWS CloudWatch Logs</option>
-            <option value="Azure Log Analytics">Azure Log Analytics</option><option value="Other">Other</option>
-          </select>
-        </div>
-        <div class="arch-field hidden" data-field="log_aggregator_other" data-cond="true">
-          <div class="arch-field-label">Specify log aggregation tool</div>
-          <input type="text" id="f-mon-log-agg-other" placeholder="Tool name" oninput="onAF(this)">
-        </div>
+        <input type="hidden" id="f-mon-log-agg">
+      </div>
+      <div class="arch-field hidden" data-field="monitoring.log_aggregator" data-cond="true">
+        <div class="arch-field-label">Log aggregation tool</div>
+        <select id="f-mon-log-aggregator" onchange="onAF(this)">
+          <option value="">— Select —</option>
+          <option value="Splunk">Splunk</option>
+          <option value="Elastic / ELK">Elastic / ELK</option>
+          <option value="Datadog Logs">Datadog Logs</option>
+          <option value="Grafana Loki">Grafana Loki</option>
+          <option value="AWS CloudWatch Logs">AWS CloudWatch Logs</option>
+          <option value="Azure Log Analytics">Azure Log Analytics</option>
+          <option value="Other">Other</option>
+          <option value="Unknown">Unknown</option>
+        </select>
+      </div>
+      <div class="arch-field hidden" data-field="monitoring.log_aggregator_other" data-cond="true">
+        <div class="arch-field-label">Specify log aggregation tool</div>
+        <input type="text" id="f-mon-log-agg-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
     </div>
   </div>
@@ -1334,58 +1544,61 @@
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-field" data-field="mtu_size">
+      <div class="arch-field" data-field="network_security.mtu_size">
         <div class="arch-field-label">MTU size across platform network</div>
-        <select id="f-net-mtu-size" onchange="onAF(this); document.getElementById('mtu-warn').classList.toggle('visible', this.value.includes('9000')); archCond('mtu_size_other', this.value === 'Other')">
+        <select id="f-net-mtu-size" onchange="onAF(this)">
           <option value="">— Select —</option>
           <option value="1500 (Standard — recommended)">1500 (Standard — recommended)</option>
           <option value="9000 (Jumbo Frames)">9000 (Jumbo Frames)</option>
-          <option value="Other">Other</option><option value="Unknown">Unknown</option>
+          <option value="Other">Other</option>
+          <option value="Unknown">Unknown</option>
         </select>
-        <div class="arch-warning" id="mtu-warn">⚠ MTU 9000 has caused issues with Platform. MTU 1500 is recommended.</div>
+        <div class="arch-warning" id="warn-f-net-mtu-size">⚠ MTU 9000 has caused issues with Platform. MTU 1500 is recommended.</div>
       </div>
-      <div class="arch-field hidden" data-field="mtu_size_other" data-cond="true">
-        <div class="arch-field-label">Specify MTU size</div>
-        <div class="arch-field-hint">e.g., 1492, 4500</div>
-        <input type="text" id="f-net-mtu-size-other" placeholder="MTU value (bytes)" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="network_security.mtu_size_other" data-cond="true">
+        <div class="arch-field-label">Specify MTU size (bytes, e.g., 1492)</div>
+        <input type="text" id="f-net-mtu-size-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div class="arch-field" data-field="has_connectivity_concerns">
-        <div class="arch-field-label">Any known network concerns between components?</div>
-        <div class="arch-field-hint">Latency, firewalls, VPNs, etc.</div>
+      <div class="arch-field" data-field="network_security.has_connectivity_concerns">
+        <div class="arch-field-label">Any known network concerns between components? (latency, firewalls, VPNs)</div>
         <div class="arch-confirm">
-          <div class="arch-confirm-opt" onclick="setConfirm('f-net-connectivity', true, this); archCond('connectivity_notes', true)">Yes</div>
-          <div class="arch-confirm-opt" onclick="setConfirm('f-net-connectivity', false, this); archCond('connectivity_notes', false)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-net-connectivity', true, this)">Yes</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-net-connectivity', false, this)">No</div>
+          <div class="arch-confirm-opt" onclick="setConfirm('f-net-connectivity', 'unknown', this)">Unknown</div>
         </div>
         <input type="hidden" id="f-net-connectivity">
       </div>
-      <div class="arch-field hidden" data-field="connectivity_notes" data-cond="true">
-        <div class="arch-field-label">Describe the connectivity concerns</div>
-        <input type="text" id="f-net-connectivity-notes" placeholder="e.g., 15ms latency between Platform and MongoDB" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="network_security.connectivity_notes" data-cond="true">
+        <div class="arch-field-label">Describe (e.g., 15ms latency between Platform and MongoDB across VPN)</div>
+        <input type="text" id="f-net-connectivity-notes" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div class="arch-subsection">Security Standards</div>
-      <div class="arch-field" data-field="selinux_mode">
+      <div class="arch-subsection" data-sub-for="f-sec-selinux-mode">Security Standards</div>
+      <div class="arch-field" data-field="network_security.selinux_mode">
         <div class="arch-field-label">SELinux mode</div>
         <select id="f-sec-selinux-mode" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="Enforcing">Enforcing</option><option value="Permissive">Permissive</option>
+          <option value="Enforcing">Enforcing</option>
+          <option value="Permissive">Permissive</option>
           <option value="Disabled">Disabled</option>
           <option value="N/A (Containers / Non-Linux)">N/A (Containers / Non-Linux)</option>
+          <option value="Unknown">Unknown</option>
         </select>
       </div>
-      <div class="arch-field" data-field="compliance_standards">
-        <div class="arch-field-label">Security compliance standards (select all that apply)</div>
+      <div class="arch-field" data-field="network_security.compliance_standards">
+        <div class="arch-field-label">Security compliance standards enabled (select all that apply)</div>
         <div class="arch-checkbox-group" id="g-compliance-standards">
           <label class="arch-cb-opt"><input type="checkbox" value="FIPS 140-2" onchange="onCB(this, 'compliance_standards')"><span>FIPS 140-2</span></label>
           <label class="arch-cb-opt"><input type="checkbox" value="FIPS 140-3" onchange="onCB(this, 'compliance_standards')"><span>FIPS 140-3</span></label>
           <label class="arch-cb-opt"><input type="checkbox" value="DISA STIG" onchange="onCB(this, 'compliance_standards')"><span>DISA STIG</span></label>
           <label class="arch-cb-opt"><input type="checkbox" value="CIS Benchmarks" onchange="onCB(this, 'compliance_standards')"><span>CIS Benchmarks</span></label>
           <label class="arch-cb-opt"><input type="checkbox" value="None" onchange="onCB(this, 'compliance_standards')"><span>None</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="Other" onchange="onCB(this, 'compliance_standards'); archCond('compliance_other', this.checked)"><span>Other</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Other" onchange="onCB(this, 'compliance_standards')"><span>Other</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Unknown" onchange="onCB(this, 'compliance_standards')"><span>Unknown</span></label>
         </div>
       </div>
-      <div class="arch-field hidden" data-field="compliance_other" data-cond="true">
-        <div class="arch-field-label">Specify compliance standards</div>
-        <input type="text" id="f-sec-compliance-other" placeholder="e.g., FedRAMP, SOC 2, PCI-DSS" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="network_security.compliance_other" data-cond="true">
+        <div class="arch-field-label">Specify (e.g., FedRAMP, SOC 2, PCI-DSS)</div>
+        <input type="text" id="f-sec-compliance-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
     </div>
   </div>
@@ -1403,45 +1616,88 @@
       <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="arch-section-body">
-      <div class="arch-field" data-field="performs_assessments">
-        <div class="arch-field-label">Do you perform vulnerability assessments on this environment?</div>
-        <div class="arch-field-hint">Includes vulnerability scans, penetration tests, or compliance audits.</div>
-        <div class="arch-confirm">
-          <div class="arch-confirm-opt" onclick="setConfirm('f-va-performs', true, this); onVAPerformsChange(true)">Yes</div>
-          <div class="arch-confirm-opt" onclick="setConfirm('f-va-performs', false, this); onVAPerformsChange(false)">No</div>
-        </div>
-        <input type="hidden" id="f-va-performs">
+      <div class="arch-field" data-field="vulnerability_assessments.performs_assessments">
+        <div class="arch-field-label">Does this environment undergo vulnerability assessments?</div>
+        <select id="f-va-performs" onchange="onAF(this)">
+          <option value="">— Select —</option>
+          <option value="Yes — regularly">Yes — regularly</option>
+          <option value="Yes — ad-hoc / on demand">Yes — ad-hoc / on demand</option>
+          <option value="No">No</option>
+          <option value="Unknown">Unknown</option>
+        </select>
       </div>
-      <div class="arch-field hidden" data-field="tools" data-cond="true">
-        <div class="arch-field-label">Tools used (select all that apply)</div>
+      <div class="arch-field hidden" data-field="vulnerability_assessments.tools" data-cond="true">
+        <div class="arch-field-label">Which tool(s) are used? (select all that apply)</div>
         <div class="arch-checkbox-group" id="g-va-tools">
           <label class="arch-cb-opt"><input type="checkbox" value="Tenable / Nessus" onchange="onCB(this, 'tools')"><span>Tenable / Nessus</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="Qualys" onchange="onCB(this, 'tools')"><span>Qualys</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="Rapid7 / InsightVM" onchange="onCB(this, 'tools')"><span>Rapid7 / InsightVM</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="OpenSCAP" onchange="onCB(this, 'tools')"><span>OpenSCAP</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="Trivy" onchange="onCB(this, 'tools')"><span>Trivy</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Qualys VMDR" onchange="onCB(this, 'tools')"><span>Qualys VMDR</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Rapid7 InsightVM" onchange="onCB(this, 'tools')"><span>Rapid7 InsightVM</span></label>
           <label class="arch-cb-opt"><input type="checkbox" value="Wiz" onchange="onCB(this, 'tools')"><span>Wiz</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="Prisma Cloud" onchange="onCB(this, 'tools')"><span>Prisma Cloud</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="CrowdStrike" onchange="onCB(this, 'tools')"><span>CrowdStrike</span></label>
-          <label class="arch-cb-opt"><input type="checkbox" value="Other" onchange="onCB(this, 'tools'); archCond('tools_other', this.checked)"><span>Other</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Prisma Cloud / Twistlock" onchange="onCB(this, 'tools')"><span>Prisma Cloud / Twistlock</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Aqua Security" onchange="onCB(this, 'tools')"><span>Aqua Security</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="CrowdStrike Falcon" onchange="onCB(this, 'tools')"><span>CrowdStrike Falcon</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Trivy" onchange="onCB(this, 'tools')"><span>Trivy</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Grype" onchange="onCB(this, 'tools')"><span>Grype</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Snyk" onchange="onCB(this, 'tools')"><span>Snyk</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Anchore" onchange="onCB(this, 'tools')"><span>Anchore</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="OpenSCAP" onchange="onCB(this, 'tools')"><span>OpenSCAP</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="In-house / custom tooling" onchange="onCB(this, 'tools')"><span>In-house / custom tooling</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Other" onchange="onCB(this, 'tools')"><span>Other</span></label>
+          <label class="arch-cb-opt"><input type="checkbox" value="Unknown" onchange="onCB(this, 'tools')"><span>Unknown</span></label>
         </div>
       </div>
-      <div class="arch-field hidden" data-field="tools_other" data-cond="true">
-        <div class="arch-field-label">Specify other tool(s)</div>
-        <input type="text" id="f-va-tools-other" placeholder="e.g., custom scanner, in-house tool" oninput="onAF(this)">
+      <div class="arch-field hidden" data-field="vulnerability_assessments.tools_other" data-cond="true">
+        <div class="arch-field-label">Specify (e.g., Acunetix, Black Duck, Tanium Comply)</div>
+        <input type="text" id="f-va-tools-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
-      <div class="arch-field hidden" data-field="frequency" data-cond="true">
+      <div class="arch-field hidden" data-field="vulnerability_assessments.frequency" data-cond="true">
         <div class="arch-field-label">How often are assessments run?</div>
         <select id="f-va-frequency" onchange="onAF(this)">
           <option value="">— Select —</option>
-          <option value="Continuous (daily / on commit)">Continuous (daily / on commit)</option>
+          <option value="Continuously (always-on)">Continuously (always-on)</option>
           <option value="Weekly">Weekly</option>
           <option value="Monthly">Monthly</option>
           <option value="Quarterly">Quarterly</option>
           <option value="Annually">Annually</option>
-          <option value="Ad hoc / On demand">Ad hoc / On demand</option>
+          <option value="Ad-hoc / on demand">Ad-hoc / on demand</option>
           <option value="Unknown">Unknown</option>
         </select>
+      </div>
+    </div>
+  </div>
+
+  {# 12. Artificial Intelligence #}
+  <div class="arch-section" data-section="artificial_intelligence">
+    <div class="arch-section-head" onclick="archToggle(this)">
+      <div class="arch-section-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></div>
+      <div class="arch-section-meta">
+        <div class="arch-section-title">Artificial Intelligence</div>
+        <div class="arch-section-sub">Which LLM your organization uses alongside Itential</div>
+      </div>
+      <span class="arch-tag required">Required</span>
+      <span class="arch-section-mini" id="mini-artificial_intelligence">—</span>
+      <svg class="arch-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="arch-section-body">
+      <div class="arch-field" data-field="artificial_intelligence.llm_provider">
+        <div class="arch-field-label">Which LLM does your organization use with Itential?</div>
+        <select id="f-ai-llm-provider" onchange="onAF(this)">
+          <option value="">— Select —</option>
+          <option value="Claude">Claude</option>
+          <option value="ChatGPT">ChatGPT</option>
+          <option value="Gemini">Gemini</option>
+          <option value="Copilot">Copilot</option>
+          <option value="Amazon Bedrock">Amazon Bedrock</option>
+          <option value="Mistral">Mistral</option>
+          <option value="Ollama">Ollama</option>
+          <option value="Other">Other</option>
+          <option value="None">None</option>
+          <option value="Unknown">Unknown</option>
+        </select>
+      </div>
+      <div class="arch-field hidden" data-field="artificial_intelligence.llm_provider_other" data-cond="true">
+        <div class="arch-field-label">Specify LLM/provider</div>
+        <input type="text" id="f-ai-llm-provider-other" placeholder="N/A if it doesn’t apply" oninput="onAF(this)">
       </div>
     </div>
   </div>
@@ -1459,14 +1715,12 @@
 <script nonce="{{ csp_nonce }}">
 (function () {
   // ── Saved data from server ───────────────────────────────────────────
+  // SAVED       the stored record (answers the user confirmed, normalized).
+  // SEEDED      what every field should start from: topology facts < your saved
+  //             answers, with SSH auto-detect results layered over the answers
+  //             only when they are newer (server-side, architecture_store).
   const SAVED = {{ arch_data_json | safe }};
-
-  // Free, zero-cost topology/config-derived suggestions (no SSH — node/
-  // replica counts, same-datacenter-as-Platform, etc.) and which sections
-  // the topology confidently rules out. SAVED.autofill (SSH auto-detect
-  // results, if a prior run exists) and these are both lower-priority than
-  // SAVED.completed — see mergeSectionData() below.
-  const TOPOLOGY_SEED = {{ arch_topology_seed_json | safe }};
+  const SEEDED = {{ arch_seed_json | safe }};
   const SUGGESTED_SKIPS = {{ arch_suggested_skips_json | safe }};
 
   // SaaS scoping — mirrors the Jinja-rendered sections so progress math only
@@ -1474,138 +1728,1170 @@
   const IS_SAAS = {{ arch_is_saas | tojson }};
   const SAAS_GW_KIND = {{ (saas_gateway_kind or '') | tojson }};
 
-  // ── Section registry ─────────────────────────────────────────────────
-  // Maps section id → { fields[], skippable }
-  // field: { key, inputId, type, parent?, cond? }
+  // ── Section registry (generated from core/architecture_schema.py) ────
+  // field: { key, inputId, type, parent, when[] } — `when` are the schema's own
+  // follow-up conditions, evaluated here exactly as the CLI evaluates them.
   const _SECTIONS_ALL = [
-    { id: 'environment', skippable: false, fields: [
-      { key: 'environment_type',       inputId: 'f-environment-type',          type: 'select' },
-      { key: 'datacenter_location',    inputId: 'f-datacenter-location',       type: 'text' },
-      { key: 'hosting_provider',       inputId: 'f-hosting-provider',          type: 'select' },
-      { key: 'hosting_provider_other', inputId: 'f-hosting-provider-other',    type: 'text', cond: true },
-    ]},
-    { id: 'platform', skippable: false, fields: [
-      { key: 'active_instance_count',         inputId: 'f-active-instance-count',         type: 'int' },
-      { key: 'standby_instance_count',        inputId: 'f-standby-instance-count',        type: 'int' },
-      { key: 'all_in_same_datacenter',        inputId: 'f-all-in-same-datacenter',        type: 'confirm', cond: true },
-      { key: 'datacenter_details',            inputId: 'f-datacenter-details',            type: 'text', cond: true },
-      { key: 'deployment_type',               inputId: 'f-platform-deployment-type',      type: 'select', parent: 'deployment' },
-      { key: 'deployment_type_other',         inputId: 'f-platform-deployment-type-other',type: 'text', parent: 'deployment', cond: true },
-      { key: 'os_type',                       inputId: 'f-platform-os-type',              type: 'select', parent: 'server_specs' },
-      { key: 'os_type_other',                 inputId: 'f-platform-os-type-other',        type: 'text', parent: 'server_specs', cond: true },
-      { key: 'cpu_cores',                     inputId: 'f-platform-cpu-cores',            type: 'select', parent: 'server_specs' },
-      { key: 'memory_gb',                     inputId: 'f-platform-memory-gb',            type: 'select', parent: 'server_specs' },
-      { key: 'disk_space_gb',                 inputId: 'f-platform-disk-space-gb',        type: 'select', parent: 'server_specs' },
-    ]},
-    { id: 'mongodb', skippable: false, fields: [
-      { key: 'same_datacenter_as_platform',   inputId: 'f-mongo-same-dc',                 type: 'confirm' },
-      { key: 'replica_count',                 inputId: 'f-mongo-replica-count',           type: 'int' },
-      { key: 'replicas_across_datacenters',   inputId: 'f-mongo-across-dc',               type: 'confirm', cond: true },
-      { key: 'datacenter_distribution',       inputId: 'f-mongo-dc-distribution',         type: 'text', cond: true },
-      { key: 'os_type',                       inputId: 'f-mongo-os-type',                 type: 'select', parent: 'server_specs' },
-      { key: 'os_type_other',                 inputId: 'f-mongo-os-type-other',           type: 'text', parent: 'server_specs', cond: true },
-      { key: 'cpu_cores',                     inputId: 'f-mongo-cpu-cores',               type: 'select', parent: 'server_specs' },
-      { key: 'memory_gb',                     inputId: 'f-mongo-memory-gb',               type: 'select', parent: 'server_specs' },
-      { key: 'disk_space_gb',                 inputId: 'f-mongo-disk-space-gb',           type: 'select', parent: 'server_specs' },
-    ]},
-    { id: 'redis', skippable: false, fields: [
-      { key: 'deployment_type',               inputId: 'f-redis-deployment-type',         type: 'select' },
-      { key: 'redis_node_count',              inputId: 'f-redis-node-count',              type: 'int' },
-      { key: 'sentinel_count',               inputId: 'f-redis-sentinel-count',           type: 'int', cond: true },
-      { key: 'same_datacenter_as_platform',   inputId: 'f-redis-same-dc',                 type: 'confirm' },
-      { key: 'nodes_across_datacenters',      inputId: 'f-redis-across-dc',               type: 'confirm', cond: true },
-      { key: 'os_type',                       inputId: 'f-redis-os-type',                 type: 'select', parent: 'server_specs' },
-      { key: 'os_type_other',                 inputId: 'f-redis-os-type-other',           type: 'text', parent: 'server_specs', cond: true },
-      { key: 'cpu_cores',                     inputId: 'f-redis-cpu-cores',               type: 'select', parent: 'server_specs' },
-      { key: 'memory_gb',                     inputId: 'f-redis-memory-gb',               type: 'select', parent: 'server_specs' },
-      { key: 'disk_space_gb',                 inputId: 'f-redis-disk-space-gb',           type: 'select', parent: 'server_specs' },
-    ]},
-    { id: 'gateway4', skippable: true, fields: [
-      { key: 'instance_count',                inputId: 'f-gw4-instance-count',            type: 'int' },
-      { key: 'same_datacenter_as_platform',   inputId: 'f-gw4-same-dc',                   type: 'confirm' },
-      { key: 'deployment_type',               inputId: 'f-gw4-deployment-type',           type: 'select', parent: 'deployment' },
-      { key: 'deployment_type_other',         inputId: 'f-gw4-deployment-type-other',     type: 'text', parent: 'deployment', cond: true },
-      { key: 'os_type',                       inputId: 'f-gw4-os-type',                   type: 'select', parent: 'server_specs' },
-      { key: 'os_type_other',                 inputId: 'f-gw4-os-type-other',             type: 'text', parent: 'server_specs', cond: true },
-      { key: 'cpu_cores',                     inputId: 'f-gw4-cpu-cores',                 type: 'select', parent: 'server_specs' },
-      { key: 'memory_gb',                     inputId: 'f-gw4-memory-gb',                 type: 'select', parent: 'server_specs' },
-      { key: 'disk_space_gb',                 inputId: 'f-gw4-disk-space-gb',             type: 'select', parent: 'server_specs' },
-      { key: 'device_count',                  inputId: 'f-gw4-device-count',              type: 'select' },
-      { key: 'plans_to_migrate_to_gw5',       inputId: 'f-gw4-plans-migrate',             type: 'confirm' },
-      { key: 'migration_timeline',            inputId: 'f-gw4-migration-timeline',        type: 'select', cond: true },
-    ]},
-    { id: 'gateway5', skippable: true, fields: [
-      { key: 'same_datacenter_as_platform',   inputId: 'f-gw5-same-dc',                   type: 'confirm' },
-      { key: 'cluster_count',                 inputId: 'f-gw5-cluster-count',             type: 'int' },
-      { key: 'ha_enabled',                    inputId: 'f-gw5-ha-enabled',                type: 'confirm' },
-      { key: 'ha_mode',                       inputId: 'f-gw5-ha-mode',                   type: 'select', cond: true },
-      { key: 'has_redundant_instances',       inputId: 'f-gw5-redundant',                 type: 'confirm' },
-      { key: 'deployment_type',               inputId: 'f-gw5-deployment-type',           type: 'select', parent: 'deployment' },
-      { key: 'deployment_type_other',         inputId: 'f-gw5-deployment-type-other',     type: 'text', parent: 'deployment', cond: true },
-      { key: 'os_type',                       inputId: 'f-gw5-os-type',                   type: 'select', parent: 'server_specs' },
-      { key: 'os_type_other',                 inputId: 'f-gw5-os-type-other',             type: 'text', parent: 'server_specs', cond: true },
-      { key: 'cpu_cores',                     inputId: 'f-gw5-cpu-cores',                 type: 'select', parent: 'server_specs' },
-      { key: 'memory_gb',                     inputId: 'f-gw5-memory-gb',                 type: 'select', parent: 'server_specs' },
-      { key: 'disk_space_gb',                 inputId: 'f-gw5-disk-space-gb',             type: 'select', parent: 'server_specs' },
-    ]},
-    { id: 'load_balancer', skippable: true, fields: [
-      { key: 'lb_type',                       inputId: 'f-lb-type',                       type: 'select' },
-      { key: 'lb_type_other',                 inputId: 'f-lb-type-other',                 type: 'text', cond: true },
-      { key: 'routing_policy',                inputId: 'f-lb-routing-policy',             type: 'select' },
-      { key: 'session_stickiness',            inputId: 'f-lb-stickiness',                 type: 'confirm' },
-      { key: 'platform_health_endpoint',      inputId: 'f-lb-health-endpoint',            type: 'text' },
-      { key: 'health_check_interval',         inputId: 'f-lb-health-interval',            type: 'select' },
-    ]},
-    { id: 'kubernetes', skippable: true, fields: [
-      { key: 'k8s_distribution',              inputId: 'f-k8s-distribution',              type: 'select' },
-      { key: 'node_instance_type',            inputId: 'f-k8s-node-instance-type',        type: 'text', optional: true },
-      { key: 'node_count',                    inputId: 'f-k8s-node-count',                type: 'int', optional: true },
-      { key: 'deployment_method',             inputId: 'f-k8s-deployment-method',         type: 'select' },
-      { key: 'hpa_enabled',                   inputId: 'f-k8s-hpa-enabled',               type: 'confirm' },
-      { key: 'hpa_min_replicas',              inputId: 'f-k8s-hpa-min-replicas',          type: 'int', cond: true },
-      { key: 'hpa_max_replicas',              inputId: 'f-k8s-hpa-max-replicas',          type: 'int', cond: true },
-      { key: 'hpa_scaling_metric',            inputId: 'f-k8s-hpa-scaling-metric',        type: 'select', cond: true },
-      { key: 'has_custom_resources',          inputId: 'f-k8s-custom-resources',          type: 'confirm' },
-      { key: 'values_source',                 inputId: 'f-k8s-values-source',             type: 'select', cond: true },
-      { key: 'resource_notes',                inputId: 'f-k8s-resource-notes',            type: 'text', cond: true },
-      { key: 'pod_restarts_observed',         inputId: 'f-k8s-pod-restarts',              type: 'confirm' },
-      { key: 'pod_restart_notes',             inputId: 'f-k8s-pod-restart-notes',         type: 'text', cond: true },
-      { key: 'probes_customized',             inputId: 'f-k8s-probes-customized',         type: 'confirm' },
-      { key: 'probe_notes',                   inputId: 'f-k8s-probe-notes',               type: 'text', cond: true },
-    ]},
-    { id: 'monitoring', skippable: false, fields: [
-      { key: 'monitoring_tools',              inputId: 'g-monitoring-tools',              type: 'checkbox-group' },
-      { key: 'monitoring_tools_other',        inputId: 'f-monitoring-tools-other',        type: 'text', cond: true },
-      { key: 'monitored_components',          inputId: 'g-monitored-components',          type: 'checkbox-group', cond: true },
-      { key: 'has_alerting',                  inputId: 'f-mon-has-alerting',              type: 'confirm', cond: true },
-      { key: 'alert_channels',               inputId: 'g-alert-channels',                type: 'checkbox-group', cond: true },
-      { key: 'monitors_health_endpoint',      inputId: 'f-mon-health-endpoint',           type: 'confirm', cond: true },
-      { key: 'health_poll_interval',          inputId: 'f-mon-health-poll-interval',      type: 'select', cond: true },
-      { key: 'has_log_aggregation',           inputId: 'f-mon-log-agg',                   type: 'confirm', cond: true },
-      { key: 'log_aggregator',               inputId: 'f-mon-log-aggregator',             type: 'select', cond: true },
-      { key: 'log_aggregator_other',          inputId: 'f-mon-log-agg-other',             type: 'text', cond: true },
-    ]},
-    { id: 'network_security', skippable: false, fields: [
-      { key: 'mtu_size',                      inputId: 'f-net-mtu-size',                  type: 'select' },
-      { key: 'mtu_size_other',                inputId: 'f-net-mtu-size-other',            type: 'text', cond: true },
-      { key: 'has_connectivity_concerns',     inputId: 'f-net-connectivity',              type: 'confirm' },
-      { key: 'connectivity_notes',            inputId: 'f-net-connectivity-notes',        type: 'text', cond: true },
-      { key: 'selinux_mode',                  inputId: 'f-sec-selinux-mode',              type: 'select' },
-      { key: 'compliance_standards',          inputId: 'g-compliance-standards',          type: 'checkbox-group' },
-      { key: 'compliance_other',              inputId: 'f-sec-compliance-other',          type: 'text', cond: true },
-    ]},
-    { id: 'vulnerability_assessments', skippable: false, fields: [
-      { key: 'performs_assessments',          inputId: 'f-va-performs',                   type: 'confirm' },
-      { key: 'tools',                         inputId: 'g-va-tools',                      type: 'checkbox-group', cond: true },
-      { key: 'tools_other',                   inputId: 'f-va-tools-other',                type: 'text', cond: true },
-      { key: 'frequency',                     inputId: 'f-va-frequency',                  type: 'select', cond: true },
-    ]},
-  ];
+  {
+    "id": "environment",
+    "gate": null,
+    "fields": [
+      {
+        "key": "environment_type",
+        "inputId": "f-environment-type",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "datacenter_location",
+        "inputId": "f-datacenter-location",
+        "type": "text",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "hosting_provider",
+        "inputId": "f-hosting-provider",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "hosting_provider_other",
+        "inputId": "f-hosting-provider-other",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "hosting_provider",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "automation_scope",
+        "inputId": "f-automation-scope",
+        "type": "text",
+        "parent": null,
+        "when": []
+      }
+    ]
+  },
+  {
+    "id": "platform",
+    "gate": null,
+    "fields": [
+      {
+        "key": "active_instance_count",
+        "inputId": "f-active-instance-count",
+        "type": "int",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "standby_instance_count",
+        "inputId": "f-standby-instance-count",
+        "type": "int",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "all_in_same_datacenter",
+        "inputId": "f-all-in-same-datacenter",
+        "type": "confirm",
+        "parent": null,
+        "when": [
+          {
+            "key": "",
+            "op": "sum_gt",
+            "value": 1,
+            "keys": [
+              "active_instance_count",
+              "standby_instance_count"
+            ]
+          }
+        ]
+      },
+      {
+        "key": "datacenter_details",
+        "inputId": "f-datacenter-details",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "all_in_same_datacenter",
+            "op": "is_false",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "deployment_type",
+        "inputId": "f-platform-deployment-type",
+        "type": "select",
+        "parent": "deployment",
+        "when": []
+      },
+      {
+        "key": "deployment_type_other",
+        "inputId": "f-platform-deployment-type-other",
+        "type": "text",
+        "parent": "deployment",
+        "when": [
+          {
+            "key": "deployment_type",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "os_type",
+        "inputId": "f-platform-os-type",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "os_type_other",
+        "inputId": "f-platform-os-type-other",
+        "type": "text",
+        "parent": "server_specs",
+        "when": [
+          {
+            "key": "os_type",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "cpu_cores",
+        "inputId": "f-platform-cpu-cores",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "memory_gb",
+        "inputId": "f-platform-memory-gb",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "disk_space_gb",
+        "inputId": "f-platform-disk-space-gb",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      }
+    ]
+  },
+  {
+    "id": "gateway4",
+    "gate": "present",
+    "fields": [
+      {
+        "key": "instance_count",
+        "inputId": "f-gw4-instance-count",
+        "type": "int",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "same_datacenter_as_platform",
+        "inputId": "f-gw4-same-dc",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "deployment_type",
+        "inputId": "f-gw4-deployment-type",
+        "type": "select",
+        "parent": "deployment",
+        "when": []
+      },
+      {
+        "key": "deployment_type_other",
+        "inputId": "f-gw4-deployment-type-other",
+        "type": "text",
+        "parent": "deployment",
+        "when": [
+          {
+            "key": "deployment_type",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "os_type",
+        "inputId": "f-gw4-os-type",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "os_type_other",
+        "inputId": "f-gw4-os-type-other",
+        "type": "text",
+        "parent": "server_specs",
+        "when": [
+          {
+            "key": "os_type",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "cpu_cores",
+        "inputId": "f-gw4-cpu-cores",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "memory_gb",
+        "inputId": "f-gw4-memory-gb",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "disk_space_gb",
+        "inputId": "f-gw4-disk-space-gb",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "device_count",
+        "inputId": "f-gw4-device-count",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "plans_to_migrate_to_gw5",
+        "inputId": "f-gw4-plans-migrate",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "migration_timeline",
+        "inputId": "f-gw4-migration-timeline",
+        "type": "select",
+        "parent": null,
+        "when": [
+          {
+            "key": "plans_to_migrate_to_gw5",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gateway5",
+    "gate": "present",
+    "fields": [
+      {
+        "key": "same_datacenter_as_platform",
+        "inputId": "f-gw5-same-dc",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "cluster_count",
+        "inputId": "f-gw5-cluster-count",
+        "type": "int",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "clusters",
+        "inputId": "",
+        "type": "clusters",
+        "parent": null,
+        "when": [
+          {
+            "key": "cluster_count",
+            "op": "gt",
+            "value": 0,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "ha_enabled",
+        "inputId": "f-gw5-ha-enabled",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "ha_mode",
+        "inputId": "f-gw5-ha-mode",
+        "type": "select",
+        "parent": null,
+        "when": [
+          {
+            "key": "ha_enabled",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "has_redundant_instances",
+        "inputId": "f-gw5-redundant",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "deployment_type",
+        "inputId": "f-gw5-deployment-type",
+        "type": "select",
+        "parent": "deployment",
+        "when": []
+      },
+      {
+        "key": "deployment_type_other",
+        "inputId": "f-gw5-deployment-type-other",
+        "type": "text",
+        "parent": "deployment",
+        "when": [
+          {
+            "key": "deployment_type",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "os_type",
+        "inputId": "f-gw5-os-type",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "os_type_other",
+        "inputId": "f-gw5-os-type-other",
+        "type": "text",
+        "parent": "server_specs",
+        "when": [
+          {
+            "key": "os_type",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "cpu_cores",
+        "inputId": "f-gw5-cpu-cores",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "memory_gb",
+        "inputId": "f-gw5-memory-gb",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "disk_space_gb",
+        "inputId": "f-gw5-disk-space-gb",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      }
+    ]
+  },
+  {
+    "id": "mongodb",
+    "gate": null,
+    "fields": [
+      {
+        "key": "deployment_type",
+        "inputId": "f-mongo-deployment-type",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "mongo_node_count",
+        "inputId": "f-mongo-node-count",
+        "type": "int",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "same_datacenter_as_platform",
+        "inputId": "f-mongo-same-dc",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "replicas_across_datacenters",
+        "inputId": "f-mongo-across-dc",
+        "type": "confirm",
+        "parent": null,
+        "when": [
+          {
+            "key": "mongo_node_count",
+            "op": "gt",
+            "value": 1,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "datacenter_distribution",
+        "inputId": "f-mongo-dc-distribution",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "replicas_across_datacenters",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "os_type",
+        "inputId": "f-mongo-os-type",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "os_type_other",
+        "inputId": "f-mongo-os-type-other",
+        "type": "text",
+        "parent": "server_specs",
+        "when": [
+          {
+            "key": "os_type",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "cpu_cores",
+        "inputId": "f-mongo-cpu-cores",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "memory_gb",
+        "inputId": "f-mongo-memory-gb",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "disk_space_gb",
+        "inputId": "f-mongo-disk-space-gb",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      }
+    ]
+  },
+  {
+    "id": "redis",
+    "gate": null,
+    "fields": [
+      {
+        "key": "deployment_type",
+        "inputId": "f-redis-deployment-type",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "redis_node_count",
+        "inputId": "f-redis-node-count",
+        "type": "int",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "sentinel_count",
+        "inputId": "f-redis-sentinel-count",
+        "type": "int",
+        "parent": null,
+        "when": [
+          {
+            "key": "deployment_type",
+            "op": "startswith",
+            "value": "Sentinel",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "same_datacenter_as_platform",
+        "inputId": "f-redis-same-dc",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "nodes_across_datacenters",
+        "inputId": "f-redis-across-dc",
+        "type": "confirm",
+        "parent": null,
+        "when": [
+          {
+            "key": "redis_node_count",
+            "op": "gt",
+            "value": 1,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "os_type",
+        "inputId": "f-redis-os-type",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "os_type_other",
+        "inputId": "f-redis-os-type-other",
+        "type": "text",
+        "parent": "server_specs",
+        "when": [
+          {
+            "key": "os_type",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "cpu_cores",
+        "inputId": "f-redis-cpu-cores",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "memory_gb",
+        "inputId": "f-redis-memory-gb",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      },
+      {
+        "key": "disk_space_gb",
+        "inputId": "f-redis-disk-space-gb",
+        "type": "select",
+        "parent": "server_specs",
+        "when": []
+      }
+    ]
+  },
+  {
+    "id": "load_balancer",
+    "gate": "present",
+    "fields": [
+      {
+        "key": "lb_type",
+        "inputId": "f-lb-type",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "lb_type_other",
+        "inputId": "f-lb-type-other",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "lb_type",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "routing_policy",
+        "inputId": "f-lb-routing-policy",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "session_stickiness",
+        "inputId": "f-lb-stickiness",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "platform_health_endpoint",
+        "inputId": "f-lb-health-endpoint",
+        "type": "text",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "health_check_interval",
+        "inputId": "f-lb-health-interval",
+        "type": "select",
+        "parent": null,
+        "when": []
+      }
+    ]
+  },
+  {
+    "id": "kubernetes",
+    "gate": "deployed_on_kubernetes",
+    "fields": [
+      {
+        "key": "k8s_distribution",
+        "inputId": "f-k8s-distribution",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "node_instance_type",
+        "inputId": "f-k8s-node-instance-type",
+        "type": "text",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "node_count",
+        "inputId": "f-k8s-node-count",
+        "type": "int",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "deployment_method",
+        "inputId": "f-k8s-deployment-method",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "hpa_enabled",
+        "inputId": "f-k8s-hpa-enabled",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "hpa_min_replicas",
+        "inputId": "f-k8s-hpa-min-replicas",
+        "type": "int",
+        "parent": null,
+        "when": [
+          {
+            "key": "hpa_enabled",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "hpa_max_replicas",
+        "inputId": "f-k8s-hpa-max-replicas",
+        "type": "int",
+        "parent": null,
+        "when": [
+          {
+            "key": "hpa_enabled",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "hpa_scaling_metric",
+        "inputId": "f-k8s-hpa-scaling-metric",
+        "type": "select",
+        "parent": null,
+        "when": [
+          {
+            "key": "hpa_enabled",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "has_custom_resources",
+        "inputId": "f-k8s-custom-resources",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "values_source",
+        "inputId": "f-k8s-values-source",
+        "type": "select",
+        "parent": null,
+        "when": [
+          {
+            "key": "has_custom_resources",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "resource_notes",
+        "inputId": "f-k8s-resource-notes",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "has_custom_resources",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "pod_restarts_observed",
+        "inputId": "f-k8s-pod-restarts",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "pod_restart_notes",
+        "inputId": "f-k8s-pod-restart-notes",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "pod_restarts_observed",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "probes_customized",
+        "inputId": "f-k8s-probes-customized",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "probe_notes",
+        "inputId": "f-k8s-probe-notes",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "probes_customized",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "monitoring",
+    "gate": null,
+    "fields": [
+      {
+        "key": "monitoring_tools",
+        "inputId": "g-monitoring-tools",
+        "type": "checkbox-group",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "monitoring_tools_other",
+        "inputId": "f-monitoring-tools-other",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "monitoring_tools",
+            "op": "contains",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "monitored_components",
+        "inputId": "g-monitored-components",
+        "type": "checkbox-group",
+        "parent": null,
+        "when": [
+          {
+            "key": "monitoring_tools",
+            "op": "lacks_all",
+            "value": [
+              "None",
+              "Unknown"
+            ],
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "has_alerting",
+        "inputId": "f-mon-has-alerting",
+        "type": "confirm",
+        "parent": null,
+        "when": [
+          {
+            "key": "monitoring_tools",
+            "op": "lacks_all",
+            "value": [
+              "None",
+              "Unknown"
+            ],
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "alert_channels",
+        "inputId": "g-alert-channels",
+        "type": "checkbox-group",
+        "parent": null,
+        "when": [
+          {
+            "key": "monitoring_tools",
+            "op": "lacks_all",
+            "value": [
+              "None",
+              "Unknown"
+            ],
+            "keys": []
+          },
+          {
+            "key": "has_alerting",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "monitors_health_endpoint",
+        "inputId": "f-mon-health-endpoint",
+        "type": "confirm",
+        "parent": null,
+        "when": [
+          {
+            "key": "monitoring_tools",
+            "op": "lacks_all",
+            "value": [
+              "None",
+              "Unknown"
+            ],
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "health_poll_interval",
+        "inputId": "f-mon-health-poll-interval",
+        "type": "select",
+        "parent": null,
+        "when": [
+          {
+            "key": "monitoring_tools",
+            "op": "lacks_all",
+            "value": [
+              "None",
+              "Unknown"
+            ],
+            "keys": []
+          },
+          {
+            "key": "monitors_health_endpoint",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "has_log_aggregation",
+        "inputId": "f-mon-log-agg",
+        "type": "confirm",
+        "parent": null,
+        "when": [
+          {
+            "key": "monitoring_tools",
+            "op": "lacks_all",
+            "value": [
+              "None",
+              "Unknown"
+            ],
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "log_aggregator",
+        "inputId": "f-mon-log-aggregator",
+        "type": "select",
+        "parent": null,
+        "when": [
+          {
+            "key": "monitoring_tools",
+            "op": "lacks_all",
+            "value": [
+              "None",
+              "Unknown"
+            ],
+            "keys": []
+          },
+          {
+            "key": "has_log_aggregation",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "log_aggregator_other",
+        "inputId": "f-mon-log-agg-other",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "monitoring_tools",
+            "op": "lacks_all",
+            "value": [
+              "None",
+              "Unknown"
+            ],
+            "keys": []
+          },
+          {
+            "key": "log_aggregator",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "network_security",
+    "gate": null,
+    "fields": [
+      {
+        "key": "mtu_size",
+        "inputId": "f-net-mtu-size",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "mtu_size_other",
+        "inputId": "f-net-mtu-size-other",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "mtu_size",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "has_connectivity_concerns",
+        "inputId": "f-net-connectivity",
+        "type": "confirm",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "connectivity_notes",
+        "inputId": "f-net-connectivity-notes",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "has_connectivity_concerns",
+            "op": "is_true",
+            "value": null,
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "selinux_mode",
+        "inputId": "f-sec-selinux-mode",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "compliance_standards",
+        "inputId": "g-compliance-standards",
+        "type": "checkbox-group",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "compliance_other",
+        "inputId": "f-sec-compliance-other",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "compliance_standards",
+            "op": "contains",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "vulnerability_assessments",
+    "gate": null,
+    "fields": [
+      {
+        "key": "performs_assessments",
+        "inputId": "f-va-performs",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "tools",
+        "inputId": "g-va-tools",
+        "type": "checkbox-group",
+        "parent": null,
+        "when": [
+          {
+            "key": "performs_assessments",
+            "op": "startswith",
+            "value": "Yes",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "tools_other",
+        "inputId": "f-va-tools-other",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "performs_assessments",
+            "op": "startswith",
+            "value": "Yes",
+            "keys": []
+          },
+          {
+            "key": "tools",
+            "op": "contains",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      },
+      {
+        "key": "frequency",
+        "inputId": "f-va-frequency",
+        "type": "select",
+        "parent": null,
+        "when": [
+          {
+            "key": "performs_assessments",
+            "op": "startswith",
+            "value": "Yes",
+            "keys": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "artificial_intelligence",
+    "gate": null,
+    "fields": [
+      {
+        "key": "llm_provider",
+        "inputId": "f-ai-llm-provider",
+        "type": "select",
+        "parent": null,
+        "when": []
+      },
+      {
+        "key": "llm_provider_other",
+        "inputId": "f-ai-llm-provider-other",
+        "type": "text",
+        "parent": null,
+        "when": [
+          {
+            "key": "llm_provider",
+            "op": "eq",
+            "value": "Other",
+            "keys": []
+          }
+        ]
+      }
+    ]
+  }
+];
 
-  // Under SaaS, drop Platform/MongoDB/Redis and the unused gateway so the
-  // section set matches the rendered DOM exactly — progress, the completion
-  // banner, and the saved payload all key off SECTIONS. The conditions mirror
-  // the Jinja wraps above. Standard/Extended use the full set unchanged.
   const SECTIONS = IS_SAAS
     ? _SECTIONS_ALL.filter(function (s) {
         if (s.id === 'platform' || s.id === 'mongodb' || s.id === 'redis') return false;
@@ -1618,15 +2904,16 @@
   // Active environment — used as the ?env= param for save calls.
   const TARGET_ENV = {{ target_env | tojson }};
 
-  const SKIPPABLE = new Set(SECTIONS.filter(s => s.skippable).map(s => s.id));
-
   // ── State ─────────────────────────────────────────────────────────────
-  // completed: {sectionId: {key: value, ...}, ...}
-  // skipped: [sectionId, ...]
-  let _completed = SAVED.completed || {};
-  let _skipped   = new Set(SAVED.skipped || []);
+  // _gates: sectionId -> true (deployed) | false (not present); absent = unanswered
+  const _gates = {};
   let _saveTimer = null;
   let _statusTimer = null;
+  const _hadSaved = Object.keys(SAVED.completed || {}).length > 0;
+
+  const $ = function (id) { return document.getElementById(id); };
+  const wrapOf = function (f) { const el = $(f.inputId); return el ? el.closest('.arch-field') : null; };
+  const isShown = function (f) { const w = wrapOf(f); return !!w && !w.classList.contains('hidden'); };
 
   // Cancel any pending architecture-save / status-clear timers when the
   // user navigates away via hx-boost. Without this, an 800ms debounced
@@ -1644,293 +2931,369 @@
     headEl.parentElement.classList.toggle('open');
   };
 
-  // ── Show/hide conditional field ───────────────────────────────────────
-  window.archCond = function(dataField, show) {
-    document.querySelectorAll(`[data-field="${dataField}"]`).forEach(el => {
-      el.classList.toggle('hidden', !show);
-    });
-    schedSave();
-  };
+  // ── Reading answers out of the DOM ────────────────────────────────────
+  // state: 'value' | 'unknown' | 'blank'. Blank is never an answer.
+  function readField(f) {
+    const el = $(f.inputId);
+    if (!el) return { state: 'blank' };
+    if (f.type === 'checkbox-group') {
+      const vals = Array.from(el.querySelectorAll('input[type=checkbox]'))
+        .filter(function (cb) { return cb.checked; }).map(function (cb) { return cb.value; });
+      return vals.length ? { state: 'value', value: vals } : { state: 'blank' };
+    }
+    if (f.type === 'confirm') {
+      if (el.value === 'unknown') return { state: 'unknown' };
+      if (el.value === 'true' || el.value === 'false') return { state: 'value', value: el.value === 'true' };
+      return { state: 'blank' };
+    }
+    if (f.type === 'int') {
+      if (el.dataset.unknown === '1') return { state: 'unknown' };
+      const n = parseInt(el.value, 10);
+      return isNaN(n) ? { state: 'blank' } : { state: 'value', value: n };
+    }
+    const v = (el.value || '').trim();
+    return v ? { state: 'value', value: v } : { state: 'blank' };
+  }
 
-  // ── Confirm (Yes/No) helper ───────────────────────────────────────────
+  // ── Follow-up conditions (mirror of architecture_schema._cond_met) ────
+  function condMet(c, scope) {
+    const v = c.key ? scope[c.key] : undefined;
+    switch (c.op) {
+      case 'is_true':    return v === true;
+      case 'is_false':   return v === false;
+      case 'eq':         return v === c.value;
+      case 'startswith': return typeof v === 'string' && v.indexOf(c.value) === 0;
+      case 'contains':   return Array.isArray(v) && v.indexOf(c.value) !== -1;
+      case 'lacks_all':  return Array.isArray(v) && v.length > 0 && !c.value.some(function (x) { return v.indexOf(x) !== -1; });
+      case 'gt':         return typeof v === 'number' && v > c.value;
+      case 'sum_gt': {
+        const parts = (c.keys || []).map(function (k) { return scope[k]; })
+          .filter(function (x) { return typeof x === 'number'; });
+        return parts.length > 0 && parts.reduce(function (a, b) { return a + b; }, 0) > c.value;
+      }
+      default: return false;
+    }
+  }
+
+  // Fields are listed in dependency order, so one pass is enough: a field's
+  // visibility is decided from the already-visible fields above it.
+  function applyConditions() {
+    SECTIONS.forEach(function (sec) {
+      const secOn = !sec.gate || _gates[sec.id] === true;
+      const scopes = {};
+      sec.fields.forEach(function (f) {
+        if (f.type === 'clusters') return;
+        const scope = (scopes[f.parent || ''] = scopes[f.parent || ''] || {});
+        let show = secOn;
+        if (show && f.when && f.when.length) show = f.when.every(function (c) { return condMet(c, scope); });
+        const w = wrapOf(f);
+        if (w && f.when && f.when.length) w.classList.toggle('hidden', !show);
+        if (show) {
+          const r = readField(f);
+          if (r.state === 'value') scope[f.key] = r.value;
+        }
+      });
+    });
+    document.querySelectorAll('[data-sub-for]').forEach(function (h) {
+      const t = $(h.dataset.subFor);
+      const w = t ? t.closest('.arch-field') : null;
+      h.classList.toggle('hidden', !w || w.classList.contains('hidden'));
+    });
+  }
+
+  // ── Advice (non-blocking guidance) ────────────────────────────────────
+  const ADVICE = {
+    'f-lb-stickiness':         function (el) { return el.value === 'false'; },
+    'f-net-mtu-size':          function (el) { return el.value.indexOf('9000') !== -1; },
+    'f-k8s-deployment-method': function (el) { return !!el.value && el.value !== 'Unknown' && el.value.indexOf('Helm') === -1; },
+    'g-monitoring-tools':      function (el) {
+      return Array.from(el.querySelectorAll('input[type=checkbox]')).some(function (cb) { return cb.value === 'None' && cb.checked; });
+    },
+  };
+  function applyAdvice() {
+    Object.keys(ADVICE).forEach(function (id) {
+      const el = $(id), warn = $('warn-' + id);
+      if (el && warn) warn.classList.toggle('visible', !!ADVICE[id](el));
+    });
+  }
+
+  // ── Handlers wired from the markup ────────────────────────────────────
   window.setConfirm = function(hiddenId, val, clickedOpt) {
-    const hidden = document.getElementById(hiddenId);
+    // val: true (Yes) | false (No) | 'unknown'
+    const hidden = $(hiddenId);
     if (!hidden) return;
-    hidden.value = val ? 'true' : 'false';
-    const group = clickedOpt.parentElement;
-    group.querySelectorAll('.arch-confirm-opt').forEach(o => o.classList.remove('active'));
+    hidden.value = val === 'unknown' ? 'unknown' : (val ? 'true' : 'false');
+    clickedOpt.parentElement.querySelectorAll('.arch-confirm-opt').forEach(function (o) { o.classList.remove('active'); });
     clickedOpt.classList.add('active');
     schedSave();
   };
 
-  // ── Checkbox group helper ─────────────────────────────────────────────
-  window.onCB = function(checkbox, _groupId) {
-    const opt = checkbox.closest('.arch-cb-opt');
-    opt.classList.toggle('active', checkbox.checked);
+  window.onCB = function(checkbox) {
+    checkbox.closest('.arch-cb-opt').classList.toggle('active', checkbox.checked);
     schedSave();
   };
 
-  // ── Generic field change ──────────────────────────────────────────────
   window.onAF = function(el) {
     const val = el.value;
     el.classList.toggle('filled', val !== '' && val !== null);
+    // "Other" selects reveal their "Specify ..." field (id + '-other').
+    if (el.tagName === 'SELECT') {
+      const other = $(el.id + '-other');
+      const wrap = other ? other.closest('.arch-field') : null;
+      if (wrap) wrap.classList.toggle('hidden', el.value !== 'Other');
+    }
+    if (el.id === 'f-gw5-cluster-count') { rebuildGw5Clusters(); return; }
     schedSave();
   };
 
-  // ── Redis topology ────────────────────────────────────────────────────
-  window.onRedisTopology = function() {
-    const v = document.getElementById('f-redis-deployment-type').value;
-    archCond('sentinel_count', v === 'Sentinel');
+  // A suggested value only becomes an answer when the person takes it.
+  window.useSuggestion = function(inputId, value) {
+    const el = $(inputId);
+    if (!el) return;
+    el.value = value;
+    onAF(el);
   };
 
-  // ── Platform instance count → cross-dc question ───────────────────────
-  window.onTotalInstances = function() {
-    const active  = parseInt(document.getElementById('f-active-instance-count').value  || '0');
-    const standby = parseInt(document.getElementById('f-standby-instance-count').value || '0');
-    const multi   = (active + standby) > 1;
-    archCond('all_in_same_datacenter', multi);
-    if (!multi) archCond('datacenter_details', false);
+  // "Unknown" is an answer for number questions. The field stays empty and the
+  // saved JSON lists its key under "unknown" (keeps the integer types intact).
+  function setUnknownUI(inputId, on) {
+    const el = $(inputId);
+    if (!el) return;
+    el.dataset.unknown = on ? '1' : '';
+    el.disabled = !!on;
+    if (on) { el.value = ''; el.classList.remove('filled'); }
+    const cb = $('u-' + inputId);
+    if (cb) {
+      cb.checked = !!on;
+      const opt = cb.closest('.arch-unknown');
+      if (opt) opt.classList.toggle('active', !!on);
+    }
+  }
+  window.toggleUnknown = function(inputId, cb) {
+    setUnknownUI(inputId, cb.checked);
+    if (inputId === 'f-gw5-cluster-count') { rebuildGw5Clusters(); return; }
+    schedSave();
   };
 
-  // ── Vulnerability Assessments — performs toggles tools/frequency ──────
-  window.onVAPerformsChange = function(performs) {
-    archCond('tools', performs);
-    archCond('frequency', performs);
-    if (!performs) {
-      // hide & clear "tools_other" when assessments aren't performed
-      archCond('tools_other', false);
-      const otherEl = document.getElementById('f-va-tools-other');
-      if (otherEl) { otherEl.value = ''; otherEl.classList.remove('filled'); }
-      // also clear all tool checkboxes so a "No" answer round-trips clean
-      document.querySelectorAll('#g-va-tools input[type=checkbox]').forEach(cb => {
-        cb.checked = false;
-        cb.closest('.arch-cb-opt').classList.remove('active');
+  // ── Yes / No gate for optional components ─────────────────────────────
+  function applyGates() {
+    SECTIONS.forEach(function (sec) {
+      if (!sec.gate) return;
+      const g = _gates[sec.id];
+      const grp = $('skip-' + sec.id);
+      if (grp) {
+        grp.querySelectorAll('.arch-confirm-opt').forEach(function (o) {
+          const isYes = o.dataset.gate === 'yes';
+          o.classList.toggle('active', (g === true && isYes) || (g === false && !isYes));
+        });
+      }
+      const body = $('body-' + sec.id);
+      if (body) body.style.display = g === true ? '' : 'none';
+    });
+  }
+  window.setGate = function(sectionId, present) {
+    _gates[sectionId] = !!present;
+    applyGates();
+    schedSave();
+  };
+
+  // ── GW5 cluster rows ──────────────────────────────────────────────────
+  function clusterField() { return { inputId: 'f-gw5-cluster-count', type: 'int' }; }
+  window.rebuildGw5Clusters = function() {
+    const wrap = $('gw5-clusters-wrap');
+    if (!wrap) { schedSave(); return; }
+    const r = readField(clusterField());
+    const n = r.state === 'value' ? Math.min(r.value, 20) : 0;
+    // preserve existing values / Unknown ticks
+    const existing = {}, unknown = {};
+    wrap.querySelectorAll('input[type=number]').forEach(function (inp) {
+      if (inp.value) existing[inp.id] = inp.value;
+      if (inp.dataset.unknown === '1') unknown[inp.id] = true;
+    });
+    wrap.innerHTML = '';
+    for (let i = 1; i <= n; i++) {
+      const sid = 'gw5-c' + i + '-servers';
+      const rid = 'gw5-c' + i + '-runners';
+      const row = document.createElement('div');
+      row.className = 'arch-cluster-row';
+      const cell = function (id, label) {
+        return '<div><label style="font-size:13px;color:var(--text-3)">' + label + '</label>'
+          + '<input type="number" min="0" id="' + id + '" class="arch-field" placeholder="1" oninput="schedSave()" style="margin-top:3px">'
+          + '<label class="arch-unknown"><input type="checkbox" id="u-' + id + '" onchange="toggleUnknown(\'' + id + '\', this)"><span>Unknown</span></label></div>';
+      };
+      row.innerHTML = '<div class="arch-cluster-label">Cluster ' + i + '</div>' + cell(sid, 'App servers') + cell(rid, 'Script runners');
+      wrap.appendChild(row);
+      [sid, rid].forEach(function (id) {
+        const inp = $(id);
+        if (existing[id]) inp.value = existing[id];
+        if (unknown[id]) setUnknownUI(id, true);
       });
     }
     schedSave();
   };
 
-  // ── Monitoring — None selected hides coverage group ───────────────────
-  window.onMonitoringNone = function() {
-    const noneChecked = Array.from(
-      document.querySelectorAll('#g-monitoring-tools input[type=checkbox]')
-    ).some(cb => cb.value === 'None' && cb.checked);
-    document.getElementById('monitoring-coverage-group').style.display = noneChecked ? 'none' : '';
-    document.getElementById('monitoring-none-warn').classList.toggle('visible', noneChecked);
-    schedSave();
-  };
-
-  // ── Skip section ──────────────────────────────────────────────────────
-  window.archSkip = function(sectionId, skipEl) {
-    const wasSkipped = _skipped.has(sectionId);
-    if (wasSkipped) {
-      _skipped.delete(sectionId);
-      skipEl.classList.remove('active');
-      const body = document.getElementById('body-' + sectionId);
-      if (body) body.style.display = '';
-    } else {
-      _skipped.add(sectionId);
-      skipEl.classList.add('active');
-      const body = document.getElementById('body-' + sectionId);
-      if (body) body.style.display = 'none';
-    }
-    schedSave();
-  };
-
-  // ── GW5 cluster rows ──────────────────────────────────────────────────
-  window.rebuildGw5Clusters = function() {
-    const n = parseInt(document.getElementById('f-gw5-cluster-count').value) || 0;
-    const wrap = document.getElementById('gw5-clusters-wrap');
-    // preserve existing values
-    const existing = {};
-    wrap.querySelectorAll('input').forEach(inp => { if (inp.value) existing[inp.id] = inp.value; });
-    wrap.innerHTML = '';
-    for (let i = 1; i <= Math.min(n, 20); i++) {
-      const sid = `gw5-c${i}-servers`;
-      const rid = `gw5-c${i}-runners`;
-      const row = document.createElement('div');
-      row.className = 'arch-cluster-row';
-      row.innerHTML = `
-        <div class="arch-cluster-label">Cluster ${i}</div>
-        <div><label style="font-size:13px;color:var(--text-3)">App servers</label>
-          <input type="number" min="1" id="${sid}" class="arch-field" placeholder="1"
-            value="${existing[sid] || ''}" oninput="schedSave()" style="margin-top:3px">
-        </div>
-        <div><label style="font-size:13px;color:var(--text-3)">Script runners</label>
-          <input type="number" min="1" id="${rid}" class="arch-field" placeholder="1"
-            value="${existing[rid] || ''}" oninput="schedSave()" style="margin-top:3px">
-        </div>`;
-      wrap.appendChild(row);
-    }
-    schedSave();
-  };
-
-  // ── Read a single field value from the DOM ────────────────────────────
-  function readField(f) {
-    const el = document.getElementById(f.inputId);
-    if (!el) return null;
-    if (f.type === 'checkbox-group') {
-      return Array.from(el.querySelectorAll('input[type=checkbox]'))
-        .filter(cb => cb.checked).map(cb => cb.value);
-    }
-    if (f.type === 'confirm') return el.value === '' ? null : el.value === 'true';
-    if (f.type === 'int') { const v = parseInt(el.value); return isNaN(v) ? null : v; }
-    return el.value || null;
-  }
-
   // ── Extract section data into manual.py-compatible shape ─────────────
   function extractSection(sec) {
-    const flat = {}, nested = {};
-    sec.fields.forEach(f => {
-      const fieldEl = document.querySelector(`[data-field="${f.key}"]`);
-      const isVisible = !f.cond || (fieldEl && !fieldEl.classList.contains('hidden'));
-      if (!isVisible) return;
-      const v = readField(f);
-      if (v === null || v === '' || (Array.isArray(v) && v.length === 0)) return;
-      if (f.parent) {
-        if (!nested[f.parent]) nested[f.parent] = {};
-        nested[f.parent][f.key] = v;
-      } else {
-        flat[f.key] = v;
-      }
-    });
-    // GW5 clusters
-    if (sec.id === 'gateway5') {
-      const n = parseInt(document.getElementById('f-gw5-cluster-count')?.value) || 0;
-      const clusters = [];
-      for (let i = 1; i <= n; i++) {
-        const s = parseInt(document.getElementById(`gw5-c${i}-servers`)?.value) || null;
-        const r = parseInt(document.getElementById(`gw5-c${i}-runners`)?.value) || null;
-        clusters.push({ cluster: i, app_servers: s, script_runners: r });
-      }
-      if (clusters.length) flat.clusters = clusters;
-    }
-    return Object.assign(flat, nested);
-  }
-
-  // ── Build the full payload ────────────────────────────────────────────
-  function buildPayload() {
-    const completed = {};
-    const skipped   = [];
-
-    SECTIONS.forEach(sec => {
-      const isSkipped = _skipped.has(sec.id);
-      if (sec.id === 'gateway4' || sec.id === 'gateway5' || sec.id === 'load_balancer') {
-        completed[sec.id] = isSkipped ? { present: false } : { present: true, ...extractSection(sec) };
-        if (isSkipped) skipped.push(sec.id);
-        return;
-      }
-      if (sec.id === 'kubernetes') {
-        completed[sec.id] = isSkipped
-          ? { deployed_on_kubernetes: false }
-          : { deployed_on_kubernetes: true, ...extractSection(sec) };
-        if (isSkipped) skipped.push(sec.id);
-        return;
-      }
-      completed[sec.id] = extractSection(sec);
-    });
-
-    const allDone = SECTIONS.every(sec => {
-      if (_skipped.has(sec.id)) return true;
-      const p = sectionProgress(sec);
-      return p.total === 0 || p.filled >= p.total;
-    });
-
-    // Persist the live progress counts (same numbers the progress bar shows)
-    // so other surfaces — e.g. the capture page's Architecture nudge — can
-    // render an identical "X / Y fields" bar without re-deriving the schema.
-    let _pFilled = 0, _pTotal = 0;
-    SECTIONS.forEach(sec => {
-      const p = sectionProgress(sec);
-      _pFilled += p.filled;
-      _pTotal += p.total;
-    });
-
-    return {
-      completed, skipped,
-      status: allDone ? 'complete' : 'in_progress',
-      progress: { filled: _pFilled, total: _pTotal },
+    const out = {};
+    const scopeFor = function (f) {
+      if (!f.parent) return out;
+      return (out[f.parent] = out[f.parent] || {});
     };
+    const markUnknown = function (scope, key) { (scope.unknown = scope.unknown || []).push(key); };
+    sec.fields.forEach(function (f) {
+      if (f.type === 'clusters') return;
+      if (!isShown(f)) return;
+      const r = readField(f);
+      if (r.state === 'blank') return;
+      const scope = scopeFor(f);
+      if (r.state === 'unknown') markUnknown(scope, f.key); else scope[f.key] = r.value;
+    });
+    if (sec.id === 'gateway5') {
+      const r = readField(clusterField());
+      if (r.state === 'value' && r.value > 0) {
+        const clusters = [];
+        for (let i = 1; i <= r.value; i++) {
+          const c = {};
+          [['server_count', 'gw5-c' + i + '-servers'], ['runner_count', 'gw5-c' + i + '-runners']].forEach(function (pair) {
+            const inp = $(pair[1]);
+            if (!inp) return;
+            if (inp.dataset.unknown === '1') markUnknown(c, pair[0]);
+            else if (inp.value !== '') c[pair[0]] = parseInt(inp.value, 10);
+          });
+          clusters.push(c);
+        }
+        out.clusters = clusters;
+      }
+    }
+    return out;
   }
 
   // ── Progress counting ─────────────────────────────────────────────────
-  function sectionProgress(sec) {
-    if (_skipped.has(sec.id)) return { total: 0, filled: 0 };
+  function clusterProgress() {
     let total = 0, filled = 0;
-    sec.fields.forEach(f => {
-      const fieldWrap = document.querySelector(`[data-field="${f.key}"]`);
-      if (!fieldWrap || fieldWrap.classList.contains('hidden')) return;
-      if (f.cond) return; // don't count conditionals in total (they vary)
+    document.querySelectorAll('#gw5-clusters-wrap input[type=number]').forEach(function (inp) {
       total++;
-      const v = readField(f);
-      if (v !== null && v !== '' && !(Array.isArray(v) && v.length === 0)) filled++;
+      if (inp.value !== '' || inp.dataset.unknown === '1') filled++;
     });
-    return { total, filled };
+    return { total: total, filled: filled };
+  }
+
+  function sectionProgress(sec) {
+    if (sec.gate) {
+      const g = _gates[sec.id];
+      if (g === false) return { total: 0, filled: 0, skipped: true };
+      // The yes/no gate is itself a required answer; nothing below it counts until it is given.
+      if (g !== true) return { total: 1, filled: 0 };
+    }
+    let total = sec.gate ? 1 : 0, filled = sec.gate ? 1 : 0;
+    sec.fields.forEach(function (f) {
+      if (f.type === 'clusters') {
+        const p = clusterProgress();
+        total += p.total; filled += p.filled;
+        return;
+      }
+      if (!isShown(f)) return;
+      const w = wrapOf(f);
+      if (w && w.dataset.optional === 'true') return;   // optional free-text: never counted
+      total++;
+      if (readField(f).state !== 'blank') filled++;
+    });
+    return { total: total, filled: filled };
+  }
+
+  // ── Build the full payload ────────────────────────────────────────────
+  // Only sections the person has actually answered are written. An untouched
+  // optional component is never saved as a "present: true" ghost, and an empty
+  // section is never saved as {}; both used to make an unanswered section look
+  // finished to the CLI.
+  function buildPayload() {
+    const completed = {};
+    const skipped   = [];
+    let allDone = true, pFilled = 0, pTotal = 0;
+
+    SECTIONS.forEach(function (sec) {
+      const p = sectionProgress(sec);
+      pFilled += p.filled; pTotal += p.total;
+      if (!p.skipped && !(p.total > 0 && p.filled >= p.total)) allDone = false;
+
+      if (sec.gate) {
+        const g = _gates[sec.id];
+        if (g === false) {
+          completed[sec.id] = {}; completed[sec.id][sec.gate] = false;
+          skipped.push(sec.id);
+        } else if (g === true) {
+          const data = extractSection(sec);
+          data[sec.gate] = true;
+          completed[sec.id] = data;
+        }
+        return;
+      }
+      const data = extractSection(sec);
+      if (Object.keys(data).length) completed[sec.id] = data;
+    });
+
+    return {
+      completed: completed, skipped: skipped,
+      status: allDone ? 'complete' : 'in_progress',
+      progress: { filled: pFilled, total: pTotal },
+    };
   }
 
   const CHECK_SVG = '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,5 4,8 8.5,2"/></svg>';
 
   function updateProgress() {
     let totalFields = 0, filledFields = 0;
-    SECTIONS.forEach(sec => {
+    SECTIONS.forEach(function (sec) {
       const p = sectionProgress(sec);
       totalFields  += p.total;
       filledFields += p.filled;
 
-      const secEl  = document.querySelector(`.arch-section[data-section="${sec.id}"]`);
-      const mini   = document.getElementById('mini-' + sec.id);
+      const secEl  = document.querySelector('.arch-section[data-section="' + sec.id + '"]');
+      const mini   = $('mini-' + sec.id);
       const tagEl  = secEl ? secEl.querySelector('.arch-tag') : null;
       const isDone = p.total > 0 && p.filled >= p.total;
-      const isSkip = _skipped.has(sec.id);
+      const isSkip = !!p.skipped;
 
-      // Mini progress text
       if (mini) {
         if (isSkip) {
           mini.textContent = '';
           mini.className = 'arch-section-mini';
-        } else if (p.total === 0) {
-          mini.textContent = '—';
-          mini.className = 'arch-section-mini';
         } else {
-          mini.textContent = `${p.filled} / ${p.total}`;
+          mini.textContent = p.filled + ' / ' + p.total;
           mini.className = 'arch-section-mini' + (isDone ? ' done' : '');
         }
       }
-
-      // Badge state
       if (tagEl) {
         if (isSkip) {
           tagEl.className = 'arch-tag skipped';
-          tagEl.innerHTML = CHECK_SVG + ' Skipped';
+          tagEl.innerHTML = CHECK_SVG + ' Not present';
         } else if (isDone) {
           tagEl.className = 'arch-tag done';
           tagEl.innerHTML = CHECK_SVG + ' Complete';
         } else {
-          // restore original label
-          const orig = sec.skippable ? 'Conditional' : 'Required';
-          tagEl.className = 'arch-tag ' + (sec.skippable ? 'conditional' : 'required');
-          tagEl.textContent = orig;
+          tagEl.className = 'arch-tag required';
+          tagEl.textContent = 'Required';
         }
       }
     });
     const pct = totalFields > 0 ? Math.round((filledFields / totalFields) * 100) : 0;
-    document.getElementById('arch-progress-fill').style.width = pct + '%';
-    document.getElementById('arch-progress-label').textContent = `${filledFields} / ${totalFields} fields`;
-
-    const allDone = totalFields > 0 && filledFields >= totalFields;
-    document.getElementById('arch-complete-banner').classList.toggle('visible', allDone);
+    $('arch-progress-fill').style.width = pct + '%';
+    $('arch-progress-label').textContent = filledFields + ' / ' + totalFields + ' fields';
+    $('arch-complete-banner').classList.toggle('visible', totalFields > 0 && filledFields >= totalFields);
   }
 
   // ── Auto-save ─────────────────────────────────────────────────────────
   window.schedSave = function() {
     clearTimeout(_saveTimer);
     _saveTimer = setTimeout(doSave, 800);
+    applyConditions();
+    applyAdvice();
     updateProgress();
   };
 
   async function doSave() {
     const payload = buildPayload();
-    const status  = document.getElementById('arch-save-status');
+    const status  = $('arch-save-status');
     try {
       const csrfMeta = document.querySelector('meta[name="csrf-token"]');
       const url = '/architecture/save?env=' + encodeURIComponent(TARGET_ENV);
@@ -1943,7 +3306,14 @@
         body: JSON.stringify(payload),
       });
       if (!resp.ok) throw new Error(await resp.text());
-      status.textContent = 'Saved to ' + TARGET_ENV;
+      let summary = '';
+      try {
+        const body = await resp.json();
+        if (body && typeof body.sections_total === 'number') {
+          summary = ' · ' + body.sections_done + ' of ' + body.sections_total + ' sections complete';
+        }
+      } catch (_) { /* summary is a nicety */ }
+      status.textContent = 'Saved to ' + TARGET_ENV + summary;
       status.className = 'arch-save-status saved';
       // Track this timer so the htmx:beforeSwap cleanup can cancel it —
       // otherwise it fires on a detached node after nav.
@@ -1953,7 +3323,7 @@
         if (!status.isConnected) return;
         status.textContent = '';
         status.className = 'arch-save-status';
-      }, 2500);
+      }, 4000);
     } catch (e) {
       status.textContent = 'Save failed';
       status.className = 'arch-save-status error';
@@ -1961,97 +3331,84 @@
   }
 
   // ── Restore saved state into form ─────────────────────────────────────
-  function setValue(inputId, type, value) {
-    const el = document.getElementById(inputId);
+  function setValue(f, value) {
+    const el = $(f.inputId);
     if (!el || value === null || value === undefined) return;
-    if (type === 'checkbox-group') {
+    if (f.type === 'checkbox-group') {
       const vals = Array.isArray(value) ? value : [value];
-      el.querySelectorAll('input[type=checkbox]').forEach(cb => {
-        if (vals.includes(cb.value)) {
+      el.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+        if (vals.indexOf(cb.value) !== -1) {
           cb.checked = true;
           cb.closest('.arch-cb-opt').classList.add('active');
         }
       });
-    } else if (type === 'confirm') {
-      el.value = value ? 'true' : 'false';
+    } else if (f.type === 'confirm') {
+      const v = String(value);
+      if (v !== 'true' && v !== 'false' && v !== 'unknown') return;
+      el.value = v;
       const group = el.previousElementSibling;
       if (group && group.classList.contains('arch-confirm')) {
-        group.querySelectorAll('.arch-confirm-opt').forEach(opt => {
-          const isYes = opt.textContent.trim() === 'Yes';
-          opt.classList.toggle('active', value ? isYes : !isYes);
-        });
+        const idx = { 'true': 0, 'false': 1, 'unknown': 2 }[v];
+        group.querySelectorAll('.arch-confirm-opt').forEach(function (opt, i) { opt.classList.toggle('active', i === idx); });
       }
+    } else if (f.type === 'select') {
+      if (value === '') return;
+      el.value = value;
+      if (el.value === value) el.classList.add('filled'); else el.value = '';
     } else {
       el.value = value;
       if (value !== '') el.classList.add('filled');
     }
   }
 
-  // Shallow-merge section data across layers, lowest priority first — later
-  // layers win per leaf key, including within one level of `parent` nesting
-  // (server_specs/deployment). Falsy/absent layers are skipped.
-  function mergeSectionData() {
-    const merged = {};
-    Array.prototype.slice.call(arguments).forEach(layer => {
-      if (!layer) return;
-      Object.keys(layer).forEach(key => {
-        const val = layer[key];
-        if (val && typeof val === 'object' && !Array.isArray(val)) {
-          merged[key] = Object.assign({}, merged[key] || {}, val);
-        } else {
-          merged[key] = val;
-        }
-      });
-    });
-    return merged;
-  }
-
-  // Auto-detected field labels get a small badge — reused for both the
-  // topology-derived layer and a prior SSH auto-detect run, since both are
+  // Auto-detected / topology-suggested fields get a small badge: they are
   // suggestions the user hasn't confirmed, not answers they typed.
-  // Holds inputId strings, applied by applyAutoBadges() after all sections
-  // have been restored.
   const AUTO_FIELD_KEYS = [];
 
   function restoreSection(sec, data, confirmedData) {
     if (!data) return;
     confirmedData = confirmedData || {};
-    sec.fields.forEach(f => {
+    sec.fields.forEach(function (f) {
+      if (f.type === 'clusters') return;
       const src = f.parent ? data[f.parent] : data;
       if (!src) return;
-      setValue(f.inputId, f.type, src[f.key]);
       const confirmedSrc = f.parent ? confirmedData[f.parent] : confirmedData;
-      const wasConfirmed = confirmedSrc && confirmedSrc[f.key] !== undefined
-        && confirmedSrc[f.key] !== null && confirmedSrc[f.key] !== '';
-      const hasValue = src[f.key] !== undefined && src[f.key] !== null && src[f.key] !== ''
-        && !(Array.isArray(src[f.key]) && src[f.key].length === 0);
-      if (hasValue && !wasConfirmed) AUTO_FIELD_KEYS.push(f.inputId);
+      const isUnknown = Array.isArray(src.unknown) && src.unknown.indexOf(f.key) !== -1;
+      if (isUnknown) {
+        if (f.type === 'int') setUnknownUI(f.inputId, true);
+        else if (f.type === 'confirm') setValue(f, 'unknown');
+      } else {
+        setValue(f, src[f.key]);
+      }
+      const has = isUnknown || (src[f.key] !== undefined && src[f.key] !== null && src[f.key] !== ''
+        && !(Array.isArray(src[f.key]) && src[f.key].length === 0));
+      const wasConfirmed = confirmedSrc && (
+        (confirmedSrc[f.key] !== undefined && confirmedSrc[f.key] !== null && confirmedSrc[f.key] !== '')
+        || (Array.isArray(confirmedSrc.unknown) && confirmedSrc.unknown.indexOf(f.key) !== -1));
+      if (has && !wasConfirmed) AUTO_FIELD_KEYS.push(f.inputId);
     });
-    // GW5 clusters
-    if (sec.id === 'gateway5' && data.clusters) {
-      const countEl = document.getElementById('f-gw5-cluster-count');
-      if (countEl) { countEl.value = data.clusters.length; countEl.classList.add('filled'); }
+    if (sec.id === 'gateway5') {
       rebuildGw5Clusters();
-      data.clusters.forEach((c, i) => {
-        const sid = `gw5-c${i + 1}-servers`;
-        const rid = `gw5-c${i + 1}-runners`;
-        const se  = document.getElementById(sid);
-        const re  = document.getElementById(rid);
-        if (se && c.app_servers)    se.value = c.app_servers;
-        if (re && c.script_runners) re.value = c.script_runners;
+      (data.clusters || []).forEach(function (c, i) {
+        [['server_count', 'gw5-c' + (i + 1) + '-servers'], ['runner_count', 'gw5-c' + (i + 1) + '-runners']].forEach(function (pair) {
+          const inp = $(pair[1]);
+          if (!inp || !c) return;
+          if (Array.isArray(c.unknown) && c.unknown.indexOf(pair[0]) !== -1) setUnknownUI(pair[1], true);
+          else if (c[pair[0]] !== undefined && c[pair[0]] !== null) inp.value = c[pair[0]];
+        });
       });
     }
   }
 
   function applyAutoBadges() {
-    AUTO_FIELD_KEYS.forEach(inputId => {
-      const el = document.getElementById(inputId);
+    AUTO_FIELD_KEYS.forEach(function (inputId) {
+      const el = $(inputId);
       const wrap = el ? el.closest('.arch-field') : null;
       const label = wrap ? wrap.querySelector('.arch-field-label') : null;
       if (label && !label.querySelector('.arch-field-auto')) {
         const badge = document.createElement('span');
         badge.className = 'arch-field-auto';
-        badge.textContent = 'Auto-detected';
+        badge.textContent = 'Pre-filled';
         label.appendChild(badge);
       }
     });
@@ -2059,93 +3416,42 @@
 
   function restoreAll() {
     const completed = SAVED.completed || {};
-    const autofill  = SAVED.autofill  || {};
     const skipped   = new Set(SAVED.skipped || []);
     const suggestedSkips = new Set(SUGGESTED_SKIPS || []);
 
-    SECTIONS.forEach(sec => {
-      const isSkipped = skipped.has(sec.id) || suggestedSkips.has(sec.id);
-      if (isSkipped) {
-        _skipped.add(sec.id);
-        const skipEl = document.getElementById('skip-' + sec.id);
-        if (skipEl) {
-          skipEl.classList.add('active');
-          if (suggestedSkips.has(sec.id) && !skipped.has(sec.id)) {
-            skipEl.classList.add('suggested');
-            const labelEl = skipEl.querySelector('span');
-            if (labelEl && !skipEl.querySelector('.arch-field-auto')) {
-              const badge = document.createElement('span');
-              badge.className = 'arch-field-auto';
-              badge.textContent = 'Auto-detected';
-              skipEl.appendChild(badge);
-            }
+    SECTIONS.forEach(function (sec) {
+      if (sec.gate) {
+        const savedGate = completed[sec.id] ? completed[sec.id][sec.gate] : undefined;
+        let g = typeof savedGate === 'boolean' ? savedGate : (skipped.has(sec.id) ? false : undefined);
+        let suggestedOnly = false;
+        if (g === undefined && suggestedSkips.has(sec.id)) { g = false; suggestedOnly = true; }
+        if (g !== undefined) {
+          _gates[sec.id] = g;
+          const grp = $('skip-' + sec.id);
+          if (suggestedOnly && grp && !grp.parentElement.querySelector('.arch-field-auto')) {
+            const badge = document.createElement('span');
+            badge.className = 'arch-field-auto';
+            badge.textContent = 'Suggested from topology';
+            grp.parentElement.querySelector('.arch-field-label').appendChild(badge);
           }
         }
-        const body = document.getElementById('body-' + sec.id);
-        if (body) body.style.display = 'none';
-        return;
       }
-      const sdata = completed[sec.id] || {};
-      // strip wrapper keys added for skippable sections
-      const clean = Object.assign({}, sdata);
-      delete clean.present;
-      delete clean.deployed_on_kubernetes;
-      const merged = mergeSectionData(TOPOLOGY_SEED[sec.id], autofill[sec.id], clean);
-      restoreSection(sec, merged, clean);
+      restoreSection(sec, SEEDED[sec.id] || {}, completed[sec.id] || {});
     });
+    applyGates();
+    applyConditions();
     applyAutoBadges();
-
-    // fire conditional logic based on restored values
-    const k8sHpa = document.getElementById('f-k8s-hpa-enabled');
-    if (k8sHpa && k8sHpa.value === 'true') {
-      archCond('hpa_min_replicas', true);
-      archCond('hpa_max_replicas', true);
-      archCond('hpa_scaling_metric', true);
-    }
-    const k8sPodRestarts = document.getElementById('f-k8s-pod-restarts');
-    if (k8sPodRestarts && k8sPodRestarts.value === 'true') archCond('pod_restart_notes', true);
-    onTotalInstances();
-    const redisType = document.getElementById('f-redis-deployment-type');
-    if (redisType && redisType.value) onRedisTopology();
-    const monNone = Array.from(document.querySelectorAll('#g-monitoring-tools input[type=checkbox]'))
-      .some(cb => cb.value === 'None' && cb.checked);
-    if (monNone) onMonitoringNone();
-    const lbStickyHidden = document.getElementById('f-lb-stickiness');
-    if (lbStickyHidden && lbStickyHidden.value === 'false') {
-      const w = document.getElementById('lb-sticky-warn');
-      if (w) w.classList.add('visible');
-    }
-    const mtuEl = document.getElementById('f-net-mtu-size');
-    if (mtuEl && mtuEl.value.includes('9000')) {
-      const w = document.getElementById('mtu-warn');
-      if (w) w.classList.add('visible');
-    }
-    if (mtuEl && mtuEl.value === 'Other') archCond('mtu_size_other', true);
-    // Vulnerability Assessments — show tools/frequency only when "Yes"
-    const vaPerforms = document.getElementById('f-va-performs');
-    if (vaPerforms) {
-      const performs = vaPerforms.value === 'true';
-      archCond('tools', performs);
-      archCond('frequency', performs);
-      if (performs) {
-        const otherCb = Array.from(
-          document.querySelectorAll('#g-va-tools input[type=checkbox]')
-        ).find(cb => cb.value === 'Other');
-        if (otherCb && otherCb.checked) archCond('tools_other', true);
-      }
-    }
+    applyAdvice();
   }
 
   // ── Copy-from confirmation ────────────────────────────────────────────
-  const copyForm = document.getElementById('arch-copy-form');
+  const copyForm = $('arch-copy-form');
   if (copyForm) {
     // True if the current env already has any completed sections.
-    const hasExisting = Object.keys(_completed).some(
-      k => _completed[k] && Object.keys(_completed[k]).length > 0
-    );
+    const hasExisting = _hadSaved;
     copyForm.addEventListener('submit', function(ev) {
       if (!hasExisting) return; // nothing to overwrite
-      const src = document.getElementById('arch-copy-src');
+      const src = $('arch-copy-src');
       const srcName = src ? src.value : 'another environment';
       const ok = window.confirm(
         `This will overwrite '` + TARGET_ENV + `' with answers from '` + srcName + `'.\n\n` +
@@ -2171,7 +3477,7 @@
   restoreAll();
   updateProgress();
   // Open first section by default if nothing saved
-  if (!Object.keys(_completed).length && !_skipped.size) {
+  if (!_hadSaved && !Object.keys(_gates).length) {
     const first = document.querySelector('.arch-section');
     if (first) first.classList.add('open');
   }

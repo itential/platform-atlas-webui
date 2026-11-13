@@ -1,0 +1,70 @@
+/* Run dock + degraded-mode banner (3.1).
+   Both are injected by js/run-dock.js and survive hx-boost body swaps.
+   Animations use transform/opacity only. */
+
+.atlas-dock {
+  position: fixed; z-index: 60;
+  right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  width: min(360px, calc(100vw - 32px));
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .35);
+  animation: atlas-dock-in .25s cubic-bezier(.2, .8, .2, 1) both;
+}
+.atlas-dock[hidden] { display: none; }
+.atlas-dock.is-leaving { opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; }
+@keyframes atlas-dock-in { from { opacity: 0; transform: translateY(10px); } }
+
+.atlas-dock__row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.atlas-dock__icon { flex: none; width: 18px; height: 18px; display: grid; place-items: center; }
+.atlas-dock__spin {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--line); border-top-color: var(--accent);
+  animation: atlas-dock-spin 1s linear infinite;
+}
+@keyframes atlas-dock-spin { to { transform: rotate(360deg); } }
+.atlas-dock__icon svg { width: 18px; height: 18px; }
+.atlas-dock.is-ok .atlas-dock__icon { color: var(--ok); }
+.atlas-dock.is-bad .atlas-dock__icon { color: var(--bad); }
+.atlas-dock.is-warn .atlas-dock__icon { color: var(--warn); }
+
+.atlas-dock__text { flex: 1; min-width: 0; }
+.atlas-dock__title { font-weight: 600; font-size: 14px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atlas-dock__sub { font-size: 12.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atlas-dock__time { font: 500 12px var(--mono, ui-monospace, monospace); color: var(--text-3); font-variant-numeric: tabular-nums; flex: none; }
+
+.atlas-dock__bar { height: 3px; background: var(--surface-2); border-radius: 0 0 14px 14px; overflow: hidden; }
+.atlas-dock__bar i { display: block; height: 100%; width: 40%; background: var(--accent); border-radius: 3px; animation: atlas-dock-slide 1.6s ease-in-out infinite; }
+@keyframes atlas-dock-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+.atlas-dock:not(.is-running) .atlas-dock__bar { display: none; }
+
+.atlas-dock__actions { display: flex; gap: 8px; padding: 0 14px 12px; }
+.atlas-dock__btn {
+  font: inherit; font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text); text-decoration: none;
+  transition: border-color .15s, transform .15s;
+}
+.atlas-dock__btn:hover { border-color: var(--accent); }
+.atlas-dock__btn:active { transform: scale(.97); }
+.atlas-dock__btn:disabled { opacity: .55; cursor: default; }
+.atlas-dock__btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+.atlas-dock__note { margin: 0; padding: 0 14px 12px; font-size: 12.5px; color: var(--text-2); }
+.atlas-dock.is-warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.atlas-dock.is-bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+
+/* Degraded-mode banner: a slim strip above the page content. */
+.atlas-health {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 9px 14px; border-radius: 10px; font-size: 13.5px;
+  background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); color: var(--text-2);
+}
+.atlas-health[hidden] { display: none; }
+.atlas-health strong { color: var(--text); }
+.atlas-health__msg { flex: 1; min-width: 200px; }
+.atlas-health__actions { display: flex; gap: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-dock, .atlas-dock__spin, .atlas-dock__bar i { animation: none; }
+  .atlas-dock__bar i { width: 100%; }
+}

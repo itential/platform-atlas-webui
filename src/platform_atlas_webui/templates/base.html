@@ -8,6 +8,39 @@
 {% set _pref_mode = prefs.mode | default('dark') %}
 {% set _effective_mode = 'dark' if _pref_mode == 'auto' else _pref_mode %}
 {% set _path = request.url.path %}
+{# Navigation hubs. The sidebar shows one link per hub; the pages inside a hub
+   appear as tabs above the content. `prefixes` decide which hub a URL belongs
+   to, so every page keeps its own URL (palette links, bookmarks, redirects).
+   Each tab is (label, href, path-prefix). #}
+{% set _unacked_n = continuous.unacked if (continuous and continuous.unacked and continuous.unacked > 0) else None %}
+{% set _hubs = [
+  {'key': 'dashboard', 'label': 'Dashboard', 'href': '/', 'exact': True, 'tabs': []},
+  {'key': 'fleet', 'label': 'Fleet', 'href': '/fleet', 'tabs': []},
+  {'key': 'audit', 'label': 'Audit', 'href': '/sessions', 'tabs': [
+    ('Sessions', '/sessions', '/sessions'), ('Preflight', '/preflight', '/preflight'), ('Diff', '/diff', '/diff'),
+    ('Reports', '/reports', '/reports'), ('Architecture & Observability', '/architecture', '/architecture')]},
+  {'key': 'configuration', 'label': 'Configuration', 'href': '/environments', 'tabs': [
+    ('Environments', '/environments', '/environments'), ('Rulesets', '/rulesets', '/rulesets'),
+    ('Credentials', '/config/credentials', '/config/credentials'), ('Tier', '/tier', '/tier')]},
+] + ([] if is_saas else [
+  {'key': 'continuous', 'label': 'Continuous', 'href': '/continuous', 'badge': _unacked_n, 'tabs': [
+    ('Continuous Audit', '/continuous', '/continuous'), ('Alerts', '/alerts', '/alerts'),
+    ('Notifications', '/notifications', '/notifications')]},
+]) + [
+  {'key': 'system', 'label': 'System', 'href': '/system', 'tabs': [
+    ('Health', '/system', '/system'), ('Doctor', '/config/doctor', '/config/doctor'), ('Jobs', '/jobs', '/jobs')]
+    + ([] if is_saas else [('Support Bundle', '/support-bundle', '/support-bundle')])},
+] %}
+{% set _hub = namespace(cur=None) %}
+{% for h in _hubs %}
+  {% if h.exact %}
+    {% if _path == h.href %}{% set _hub.cur = h %}{% endif %}
+  {% elif h.tabs %}
+    {% for t in h.tabs %}{% if _path == t[2] or _path.startswith(t[2] ~ '/') %}{% set _hub.cur = h %}{% endif %}{% endfor %}
+  {% elif _path == h.href or _path.startswith(h.href ~ '/') %}
+    {% set _hub.cur = h %}
+  {% endif %}
+{% endfor %}
 <html lang="en"
       data-theme="{{ prefs.theme | default('modern') }}"
       data-mode="{{ _effective_mode }}"
@@ -58,6 +91,8 @@
   <link rel="stylesheet" href="{{ url_for('static', path='css/atlas.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='css/atlas.tw.compiled.css') }}?v={{ asset_version }}">
   <link rel="stylesheet" href="{{ url_for('static', path='css/atlas-studio.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/run-dock.css') }}?v={{ asset_version }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/hub-tabs.css') }}?v={{ asset_version }}">
 
   {# x-cloak hider — kept in <head> rather than <body>. body.innerHTML is
      replaced on every hx-boost navigation; <head> is stable, so the rule
@@ -81,6 +116,9 @@
   {# Command palette — loaded from <head> so its document-level keydown
      listener survives the body swap hx-boost performs on every nav. #}
   <script src="{{ url_for('static', path='js/palette.js') }}?v={{ asset_version }}" defer></script>
+  {# Run dock + degraded-mode banner — same <head> placement as the palette so
+     its polling and state survive the body swap hx-boost does on every nav. #}
+  <script src="{{ url_for('static', path='js/run-dock.js') }}?v={{ asset_version }}" defer></script>
   <script src="{{ url_for('static', path='js/atlas-motion.js') }}?v={{ asset_version }}" defer></script>
 </head>
 {# hx-boost on <body> turns every same-origin <a> click and form submission
@@ -121,85 +159,23 @@
       <span class="nav-hover" aria-hidden="true"></span>
 
       <div class="nav-group">
-        <span class="nav-group-label">Overview</span>
-        {% call nav_link('/', 'Dashboard', _path == '/') %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-        {% endcall %}
-        {% call nav_link('/fleet', 'Fleet', _path.startswith('/fleet')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        {% endcall %}
-      </div>
-
-      <div class="nav-group">
-        <span class="nav-group-label">Audit</span>
-        {% call nav_link('/sessions', 'Sessions', _path.startswith('/sessions')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>
-        {% endcall %}
-        {% call nav_link('/preflight', 'Preflight', _path.startswith('/preflight')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l2-6 4 12 2-6h7"/></svg>
-        {% endcall %}
-        {% call nav_link('/diff', 'Diff', _path.startswith('/diff')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5h13M3 12h18M8 19h13"/><circle cx="4.5" cy="5" r="1.5"/><circle cx="4.5" cy="19" r="1.5"/></svg>
-        {% endcall %}
-        {% call nav_link('/reports', 'Reports', _path.startswith('/reports')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        {% endcall %}
-        {% call nav_link('/architecture', 'Architecture & Observability', _path.startswith('/architecture')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="5" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="3" y="13" width="7" height="8" rx="1"/><rect x="14" y="13" width="7" height="8" rx="1"/></svg>
-        {% endcall %}
-      </div>
-
-      <div class="nav-group">
-        <span class="nav-group-label">Configuration</span>
-        {% call nav_link('/environments', 'Environments', _path.startswith('/environments')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/></svg>
-        {% endcall %}
-        {% call nav_link('/rulesets', 'Rulesets', _path.startswith('/rulesets')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        {% endcall %}
-        {% call nav_link('/config/credentials', 'Credentials', _path.startswith('/config/credentials')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        {% endcall %}
-        {% call nav_link('/config/doctor', 'Doctor', _path.startswith('/config/doctor')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-        {% endcall %}
-        {% call nav_link('/tier', 'Tier', _path.startswith('/tier')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
-        {% endcall %}
-      </div>
-
-      {# Platform API — DISABLED. Re-enable by adding a nav_link call; see
-         routes/platform_api.py. #}
-
-      {# Continuous Audit (+ its Alerts/Notifications) is platform-anchored —
-         hidden under SaaS, where the routes also 403. #}
-      {% if not is_saas %}
-      <div class="nav-group">
-        <span class="nav-group-label">Continuous</span>
-        {% call nav_link('/continuous', 'Continuous Audit', _path.startswith('/continuous')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
-        {% endcall %}
-        {% set _unacked = continuous.unacked if (continuous and continuous.unacked and continuous.unacked > 0) else None %}
-        {% call nav_link('/alerts', 'Alerts', _path.startswith('/alerts'), badge=_unacked) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        {% endcall %}
-        {% call nav_link('/notifications', 'Notifications', _path.startswith('/notifications')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H5.17L4 17.17V4z"/><path d="M8 9h8M8 12h5"/></svg>
-        {% endcall %}
-      </div>
-      {% endif %}
-
-      <div class="nav-group">
-        <span class="nav-group-label">System</span>
-        {% call nav_link('/jobs', 'Jobs', _path.startswith('/jobs')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-        {% endcall %}
-        {# Support Bundle is platform-anchored — hidden under SaaS. #}
-        {% if not is_saas %}
-        {% call nav_link('/support-bundle', 'Support Bundle', _path.startswith('/support-bundle')) %}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="M16.5 9.4 7.55 4.24"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" y1="22" x2="12" y2="12"/><circle cx="18.5" cy="15.5" r="2.5"/><path d="M20.27 17.27 22 19"/></svg>
-        {% endcall %}
-        {% endif %}
+        {% for h in _hubs %}
+          {% call nav_link(h.href, h.label, _hub.cur and _hub.cur.key == h.key, badge=h.badge) %}
+            {% if h.key == 'dashboard' %}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+            {% elif h.key == 'fleet' %}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            {% elif h.key == 'audit' %}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>
+            {% elif h.key == 'configuration' %}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/></svg>
+            {% elif h.key == 'continuous' %}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+            {% else %}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            {% endif %}
+          {% endcall %}
+        {% endfor %}
       </div>
     </nav>
 
@@ -348,6 +324,17 @@
 
     <main class="app-main" id="main">
       <div class="app-main-inner">
+        {% if _hub.cur and _hub.cur.tabs %}
+        <nav class="hub-tabs" aria-label="{{ _hub.cur.label }} pages">
+          <span class="hub-tabs__title">{{ _hub.cur.label }}</span>
+          {% for t in _hub.cur.tabs %}
+            {% set _on = _path == t[2] or _path.startswith(t[2] ~ '/') %}
+            <a href="{{ t[1] }}" class="hub-tab{% if _on %} is-active{% endif %}"{% if _on %} aria-current="page"{% endif %}>
+              {{ t[0] }}{% if t[0] == 'Alerts' and _unacked_n %}<span class="hub-tab__badge">{{ _unacked_n }}</span>{% endif %}
+            </a>
+          {% endfor %}
+        </nav>
+        {% endif %}
         {% block content %}{% endblock %}
       </div>
     </main>

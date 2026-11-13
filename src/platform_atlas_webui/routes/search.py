@@ -37,15 +37,30 @@ _PAGES: list[dict[str, str]] = [
     {"name": "Alerts",             "href": "/alerts"},
     {"name": "Notifications",      "href": "/notifications"},
     {"name": "Jobs",               "href": "/jobs"},
+    {"name": "Health",             "href": "/system"},
+    {"name": "Support Bundle",     "href": "/support-bundle"},
     {"name": "Settings",           "href": "/config"},
 ]
+
+
+# Pages the sidebar hides and the routes 403 under the SaaS tier
+# (see ``forbid_saas_feature``), so the palette must not offer them either.
+_SAAS_HIDDEN_PAGES = {"/continuous", "/alerts", "/notifications", "/support-bundle"}
 
 
 def _build_index() -> list[dict[str, Any]]:
     """Synchronous index build — pushed to threadpool by the route handler."""
     items: list[dict[str, Any]] = []
 
+    try:
+        from platform_atlas_webui.services.config import resolve_active_tier
+        is_saas = resolve_active_tier() == "saas"
+    except Exception:  # noqa: BLE001 — an unreadable tier just means no filtering
+        is_saas = False
+
     for p in _PAGES:
+        if is_saas and p["href"] in _SAAS_HIDDEN_PAGES:
+            continue
         items.append({
             "kind": "page",
             "label": p["name"],

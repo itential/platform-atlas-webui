@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from markupsafe import escape
 
 from platform_atlas.core._version import __version__ as ATLAS_VERSION
+from platform_atlas.core.exceptions import CredentialError
 
 from platform_atlas_webui.dependencies import get_templates, template_context
 from platform_atlas_webui.services.jobs import get_registry
@@ -78,6 +79,8 @@ async def preflight_landing(request: Request, job: str = "") -> HTMLResponse:
     # people chasing "reactivate your environment" for what was actually a
     # backend error with the environment already active and fine.
     targets_error = ""
+    targets_error_kind = ""
+    targets_error_hint = ""
     try:
         from platform_atlas.core.context import ctx
         atlas = ctx()
@@ -86,6 +89,15 @@ async def preflight_landing(request: Request, job: str = "") -> HTMLResponse:
         scope = getattr(atlas.config, "capture_scope", "") or ""
         try:
             raw_targets = atlas.config.targets
+        except CredentialError as exc:
+            # Expected operational state (e.g. Vault unreachable), not a bug:
+            # one warning line, no traceback, and the page renders its
+            # "couldn't compute targets" card with the reason.
+            logger.warning("Credential backend unavailable for env '%s': %s", active_env, exc)
+            targets_error = str(exc)
+            targets_error_hint = getattr(exc, "hint", "") or ""
+            targets_error_kind = "credentials"
+            raw_targets = ()
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed to compute preflight targets for env '%s'", active_env)
             targets_error = str(exc)
@@ -130,6 +142,8 @@ async def preflight_landing(request: Request, job: str = "") -> HTMLResponse:
             atlas_version=ATLAS_VERSION,
             targets=targets,
             targets_error=targets_error,
+            targets_error_kind=targets_error_kind,
+            targets_error_hint=targets_error_hint,
             scope=scope,
             active_env=active_env,
             tier=tier,

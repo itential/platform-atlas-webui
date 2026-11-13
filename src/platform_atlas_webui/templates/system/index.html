@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "partials/_page_header.html" import page_header %}
+{% block title %}Health — Platform Atlas{% endblock %}
+{% block crumb %}Health{% endblock %}
+{% block content %}
+
+{% set _overall = snapshot.overall %}
+{% call page_header("Health",
+    subtitle="Whether Atlas itself is healthy right now: credential store, certificate, local storage, versions and scheduled audits. For configuration problems such as file permissions or unreachable targets, use <a href=\"/config/doctor\">Doctor</a>.") %}
+  <form method="post" action="/system/recheck" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn primary" type="submit" data-loading-label="Checking…">Re-check now</button>
+  </form>
+{% endcall %}
+
+<style nonce="{{ csp_nonce }}">
+  .sys-overall { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:12px; margin-bottom:16px;
+    border:1px solid var(--line); background:var(--surface); }
+  .sys-overall .dot { width:10px; height:10px; border-radius:50%; background:var(--c); flex:none; }
+  .sys-overall b { font-size:15px; }
+  .sys-overall span { color:var(--text-3); font-size:13.5px; }
+  .sys-overall.is-ok { --c:var(--ok); } .sys-overall.is-degraded { --c:var(--warn); } .sys-overall.is-down { --c:var(--bad); }
+  .sys-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px; }
+  .sys-tile { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-width:0; }
+  .sys-tile .h { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--text-3); }
+  .sys-tile .h i { width:8px; height:8px; border-radius:50%; background:var(--c); }
+  .sys-tile .v { font-size:17px; font-weight:600; margin-top:6px; overflow-wrap:anywhere; }
+  .sys-tile .d { font-size:13.5px; color:var(--text-3); margin-top:2px; overflow-wrap:anywhere; }
+  .sys-tile .hint { margin-top:10px; font-size:13px; color:var(--text-2); padding:8px 10px; border-radius:8px; background:var(--surface-2); }
+  .sys-tile.s-ok { --c:var(--ok); } .sys-tile.s-warn { --c:var(--warn); } .sys-tile.s-bad { --c:var(--bad); } .sys-tile.s-off { --c:var(--text-4); }
+  .sys-tile.s-bad { border-color:color-mix(in srgb, var(--bad) 45%, var(--line)); }
+  .sys-tile.s-warn { border-color:color-mix(in srgb, var(--warn) 40%, var(--line)); }
+</style>
+
+<div class="sys-overall is-{{ _overall }}" role="status">
+  <span class="dot" aria-hidden="true"></span>
+  <div>
+    <b>{% if _overall == 'ok' %}Everything is working{% elif _overall == 'degraded' %}Working, with warnings{% else %}Something needs attention{% endif %}</b><br>
+    <span>{% if active_env %}Active environment <code>{{ active_env }}</code>. {% endif %}You can keep using the pages that don't depend on the failing part.</span>
+  </div>
+</div>
+
+<div class="sys-grid">
+  {% for c in snapshot.checks %}
+    <section class="sys-tile s-{{ c.state }}" id="check-{{ c.id }}">
+      <div class="h"><i aria-hidden="true"></i>{{ c.label }}</div>
+      <div class="v">{{ c.value }}</div>
+      {% if c.detail %}<div class="d">{{ c.detail }}</div>{% endif %}
+      {% if c.hint %}<div class="hint">{{ c.hint }}</div>{% endif %}
+      {% if c.id == 'credentials' and c.state != 'ok' %}
+        <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+          <a class="btn sm" href="/config/credentials">Credential settings</a>
+          {% if active_env %}<a class="btn sm" href="/environments/{{ active_env }}">View environment</a>{% endif %}
+        </div>
+      {% endif %}
+    </section>
+  {% endfor %}
+</div>
+
+{% endblock %}

@@ -14,6 +14,7 @@ from markupsafe import escape
 from platform_atlas.core._version import __version__ as ATLAS_VERSION
 
 from platform_atlas_webui.dependencies import get_templates, template_context
+from platform_atlas_webui.security.redirects import local_url
 from platform_atlas_webui.services import baseline as baseline_svc
 from platform_atlas_webui.services import config as _cfg_svc
 from platform_atlas_webui.services import environments as env_svc
@@ -594,7 +595,8 @@ async def view_sockets(
 
     sockets = await run_in_threadpool(env_svc.cm_socket_status, env.get("data"))
     if not sockets:
-        return RedirectResponse(url=f"/environments/{name}", status_code=303)
+        # deepcode ignore OR: same-origin path built by local_url() (fixed prefix + one encoded segment); name was validated by get_environment() above
+        return RedirectResponse(url=local_url("/environments", name), status_code=303)
 
     flash = None
     if cleaned > 0:
@@ -627,8 +629,9 @@ async def clean_sockets(name: str):
     qs: dict[str, str] = {"cleaned": str(result["cleaned"])}
     if result["errors"]:
         qs["clean_errors"] = result["errors"][0]
+    # deepcode ignore OR: same-origin path built by local_url() (fixed prefix + one encoded segment); name was validated by get_environment() above
     return RedirectResponse(
-        url=f"/environments/{name}/sockets?" + urlencode(qs),
+        url=local_url("/environments", name, suffix="/sockets", query=qs),
         status_code=303,
     )
 
@@ -655,7 +658,8 @@ async def set_environment_baseline(name: str, session_name: str = Form(...)):
         await run_in_threadpool(baseline_svc.set_baseline, name, session_name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return RedirectResponse(url=f"/environments/{name}", status_code=303)
+    # deepcode ignore OR: same-origin path built by local_url() (fixed prefix + one encoded segment)
+    return RedirectResponse(url=local_url("/environments", name), status_code=303)
 
 
 @router.post("/{name}/baseline/delete")
@@ -663,4 +667,5 @@ async def clear_environment_baseline(name: str):
     """Remove this environment's pinned baseline. The source session (if it
     still exists) is untouched."""
     await run_in_threadpool(baseline_svc.clear_baseline, name)
-    return RedirectResponse(url=f"/environments/{name}", status_code=303)
+    # deepcode ignore OR: same-origin path built by local_url() (fixed prefix + one encoded segment)
+    return RedirectResponse(url=local_url("/environments", name), status_code=303)

@@ -203,14 +203,16 @@ async def download_session_export(name: str, filename: str):  # pylint: disable=
     """
     from platform_atlas_webui.services import session_export
 
+    # deepcode ignore PT: safe_under() resolves the path and enforces containment under EXPORTS_DIR (403 otherwise)
     target = safe_under(session_export.EXPORTS_DIR / filename, session_export.EXPORTS_DIR)
     if not target.exists() or not target.is_file():
         raise HTTPException(
             status_code=404,
             detail="Export file not found — re-create it from the report page.",
         )
-    media = "application/gzip" if filename.endswith(".gz") else "application/zip"
-    return FileResponse(str(target), media_type=media, filename=filename)
+    media = "application/gzip" if target.name.endswith(".gz") else "application/zip"
+    # deepcode ignore PT: target is the resolved path returned by safe_under(); the download name is target.name
+    return FileResponse(str(target), media_type=media, filename=target.name)
 
 
 @router.get("/{name}/viewmodel")
